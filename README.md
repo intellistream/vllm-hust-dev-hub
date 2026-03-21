@@ -13,6 +13,7 @@ The default workspace includes these sibling repositories when they exist under 
 - `vllm-hust-website`
 - `vllm-hust-docs`
 - `reference-repos`
+- `vllm-hust-dev-hub/ascend-runtime-manager`
 
 ## Files
 

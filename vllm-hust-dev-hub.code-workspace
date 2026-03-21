@@ -21,8 +21,16 @@
       "path": "../reference-repos"
     },
     {
+      "name": "vllm-ascend",
+      "path": "../reference-repos/vllm-ascend"
+    },
+    {
       "name": "vllm-hust-dev-hub",
       "path": "."
+    },
+    {
+      "name": "ascend-runtime-manager",
+      "path": "./ascend-runtime-manager"
     }
   ],
   "settings": {
