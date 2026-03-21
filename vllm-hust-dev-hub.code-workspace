@@ -1,0 +1,47 @@
+{
+  "folders": [
+    {
+      "name": "vllm-hust",
+      "path": "../vllm-hust"
+    },
+    {
+      "name": "vllm-hust-workstation",
+      "path": "../vllm-hust-workstation"
+    },
+    {
+      "name": "vllm-hust-website",
+      "path": "../vllm-hust-website"
+    },
+    {
+      "name": "vllm-hust-docs",
+      "path": "../vllm-hust-docs"
+    },
+    {
+      "name": "reference-repos",
+      "path": "../reference-repos"
+    },
+    {
+      "name": "vllm-hust-dev-hub",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/.git": true,
+      "**/__pycache__": true,
+      "**/.pytest_cache": true,
+      "**/.mypy_cache": true,
+      "**/.ruff_cache": true,
+      "**/node_modules": true
+    },
+    "search.exclude": {
+      "**/__pycache__": true,
+      "**/.pytest_cache": true,
+      "**/.mypy_cache": true,
+      "**/.ruff_cache": true,
+      "**/node_modules": true,
+      "**/dist": true,
+      "**/build": true
+    }
+  }
+}
