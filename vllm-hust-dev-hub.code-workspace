@@ -21,8 +21,8 @@
       "path": "../reference-repos"
     },
     {
-      "name": "vllm-ascend",
-      "path": "../reference-repos/vllm-ascend"
+      "name": "vllm-ascend-hust",
+      "path": "../reference-repos/vllm-ascend-hust"
     },
     {
       "name": "vllm-hust-dev-hub",
