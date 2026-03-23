@@ -7,6 +7,39 @@ from .doctor import build_shell_env_exports, collect_report
 from .setup import setup_environment
 
 
+def _append_once(args: list[str], value: str) -> None:
+    if value not in args:
+        args.append(value)
+
+
+def _apply_prefill_compat_args(
+    extra_args: list[str],
+    enable_prefill_compat_mode: bool,
+) -> list[str]:
+    cleaned_extra = list(extra_args)
+    if cleaned_extra and cleaned_extra[0] == "--":
+        cleaned_extra = cleaned_extra[1:]
+
+    if not enable_prefill_compat_mode:
+        return cleaned_extra
+
+    user_controls_prefill = any(
+        arg in cleaned_extra
+        for arg in (
+            "--enable-prefix-caching",
+            "--no-enable-prefix-caching",
+            "--enable-chunked-prefill",
+            "--no-enable-chunked-prefill",
+        )
+    )
+    if user_controls_prefill:
+        return cleaned_extra
+
+    _append_once(cleaned_extra, "--no-enable-prefix-caching")
+    _append_once(cleaned_extra, "--no-enable-chunked-prefill")
+    return cleaned_extra
+
+
 def _resolve_local_snapshot(model_ref: str) -> str:
     p = Path(model_ref)
     if p.is_dir():
@@ -39,6 +72,7 @@ def launch_vllm(
     host: str,
     port: int,
     served_model_name: str | None,
+    enable_prefill_compat_mode: bool,
     extra_args: list[str],
 ) -> int:
     if not skip_setup:
@@ -71,9 +105,10 @@ def launch_vllm(
         served_model_name or _served_model_name(model_ref),
     ]
 
-    cleaned_extra = list(extra_args)
-    if cleaned_extra and cleaned_extra[0] == "--":
-        cleaned_extra = cleaned_extra[1:]
+    cleaned_extra = _apply_prefill_compat_args(
+        extra_args,
+        enable_prefill_compat_mode=enable_prefill_compat_mode,
+    )
 
     if not npugraph_ready and "--enforce-eager" not in cleaned_extra:
         args.append("--enforce-eager")

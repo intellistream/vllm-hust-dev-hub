@@ -4,6 +4,7 @@ import platform
 import re
 import shlex
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +56,20 @@ def _find_toolkit_root() -> str | None:
     return None
 
 
+def _dedupe_paths(paths: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in paths:
+        if not item:
+            continue
+        normalized = str(Path(item)) if os.path.isabs(item) else item
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
 def _find_hccl(root: str | None) -> str | None:
     if not root:
         return None
@@ -73,6 +88,33 @@ def _find_hccl(root: str | None) -> str | None:
         if p.exists():
             return str(p)
     return None
+
+
+def _collect_runtime_lib_dirs(root: str, hccl_lib: str | None) -> list[str]:
+    root_path = Path(root)
+    candidates = [
+        root_path / "lib64",
+        root_path / "runtime/lib64",
+        root_path / "compiler/lib64",
+        root_path / "aarch64-linux/lib64",
+        root_path / "opp/built-in/op_impl/ai_core/tbe/op_tiling",
+    ]
+
+    parent = root_path.parent
+    candidates.extend(
+        [
+            parent / "hccl/lib64",
+            parent / "compiler/lib64",
+            parent / "aarch64-linux/lib64",
+        ]
+    )
+
+    if hccl_lib:
+        candidates.append(Path(hccl_lib).parent)
+        candidates.append(Path(hccl_lib).resolve().parent)
+
+    existing = [str(path) for path in candidates if path.is_dir()]
+    return _dedupe_paths(existing)
 
 
 def _ascend_has_stream_attr(root: str | None) -> bool:
@@ -180,6 +222,22 @@ def _sanitize_ld_path(old_ld: str) -> str:
     return ":".join(kept)
 
 
+def _probe_torch_npu_import(env: dict[str, str]) -> tuple[bool, str | None]:
+    probe_env = os.environ.copy()
+    probe_env.update(env)
+    proc = subprocess.run(
+        [sys.executable, "-c", "import torch_npu"],
+        capture_output=True,
+        text=True,
+        env=probe_env,
+    )
+    if proc.returncode == 0:
+        return True, None
+    stderr = proc.stderr.strip()
+    stdout = proc.stdout.strip()
+    return False, stderr or stdout or f"exit code {proc.returncode}"
+
+
 def build_env_dict(ascend_root: str | None = None) -> dict[str, str]:
     root = ascend_root or _find_toolkit_root()
     if not root:
@@ -193,7 +251,6 @@ def build_env_dict(ascend_root: str | None = None) -> dict[str, str]:
     if not hccl_lib:
         raise RuntimeError(f"Cannot locate libhccl.so under or near: {root}")
 
-    hccl_dir = str(Path(hccl_lib).parent)
     atb_lib = _find_atb_lib_dir(root=root)
 
     runtime_version = None
@@ -206,17 +263,12 @@ def build_env_dict(ascend_root: str | None = None) -> dict[str, str]:
     has_stream_attr = _ascend_has_stream_attr(root)
     clean_ld = _sanitize_ld_path(os.getenv("LD_LIBRARY_PATH", ""))
 
-    new_ld_parts = [
-        hccl_dir,
-        f"{root}/lib64",
-        f"{root}/runtime/lib64",
-        f"{root}/compiler/lib64",
-        f"{root}/opp/built-in/op_impl/ai_core/tbe/op_tiling",
-    ]
+    new_ld_parts = _collect_runtime_lib_dirs(root, hccl_lib)
     if atb_lib:
         new_ld_parts.append(atb_lib)
     if clean_ld:
-        new_ld_parts.append(clean_ld)
+        new_ld_parts.extend([item for item in clean_ld.split(":") if item])
+    new_ld_parts = _dedupe_paths(new_ld_parts)
 
     exports: dict[str, str] = {
         "ASCEND_HOME_PATH": root,
@@ -259,6 +311,10 @@ def collect_report() -> dict[str, Any]:
             runtime_version = m.group(1) if m else None
 
     atb_set_env = _find_atb_set_env(root=toolkit)
+    env_exports = build_env_dict(toolkit) if toolkit else None
+    torch_npu_import_ok, torch_npu_import_error = (
+        _probe_torch_npu_import(env_exports) if env_exports else (False, "toolkit not found")
+    )
 
     return {
         "host": {
@@ -270,11 +326,15 @@ def collect_report() -> dict[str, Any]:
             "npu_smi_available": rc == 0,
             "npu_smi_summary": npu_smi_out.splitlines()[:8] if npu_smi_out else [],
             "toolkit_root": toolkit,
+            "toolkit_root_exists": bool(toolkit and Path(toolkit).exists()),
             "hccl_lib": hccl,
             "runtime_version": runtime_version,
             "has_aclrt_set_stream_attribute": _ascend_has_stream_attr(toolkit),
             "atb_set_env_exists": atb_set_env is not None,
             "atb_set_env_path": atb_set_env,
+            "manager_env_torch_npu_import_ok": torch_npu_import_ok,
+            "manager_env_torch_npu_import_error": torch_npu_import_error,
+            "manager_env_ld_library_path": env_exports["LD_LIBRARY_PATH"] if env_exports else None,
         },
         "python_stack": {
             "torch": _pip_version("torch"),
@@ -299,6 +359,9 @@ def print_human(report: dict[str, Any]) -> None:
     print(f"  runtime_version: {ascend['runtime_version']}")
     print(f"  has_aclrtSetStreamAttribute: {ascend['has_aclrt_set_stream_attribute']}")
     print(f"  npu_smi_available: {ascend['npu_smi_available']}")
+    print(f"  manager_env_torch_npu_import_ok: {ascend['manager_env_torch_npu_import_ok']}")
+    if ascend["manager_env_torch_npu_import_error"]:
+        print(f"  manager_env_torch_npu_import_error: {ascend['manager_env_torch_npu_import_error']}")
     print(f"  torch: {py['torch']}")
     print(f"  torch-npu: {py['torch_npu']}")
     print(f"  target torch/torch-npu/cann: {rec['target_torch']}/{rec['target_torch_npu']}/{rec['target_cann']}")

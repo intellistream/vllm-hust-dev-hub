@@ -33,6 +33,16 @@ def build_parser() -> argparse.ArgumentParser:
     p_launch.add_argument("--install-python-stack", action="store_true", help="Install torch/torch-npu before launch")
     p_launch.add_argument("--apply-system", dest="apply_system", action="store_true", help="Apply system-level setup before launch")
     p_launch.add_argument("--no-apply-system", dest="apply_system", action="store_false", help="Skip system-level setup before launch")
+    p_launch.add_argument(
+        "--prefill-compat-mode",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "By default, disable prefix caching and chunked prefill during "
+            "Ascend launches to avoid known npu_fused_infer_attention_score "
+            "dimension crashes on some models."
+        ),
+    )
     p_launch.set_defaults(apply_system=True)
     return parser
 
@@ -75,6 +85,7 @@ def main() -> int:
             host=args.host,
             port=args.port,
             served_model_name=args.served_model_name,
+            enable_prefill_compat_mode=bool(args.prefill_compat_mode),
             extra_args=list(unknown_args),
         )
 

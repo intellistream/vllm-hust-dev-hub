@@ -15,6 +15,7 @@ This repository isolates system-level Ascend dependency management from runtime 
 - `hust-ascend-manager setup --manifest manifests/euleros-910b.json --dry-run`
 - `hust-ascend-manager setup --manifest manifests/euleros-910b.json --install-python-stack`
 - `hust-ascend-manager setup --manifest manifests/euleros-910b.json --apply-system`
+- `hust-ascend-manager launch Qwen/Qwen2.5-1.5B-Instruct`
 
 Default `euleros-910b` manifest includes:
 
@@ -28,6 +29,18 @@ When a system step declares `requires_group: HwHiAiUser`, manager will run it vi
 
 `env --shell` is the source of truth for Ascend runtime exports. Runtime repos
 should consume this output instead of carrying duplicated shell logic.
+
+The manager also normalizes non-standard Ascend installs, for example when the
+host only has directories like `/usr/local/Ascend/ascend-toolkit.bak.8.1/latest`
+instead of the canonical `/usr/local/Ascend/ascend-toolkit/latest` symlink.
+`doctor` verifies whether `torch_npu` can be imported under the manager-generated
+environment, and `launch` always runs with that normalized environment.
+
+`launch` also enables a prefill compatibility mode by default on Ascend: it
+injects `--no-enable-prefix-caching` and `--no-enable-chunked-prefill` unless
+you already passed explicit prefill flags yourself. This is a pragmatic
+workaround for known `npu_fused_infer_attention_score` dimension crashes on some
+model/runtime combinations. To opt out, pass `--no-prefill-compat-mode`.
 
 The design follows upstream vLLM's plugin philosophy: hardware-specific setup
 and runtime adaptation should live outside the upstream core runtime path.

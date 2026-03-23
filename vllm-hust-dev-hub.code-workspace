@@ -31,6 +31,9 @@
     {
       "name": "ascend-runtime-manager",
       "path": "./ascend-runtime-manager"
+    },
+    {
+      "path": "../EvoScientist"
     }
   ],
   "settings": {
