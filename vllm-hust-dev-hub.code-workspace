@@ -34,6 +34,13 @@
     },
     {
       "path": "../EvoScientist"
+    },
+    {
+      "name": "vllm-hust-benchmark",
+      "path": "../vllm-hust-benchmark"
+    },
+    {
+      "path": "../private-materials"
     }
   ],
   "settings": {
