@@ -311,6 +311,42 @@ read_project_name_from_pyproject() {
   ' "$repo_path/pyproject.toml"
 }
 
+read_project_name_from_setup_py() {
+  local repo_path="$1"
+
+  awk '
+    /setup[[:space:]]*\(/ { in_setup=1 }
+    in_setup && /^[[:space:]]*name[[:space:]]*=/ {
+      line = $0
+      sub(/^[[:space:]]*name[[:space:]]*=[[:space:]]*["\047]/, "", line)
+      sub(/["\047][[:space:]]*,?[[:space:]]*$/, "", line)
+      print line
+      exit
+    }
+  ' "$repo_path/setup.py"
+}
+
+read_project_name() {
+  local repo_path="$1"
+  local project_name=""
+
+  if [[ -f "$repo_path/pyproject.toml" ]]; then
+    project_name="$(read_project_name_from_pyproject "$repo_path")"
+    if [[ -n "$project_name" ]]; then
+      printf '%s\n' "$project_name"
+      return 0
+    fi
+  fi
+
+  if [[ -f "$repo_path/setup.py" ]]; then
+    project_name="$(read_project_name_from_setup_py "$repo_path")"
+    if [[ -n "$project_name" ]]; then
+      printf '%s\n' "$project_name"
+      return 0
+    fi
+  fi
+}
+
 build_installable_repo_entries() {
   local scope="$1"
   local core_repo_candidates=(
@@ -340,9 +376,9 @@ build_installable_repo_entries() {
       continue
     fi
 
-    project_name="$(read_project_name_from_pyproject "$repo_path")"
+    project_name="$(read_project_name "$repo_path")"
     if [[ -z "$project_name" ]]; then
-      log "Warning: could not determine project name from $repo_path/pyproject.toml, skipped"
+      log "Warning: could not determine project name from $repo_path metadata, skipped" >&2
       continue
     fi
 
