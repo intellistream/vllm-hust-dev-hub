@@ -10,7 +10,7 @@ Team onboarding reference: [docs/team-onboarding.md](docs/team-onboarding.md)
 
 ## Included Repositories
 
-The default workspace includes these repositories when they exist under `/home/shuhao`:
+The default workspace includes these repositories when they exist under `/home/<your name>`:
 
 - `vllm-hust`
 - `vllm-hust-workstation`
@@ -36,7 +36,7 @@ The default workspace includes these repositories when they exist under `/home/s
 Open the workspace directly in VS Code:
 
 ```bash
-code /home/shuhao/vllm-hust-dev-hub/vllm-hust-dev-hub.code-workspace
+code /home/<your name>/vllm-hust-dev-hub/vllm-hust-dev-hub.code-workspace
 ```
 
 If you want to add more repositories, edit the workspace file and append another entry to `folders`.
@@ -139,7 +139,7 @@ bash scripts/ssh-into-ascend-container.sh
 For direct host-to-container development on the official Huawei image, use `scripts/ascend-official-container.sh`.
 
 - It uses `docker` directly when available, otherwise falls back to `sudo -n docker`.
-- It mounts the whole workspace parent directory into `/workspace`, so sibling repos like `/home/shuhao/vllm-hust` become available inside the container at `/workspace/vllm-hust`.
+- It mounts the whole workspace parent directory into `/workspace`, so sibling repos like `/home/<your name>/vllm-hust` become available inside the container at `/workspace/vllm-hust`.
 - It reuses a persistent container named `vllm-ascend-dev` by default, so repeated `shell` and `exec` calls do not need to rebuild the mount/device list.
 - It sources `/usr/local/Ascend/ascend-toolkit/set_env.sh` and `/usr/local/Ascend/nnal/atb/set_env.sh` automatically before dropping you into the shell or running your command.
 - If you need to recreate the container with different settings, run `bash scripts/ascend-official-container.sh rm` first.
@@ -157,6 +157,6 @@ The `reference-repos` directory is reserved for upstream repositories used for c
 - `sgl-project/sglang`
 - `vllm-project/vllm-ascend`
 
-These upstream repositories are kept under `/home/shuhao/reference-repos` and are not cloned as top-level siblings of `vllm-hust`.
+These upstream repositories are kept under `/home/<your name>/reference-repos` and are not cloned as top-level siblings of `vllm-hust`.
 
-The localized fork `vllm-ascend-hust` is cloned as a sibling repository under `/home/shuhao/vllm-ascend-hust`, not under `reference-repos`.
+The localized fork `vllm-ascend-hust` is cloned as a sibling repository under `/home/<your name>/vllm-ascend-hust`, not under `reference-repos`.
