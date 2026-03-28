@@ -634,11 +634,65 @@ install_workspace_repos_into_env() {
   fi
 }
 
+configure_conda_env_library_hooks() {
+  local env_prefix
+  local activate_dir
+  local deactivate_dir
+  local activate_script
+  local deactivate_script
+
+  env_prefix="$(get_conda_env_prefix "$ENV_NAME")"
+  if [[ -z "$env_prefix" || ! -d "$env_prefix" ]]; then
+    log "Skip conda activate hook setup because env prefix was not found for '$ENV_NAME'"
+    return 0
+  fi
+
+  activate_dir="$env_prefix/etc/conda/activate.d"
+  deactivate_dir="$env_prefix/etc/conda/deactivate.d"
+  activate_script="$activate_dir/vllm-hust-dev-hub-libpath.sh"
+  deactivate_script="$deactivate_dir/vllm-hust-dev-hub-libpath.sh"
+
+  mkdir -p "$activate_dir" "$deactivate_dir"
+
+  cat > "$activate_script" <<'EOF'
+if [[ -n "${CONDA_PREFIX:-}" && -d "${CONDA_PREFIX}/lib" ]]; then
+  if [[ -z "${VLLM_HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH+x}" ]]; then
+    if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
+      export VLLM_HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+    else
+      export VLLM_HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH="__UNSET__"
+    fi
+  fi
+
+  case ":${LD_LIBRARY_PATH:-}:" in
+    *":${CONDA_PREFIX}/lib:"*) ;;
+    *) export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;
+  esac
+fi
+EOF
+
+  cat > "$deactivate_script" <<'EOF'
+if [[ -n "${VLLM_HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH+x}" ]]; then
+  if [[ "$VLLM_HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH" == "__UNSET__" ]]; then
+    unset LD_LIBRARY_PATH
+  else
+    export LD_LIBRARY_PATH="$VLLM_HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH"
+  fi
+  unset VLLM_HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH
+fi
+EOF
+
+  chmod 0644 "$activate_script" "$deactivate_script"
+  log "Installed conda activate hooks for '$ENV_NAME' runtime libraries"
+}
+
 configure_bashrc_auto_activate_env() {
   local conda_base
   local conda_sh
   local bashrc_file
   local tmp_file
+
+  configure_conda_env_library_hooks
 
   conda_base="$(run_conda_cmd info --base 2>/dev/null || true)"
   if [[ -z "$conda_base" ]]; then
@@ -667,19 +721,13 @@ configure_bashrc_auto_activate_env() {
     printf 'if [[ "$-" == *i* ]] && [[ -f "%s" ]]; then\n' "$conda_sh"
     printf '  source "%s"\n' "$conda_sh"
     printf '  conda activate "%s" >/dev/null 2>&1 || true\n' "$ENV_NAME"
-    printf '  if [[ -n "$CONDA_PREFIX" && -d "$CONDA_PREFIX/lib" ]]; then\n'
-    printf '    case ":${LD_LIBRARY_PATH:-}:" in\n'
-    printf '      *":$CONDA_PREFIX/lib:"*) ;;\n'
-    printf '      *) export LD_LIBRARY_PATH="$CONDA_PREFIX/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;\n'
-    printf '    esac\n'
-    printf '  fi\n'
     printf 'fi\n'
     printf '%s\n' "$BASHRC_END"
   } > "$bashrc_file"
 
   rm -f "$tmp_file"
   log "Updated ~/.bashrc to auto-activate conda env '$ENV_NAME' in interactive shells"
-  log "Current shell is unchanged. Open a new interactive shell or run: conda activate $ENV_NAME"
+  log "Current shell is unchanged. Open a new interactive shell or run: conda deactivate && conda activate $ENV_NAME"
 }
 
 ask_yes_no() {
