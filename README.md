@@ -28,7 +28,7 @@ The default workspace includes these repositories when they exist under `/home/<
 - `vllm-hust-dev-hub.code-workspace`: main multi-root workspace for VS Code.
 - `scripts/clone-workspace-repos.sh`: clone the common workspace repositories in parallel.
 - `scripts/install-miniconda.sh`: download and install Miniconda into the current user's home directory.
-- `scripts/quickstart.sh`: interactive one-command bootstrap for clone + conda environment setup.
+- `scripts/quickstart.sh`: interactive one-command bootstrap for clone + conda environment setup, plus menu option 6 for the official Ascend container and container SSH setup.
 - `scripts/ascend-official-container.sh`: start, reuse, and enter the official Ascend vLLM container from the host.
 
 ## Usage
@@ -63,6 +63,14 @@ Interactive mode keeps the common paths at the top level:
 - `Refresh local repositories in existing env`: reinstall selected local repos without recloning or recreating the env
 - `Sync repositories only`: update or clone workspace repositories without touching the env
 - `Advanced options`: conda-only repair, install-missing mode, and bashrc-only registration
+
+Interactive menu option 6 is the recommended entrypoint for the official Ascend container workflow:
+
+- it can prompt for an extra SSH public key and persist it under `~/.ssh/vllm-ascend-extra-authorized_keys`
+- it auto-enables `sshd` inside the container when host SSH key material is available
+- it aligns the container SSH user with the mounted workspace owner so `/workspace` is directly usable after login
+- it reuses `ProxyJump`-friendly SSH access on host port `2222`
+- when Docker storage under `/var/lib/docker` is too small and `/data` has space, it can migrate Docker data-root to `/data/docker`
 
 The advanced install flows still support two install actions:
 
@@ -139,6 +147,9 @@ bash scripts/ascend-official-container.sh start
 # enter the container with Ascend env sourced and workspace mounted at /workspace
 bash scripts/ascend-official-container.sh shell
 
+# create or start the official Ascend container through the interactive menu
+bash scripts/quickstart.sh
+
 # run a quick sanity check without opening a shell
 bash scripts/ascend-official-container.sh exec -- python -c 'import torch; import torch_npu; print(torch.npu.device_count())'
 
@@ -150,8 +161,11 @@ For direct host-to-container development on the official Huawei image, use `scri
 
 - It uses `docker` directly when available, otherwise falls back to `sudo -n docker`.
 - It mounts the whole workspace parent directory into `/workspace`, so sibling repos like `/home/<your name>/vllm-hust` become available inside the container at `/workspace/vllm-hust`.
+- It also mounts resolved external symlink targets under the workspace root, so sibling repos symlinked into `/data/...` remain valid inside the container.
 - It reuses a persistent container named `vllm-ascend-dev` by default, so repeated `shell` and `exec` calls do not need to rebuild the mount/device list.
 - It sources `/usr/local/Ascend/ascend-toolkit/set_env.sh` and `/usr/local/Ascend/nnal/atb/set_env.sh` automatically before dropping you into the shell or running your command.
+- It can auto-configure container SSH on `start` or `install`, using host `authorized_keys`, discovered `*.pub` files, and `~/.ssh/vllm-ascend-extra-authorized_keys`.
+- When direct public access to host port `2222` is unavailable, use a client-side SSH alias with `HostName 127.0.0.1`, `Port 2222`, and `ProxyJump <host-alias>`.
 - If you need to recreate the container with different settings, run `bash scripts/ascend-official-container.sh rm` first.
 - For remote Windows SSH, see [docs/train8-container-quickstart.md](docs/train8-container-quickstart.md) for the generic team setup for direct SSH-to-container access.
 

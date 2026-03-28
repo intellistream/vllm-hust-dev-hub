@@ -1,22 +1,29 @@
 from __future__ import annotations
 
+from collections import namedtuple
 from pathlib import Path
 from unittest.mock import Mock
 from unittest.mock import patch
 
 from hust_ascend_manager.container import ContainerConfig
+from hust_ascend_manager.container import MIN_DOCKER_PULL_FREE_SPACE_BYTES
 from hust_ascend_manager.container import build_container_ssh_setup_command
 from hust_ascend_manager.container import build_volume_args
 from hust_ascend_manager.container import container_has_expected_startup
 from hust_ascend_manager.container import container_bootstrap_snippet
+from hust_ascend_manager.container import container_has_expected_mounts
 from hust_ascend_manager.container import container_runtime_script_path
 from hust_ascend_manager.container import default_authorized_keys_source
 from hust_ascend_manager.container import desired_container_cmd
 from hust_ascend_manager.container import discover_device_args
 from hust_ascend_manager.container import enable_container_ssh
+from hust_ascend_manager.container import ensure_image_present
 from hust_ascend_manager.container import install_container
 from hust_ascend_manager.container import parse_ssh_enable_options
 from hust_ascend_manager.container import run_container_action
+
+
+DiskUsage = namedtuple("DiskUsage", ["total", "used", "free"])
 
 
 def test_build_volume_args_includes_workspace_and_cache(tmp_path: Path):
@@ -35,6 +42,26 @@ def test_build_volume_args_includes_workspace_and_cache(tmp_path: Path):
 
     assert f"{workspace_root}:/workspace" in args
     assert f"{cache_dir}:/root/.cache" in args
+
+
+def test_build_volume_args_includes_external_symlink_targets(tmp_path: Path):
+    workspace_root = tmp_path / "workspace"
+    cache_dir = tmp_path / "cache"
+    external_root = tmp_path / "external"
+    workspace_root.mkdir()
+    cache_dir.mkdir()
+    external_root.mkdir()
+    (workspace_root / "vllm-hust").symlink_to(external_root, target_is_directory=True)
+
+    config = ContainerConfig(
+        host_workspace_root=str(workspace_root),
+        container_workspace_root="/workspace",
+        host_cache_dir=str(cache_dir),
+    )
+
+    args = build_volume_args(config)
+
+    assert f"{external_root}:{external_root}" in args
 
 
 def test_container_bootstrap_snippet_sources_ascend_env():
@@ -77,6 +104,37 @@ def test_container_has_expected_startup_matches_inspected_cmd(tmp_path: Path):
     inspect_cmd = Mock(returncode=0, stdout='["bash", "-lc", "bash /workspace/vllm-hust-dev-hub/scripts/ascend-container-runtime.sh"]', stderr="")
     with patch("hust_ascend_manager.container.docker_capture", return_value=inspect_cmd):
         assert container_has_expected_startup(["docker"], config) is True
+
+
+def test_container_has_expected_mounts_matches_volume_args(tmp_path: Path):
+    workspace_root = tmp_path / "workspace"
+    cache_dir = tmp_path / "cache"
+    workspace_root.mkdir()
+    cache_dir.mkdir()
+
+    config = ContainerConfig(
+        host_workspace_root=str(workspace_root),
+        container_workspace_root="/workspace",
+        host_cache_dir=str(cache_dir),
+    )
+
+    inspect_mounts = Mock(
+        returncode=0,
+        stdout=(
+            '[{"Source": "' + str(workspace_root) + '", "Destination": "/workspace"}, '
+            '{"Source": "' + str(cache_dir) + '", "Destination": "/root/.cache"}]'
+        ),
+        stderr="",
+    )
+
+    with (
+        patch("hust_ascend_manager.container.docker_capture", return_value=inspect_mounts),
+        patch(
+            "hust_ascend_manager.container.build_volume_args",
+            return_value=["-v", f"{workspace_root}:/workspace", "-v", f"{cache_dir}:/root/.cache"],
+        ),
+    ):
+        assert container_has_expected_mounts(["docker"], config) is True
 
 
 def test_build_container_ssh_setup_command_contains_expected_settings():
@@ -159,6 +217,60 @@ def test_install_container_creates_container_when_missing(tmp_path: Path):
     assert docker_args[-3:] == ["bash", "-lc", "bash /workspace/demo/scripts/ascend-container-runtime.sh"]
 
 
+def test_ensure_image_present_fails_fast_when_docker_storage_is_low(tmp_path: Path, capsys):
+    docker_root = tmp_path / "docker-root"
+    docker_root.mkdir()
+
+    missing_image = Mock(returncode=1, stdout="", stderr="")
+    docker_info = Mock(returncode=0, stdout=f"{docker_root}\n", stderr="")
+
+    with (
+        patch("hust_ascend_manager.container.docker_capture", side_effect=[missing_image, docker_info]),
+        patch(
+            "hust_ascend_manager.container.shutil.disk_usage",
+            return_value=DiskUsage(total=100, used=95, free=4 * 1024 * 1024 * 1024),
+        ),
+        patch("hust_ascend_manager.container.run_docker") as run_mock,
+    ):
+        rc = ensure_image_present(["sudo", "-n", "docker"], "image:latest")
+
+    assert rc == 1
+    run_mock.assert_not_called()
+    assert "Docker storage under" in capsys.readouterr().err
+
+
+def test_ensure_image_present_logs_low_space_hint_after_pull_failure(tmp_path: Path, capsys):
+    docker_root = tmp_path / "docker-root"
+    docker_root.mkdir()
+
+    missing_image = Mock(returncode=1, stdout="", stderr="")
+    docker_info = Mock(returncode=0, stdout=f"{docker_root}\n", stderr="")
+    pull_failed = Mock(returncode=1)
+
+    with (
+        patch(
+            "hust_ascend_manager.container.docker_capture",
+            side_effect=[missing_image, docker_info, docker_info],
+        ),
+        patch(
+            "hust_ascend_manager.container.shutil.disk_usage",
+            side_effect=[
+                DiskUsage(
+                    total=100,
+                    used=100 - (MIN_DOCKER_PULL_FREE_SPACE_BYTES + 1),
+                    free=MIN_DOCKER_PULL_FREE_SPACE_BYTES + 1,
+                ),
+                DiskUsage(total=100, used=95, free=4 * 1024 * 1024 * 1024),
+            ],
+        ),
+        patch("hust_ascend_manager.container.run_docker", return_value=pull_failed),
+    ):
+        rc = ensure_image_present(["docker"], "image:latest")
+
+    assert rc == 1
+    assert "image pull failed and Docker storage is still low" in capsys.readouterr().out
+
+
 def test_install_container_recreates_legacy_container_when_bootstrap_required(tmp_path: Path):
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()
@@ -173,12 +285,40 @@ def test_install_container_recreates_legacy_container_when_bootstrap_required(tm
         patch("hust_ascend_manager.container.ensure_image_present", return_value=0),
         patch("hust_ascend_manager.container.container_exists", return_value=True),
         patch("hust_ascend_manager.container.ensure_container_image_matches", return_value=0),
+        patch("hust_ascend_manager.container.container_has_expected_mounts", return_value=True),
         patch("hust_ascend_manager.container.container_has_expected_startup", return_value=False),
         patch("hust_ascend_manager.container.container_running", return_value=True),
         patch("hust_ascend_manager.container.discover_device_args", return_value=["--device", "/dev/davinci0"]),
         patch("hust_ascend_manager.container.run_docker", return_value=Mock(returncode=0)) as run_mock,
     ):
         rc = install_container(["docker"], config, require_runtime_bootstrap=True)
+
+    assert rc == 0
+    assert run_mock.call_args_list[0].args[1] == ["stop", "demo"]
+    assert run_mock.call_args_list[1].args[1] == ["rm", "demo"]
+    assert run_mock.call_args_list[2].args[1][0:2] == ["run", "-d"]
+
+
+def test_install_container_recreates_container_when_mounts_are_stale(tmp_path: Path):
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    config = ContainerConfig(
+        image="image:latest",
+        container_name="demo",
+        host_workspace_root=str(workspace_root),
+        container_workdir="/workspace/demo",
+    )
+
+    with (
+        patch("hust_ascend_manager.container.ensure_image_present", return_value=0),
+        patch("hust_ascend_manager.container.container_exists", return_value=True),
+        patch("hust_ascend_manager.container.ensure_container_image_matches", return_value=0),
+        patch("hust_ascend_manager.container.container_has_expected_mounts", return_value=False),
+        patch("hust_ascend_manager.container.container_running", return_value=True),
+        patch("hust_ascend_manager.container.discover_device_args", return_value=["--device", "/dev/davinci0"]),
+        patch("hust_ascend_manager.container.run_docker", return_value=Mock(returncode=0)) as run_mock,
+    ):
+        rc = install_container(["docker"], config)
 
     assert rc == 0
     assert run_mock.call_args_list[0].args[1] == ["stop", "demo"]

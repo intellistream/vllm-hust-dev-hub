@@ -8,6 +8,18 @@ TARGET_BASE_DIR="$(cd -- "$ROOT_DIR/.." && pwd)"
 CLONE_JOBS="${CLONE_JOBS:-4}"
 AUTO_YES=0
 
+configure_git_ssh_defaults() {
+  if [[ -n "${GIT_SSH_COMMAND:-}" ]]; then
+    return 0
+  fi
+
+  mkdir -p "$HOME/.ssh"
+  chmod 700 "$HOME/.ssh"
+  touch "$HOME/.ssh/known_hosts"
+  chmod 600 "$HOME/.ssh/known_hosts"
+  export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+}
+
 if ! command -v git >/dev/null 2>&1; then
   echo "git is required but was not found in PATH" >&2
   exit 1
@@ -74,15 +86,36 @@ clone_destination() {
   printf '%s\n' "$TARGET_BASE_DIR/$1"
 }
 
+https_url_from_ssh_url() {
+  local repo_url="$1"
+
+  if [[ "$repo_url" =~ ^git@github\.com:(.+)$ ]]; then
+    printf 'https://github.com/%s\n' "${BASH_REMATCH[1]}"
+    return 0
+  fi
+
+  return 1
+}
+
 queue_clone() {
   local relative_path="$1"
   local repo_url="$2"
   local destination
+  local https_url
   destination="$(clone_destination "$relative_path")"
 
-  mkdir -p "$(dirname -- "$destination")"
+  if [[ ! -d "$(dirname -- "$destination")" ]]; then
+    mkdir -p "$(dirname -- "$destination")"
+  fi
   echo "[clone] $relative_path <- $repo_url"
-  git clone "$repo_url" "$destination"
+  if git clone "$repo_url" "$destination"; then
+    return 0
+  fi
+
+  if https_url="$(https_url_from_ssh_url "$repo_url")"; then
+    echo "[clone] $relative_path SSH clone failed; retrying via $https_url"
+    git clone "$https_url" "$destination"
+  fi
 }
 
 maybe_pull_updates() {
@@ -147,6 +180,7 @@ REPOS=(
 )
 
 parse_args "$@"
+configure_git_ssh_defaults
 
 running_jobs=0
 failures=0

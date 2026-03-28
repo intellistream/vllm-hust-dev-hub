@@ -13,7 +13,7 @@
 推荐主流程如下：
 
 1. 在目标机器上准备或创建官方 Ascend Docker instance。
-2. 如果需要从本地直接连进容器，在本地配置 `~/.ssh/config` 指向该 instance。
+2. 如果需要从本地直接连进容器，优先使用 `quickstart.sh` 的菜单 6 完成容器启动和 SSH 自动配置，再在本地配置 `~/.ssh/config`。
 3. 在容器内或目标开发机上克隆 `vllm-hust-dev-hub`。
 4. 执行 `bash scripts/quickstart.sh`，选择 `Recommended bootstrap (sync repos + conda env)`。
 5. 需要时执行 `conda activate vllm-hust-dev` 进入环境。
@@ -31,7 +31,39 @@
 
 如果你已经在目标机器上有可用容器，可直接跳到下一步。
 
-### 方式 A：使用 hub 脚本创建或复用容器
+### 方式 A：使用 quickstart 菜单 6 创建或复用容器
+
+这是当前推荐入口，因为它会把容器启动、宿主机公钥采集和容器 SSH 配置串成一条路径。
+
+在目标机器执行：
+
+```bash
+cd /home/<your-user>/vllm-hust-dev-hub
+bash scripts/quickstart.sh
+```
+
+然后在交互菜单选择：
+
+```text
+6) 创建/启动官方 Ascend Docker instance（可交互录入 SSH 公钥）
+```
+
+这一路径现在会自动完成这些事情：
+
+- 可选地让你直接粘贴一个额外 SSH 公钥，并持久化到 `~/.ssh/vllm-ascend-extra-authorized_keys`
+- 在检测到宿主机 SSH 公钥材料时自动配置容器内 `sshd`
+- 自动对齐容器 SSH 用户和 `/workspace` 的 UID/GID，保证连上后能直接访问工作区
+- 当工作区同级仓库是指向 `/data/...` 的 symlink 时，自动补挂真实目标路径
+- 当 Docker 默认数据目录空间不够、而 `/data` 有空间时，自动迁移 Docker data-root 到 `/data/docker`
+
+菜单 6 完成后，可继续使用：
+
+```bash
+cd /home/<your-user>/vllm-hust-dev-hub
+bash scripts/ascend-official-container.sh shell
+```
+
+### 方式 B：使用 hub 脚本创建或复用容器
 
 在目标机器执行：
 
@@ -54,9 +86,9 @@ bash scripts/ascend-official-container.sh shell
 - 宿主机工作区根目录会挂载到容器内的 `/workspace`
 - 容器内的默认工作目录是 `/workspace/vllm-hust-dev-hub`
 
-### 方式 B：需要直接 SSH 到容器时，用 manager 做一键部署
+### 方式 C：需要脚本化控制时，用 manager 做显式 `ssh-deploy`
 
-如果团队成员需要通过 VS Code Remote SSH 或终端直接连进容器，而不是先 SSH 到宿主机再 `docker exec`，在目标机器执行一次：
+如果需要在 CI、远程脚本或显式运维流程里跳过 quickstart 菜单，也可以直接执行：
 
 ```bash
 cd /home/<your-user>/vllm-hust-dev-hub/ascend-runtime-manager
@@ -77,14 +109,23 @@ PYTHONPATH=src python3 -m hust_ascend_manager.cli container ssh-deploy \
 
 默认开发流程里，连接容器所需配置是本地 `~/.ssh/config`，不是应用侧的 `config.ini` 或 `.env`。
 
+如果宿主机已有可用的 SSH alias，推荐把容器 alias 配成经由宿主机自动跳转，而不是直接写公网 `2222`。这样即使公网侧没有开放 `2222`，VS Code Remote SSH 仍能直接进容器。
+
 示例：
 
 ```sshconfig
-Host train8-container
+Host train8
     HostName 11.11.10.27
     User <your-user>
+    Port 22
+    IdentityFile ~/.ssh/id_ed25519
+    IdentitiesOnly yes
+
+Host train8-container
+    HostName 127.0.0.1
+    User <your-user>
     Port 2222
-    ProxyJump <jump-host-alias>
+    ProxyJump train8
     IdentityFile ~/.ssh/id_ed25519
     IdentitiesOnly yes
     PreferredAuthentications publickey
@@ -92,6 +133,7 @@ Host train8-container
     ConnectTimeout 10
     ServerAliveInterval 30
     ServerAliveCountMax 3
+    HostKeyAlias train8-container
 ```
 
 之后即可：
@@ -101,6 +143,13 @@ ssh train8-container
 ```
 
 如果使用 VS Code，直接通过 Remote SSH 连接这个 host alias 即可。
+
+如果容器刚被重建过，客户端可能缓存了旧的 host key。此时先清理旧记录再重连：
+
+```bash
+ssh-keygen -R train8-container
+ssh-keygen -R "[127.0.0.1]:2222"
+```
 
 ## 第 3 步：克隆 `vllm-hust-dev-hub`
 
@@ -176,6 +225,12 @@ cd /home/<your-user>/vllm-hust-dev-hub
 bash scripts/quickstart.sh --all -y
 ```
 
+如果希望非交互地准备容器 SSH 公钥，可在运行菜单 6 之前设置：
+
+```bash
+export VLLM_HUST_CONTAINER_PUBKEY='ssh-ed25519 AAAA... your-name'
+```
+
 ## 第 5 步：进入 conda 环境，并按需继续安装或刷新源码
 
 ### 默认推荐
@@ -244,8 +299,8 @@ python -m pip install -e .
 建议对团队成员直接发下面这版简化流程：
 
 ```text
-1. 在目标机器上准备官方 Ascend Docker 容器。
-2. 如果需要从本地直连容器，在本地 ~/.ssh/config 增加容器别名。
+1. 在目标机器上执行 `bash scripts/quickstart.sh`，菜单选择 6 创建或复用官方 Ascend Docker 容器。
+2. 如果需要从本地直连容器，在菜单 6 中粘贴 SSH 公钥，然后在本地 `~/.ssh/config` 增加经由宿主机 `ProxyJump` 的容器别名。
 3. 在容器内克隆 vllm-hust-dev-hub 到 /home/<user>/vllm-hust-dev-hub。
 4. 在仓库根目录执行 bash scripts/quickstart.sh。
 5. 菜单选择 Recommended bootstrap (sync repos + conda env)。

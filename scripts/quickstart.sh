@@ -28,6 +28,7 @@ CONDA_FORGE_MIRROR_CHANNEL="https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/
 CONDA_FORGE_FALLBACK_CHANNEL="conda-forge"
 TOS_MARKER_ROOT="$HOME/.config/vllm-hust-dev-hub"
 CONDA_RUN_STREAM_FLAG=""
+CONTAINER_EXTRA_AUTH_KEYS_FILE="$WORKSPACE_ROOT/.ssh/vllm-ascend-extra-authorized_keys"
 
 print_help() {
   cat <<'EOF'
@@ -42,15 +43,84 @@ print_help() {
   --all                    执行 clone + conda + install(core)。
   --env-name NAME          conda 环境名 (默认: vllm-hust-dev)。
   --python VERSION         conda 环境 Python 版本 (默认: 3.10)。
-  -y, --yes                非交互模式。
+  -y, --yes                非交互模式；容器公钥可通过 VLLM_HUST_CONTAINER_PUBKEY 传入。
   -h, --help               显示本帮助。
 
 未提供动作参数时，将进入交互式菜单。
+交互菜单的选项 6 会创建或复用官方 Ascend Docker instance，并在检测到宿主机公钥材料时自动配置容器 SSH。
 EOF
 }
 
 log() {
   printf '[quickstart] %s\n' "$1"
+}
+
+is_valid_ssh_public_key() {
+  local key_line="$1"
+
+  [[ "$key_line" =~ ^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521|sk-ssh-ed25519@openssh.com|sk-ecdsa-sha2-nistp256@openssh.com)[[:space:]]+[A-Za-z0-9+/=]+([[:space:]].*)?$ ]]
+}
+
+ensure_container_extra_key_dir() {
+  mkdir -p "$(dirname -- "$CONTAINER_EXTRA_AUTH_KEYS_FILE")"
+}
+
+append_container_public_key() {
+  local public_key="$1"
+  local tmp_file
+
+  ensure_container_extra_key_dir
+  tmp_file="$(mktemp)"
+
+  {
+    if [[ -f "$CONTAINER_EXTRA_AUTH_KEYS_FILE" ]]; then
+      sed -e '$a\' "$CONTAINER_EXTRA_AUTH_KEYS_FILE"
+    fi
+    printf '%s\n' "$public_key"
+  } | awk 'NF && !seen[$0]++' > "$tmp_file"
+
+  chmod 600 "$tmp_file"
+  mv "$tmp_file" "$CONTAINER_EXTRA_AUTH_KEYS_FILE"
+}
+
+prompt_and_store_container_public_key() {
+  local public_key="${VLLM_HUST_CONTAINER_PUBKEY:-}"
+
+  if [[ -n "$public_key" ]]; then
+    if ! is_valid_ssh_public_key "$public_key"; then
+      echo "[quickstart] 环境变量 VLLM_HUST_CONTAINER_PUBKEY 不是有效的 SSH 公钥。" >&2
+      return 2
+    fi
+    append_container_public_key "$public_key"
+    log "已将环境变量中的 SSH 公钥写入 $CONTAINER_EXTRA_AUTH_KEYS_FILE"
+    return 0
+  fi
+
+  if (( AUTO_YES == 1 )); then
+    return 0
+  fi
+
+  if ! ask_yes_no "是否现在粘贴一个宿主机 SSH 公钥，用于直接连接 Docker instance？"; then
+    return 0
+  fi
+
+  while true; do
+    echo "请粘贴一整行 SSH 公钥，然后回车提交。直接回车表示跳过。"
+    read -r public_key
+
+    if [[ -z "$public_key" ]]; then
+      log "已跳过额外 SSH 公钥录入。"
+      return 0
+    fi
+
+    if is_valid_ssh_public_key "$public_key"; then
+      append_container_public_key "$public_key"
+      log "已将 SSH 公钥写入 $CONTAINER_EXTRA_AUTH_KEYS_FILE"
+      return 0
+    fi
+
+    echo "[quickstart] 输入看起来不是有效的 SSH 公钥，请重新粘贴。" >&2
+  done
 }
 
 run_conda_cmd() {
@@ -858,6 +928,11 @@ configure_bashrc_auto_activate_env() {
 ask_yes_no() {
   local prompt="$1"
   local answer=""
+
+  if (( AUTO_YES == 1 )); then
+    return 0
+  fi
+
   while true; do
     read -r -p "$prompt [y/n]: " answer
     case "$answer" in
@@ -883,7 +958,7 @@ Python version : $PYTHON_VERSION
 3) 仅创建/修复 conda 环境
 4) 安装或更新本地仓库（核心）
 5) 安装或更新本地仓库（核心 + 扩展）
-6) 创建/启动官方 Ascend Docker instance
+6) 创建/启动官方 Ascend Docker instance（可交互录入 SSH 公钥）
 7) 仅更新 ~/.bashrc 自动激活
 8) 退出
 EOF
@@ -919,6 +994,7 @@ EOF
       MENU_CONFIRMED=1
       ;;
     6)
+      prompt_and_store_container_public_key
       if [[ -x "$SCRIPT_DIR/ascend-official-container.sh" ]]; then
         bash "$SCRIPT_DIR/ascend-official-container.sh" start
       else
@@ -926,6 +1002,11 @@ EOF
         exit 2
       fi
       log "容器已启动或已复用。可执行: bash scripts/ascend-official-container.sh shell"
+      if [[ -f "$CONTAINER_EXTRA_AUTH_KEYS_FILE" ]]; then
+        log "已配置额外容器 SSH 公钥来源: $CONTAINER_EXTRA_AUTH_KEYS_FILE"
+      fi
+      log "容器 SSH 默认端口: 2222"
+      log "若公网 2222 不通，可在客户端 ~/.ssh/config 为容器 Host 配置: HostName 127.0.0.1 + Port 2222 + ProxyJump <已有宿主机 Host 条目>"
       exit 0
       ;;
     7)

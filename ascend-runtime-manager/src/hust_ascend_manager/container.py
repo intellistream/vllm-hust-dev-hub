@@ -19,6 +19,7 @@ DEFAULT_CONTAINER_SSH_PORT = 2222
 DEFAULT_CONTAINER_SSH_USER = "shuhao"
 STATUS_TABLE_FORMAT = "table {{.Names}}\t{{.Status}}\t{{.Image}}"
 IDLE_COMMAND = "trap : TERM INT; sleep infinity & wait"
+MIN_DOCKER_PULL_FREE_SPACE_BYTES = 8 * 1024 * 1024 * 1024
 
 
 @dataclass(slots=True)
@@ -53,6 +54,15 @@ def _fail(message: str) -> int:
     return 1
 
 
+def _format_bytes(num_bytes: int) -> str:
+    gib = 1024 * 1024 * 1024
+    if num_bytes >= gib:
+        return f"{num_bytes / gib:.1f} GiB"
+
+    mib = 1024 * 1024
+    return f"{num_bytes / mib:.1f} MiB"
+
+
 def _can_run_command(cmd: list[str]) -> bool:
     return subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 
@@ -85,6 +95,40 @@ def docker_capture(
     )
 
 
+def docker_root_dir(docker_cmd: list[str]) -> Path | None:
+    proc = docker_capture(docker_cmd, ["info", "--format", "{{.DockerRootDir}}"])
+    if proc.returncode != 0:
+        return None
+
+    docker_root = proc.stdout.strip()
+    if not docker_root:
+        return None
+
+    return Path(docker_root)
+
+
+def low_docker_storage_message(docker_cmd: list[str], image: str) -> str | None:
+    root_dir = docker_root_dir(docker_cmd)
+    if root_dir is None:
+        return None
+
+    try:
+        free_bytes = shutil.disk_usage(root_dir).free
+    except OSError:
+        return None
+
+    if free_bytes >= MIN_DOCKER_PULL_FREE_SPACE_BYTES:
+        return None
+
+    usage_cmd = shlex.join(docker_cmd + ["system", "df"])
+    return (
+        f"Docker storage under {root_dir} only has {_format_bytes(free_bytes)} free, "
+        f"below the conservative {_format_bytes(MIN_DOCKER_PULL_FREE_SPACE_BYTES)} needed "
+        f"to pull and extract large images like {image}. Free space first, then retry. "
+        f"Inspect current usage with: {usage_cmd}"
+    )
+
+
 def container_exists(docker_cmd: list[str], name: str) -> bool:
     return docker_capture(docker_cmd, ["container", "inspect", name]).returncode == 0
 
@@ -98,8 +142,17 @@ def ensure_image_present(docker_cmd: list[str], image: str) -> int:
     if docker_capture(docker_cmd, ["image", "inspect", image]).returncode == 0:
         return 0
 
+    storage_message = low_docker_storage_message(docker_cmd, image)
+    if storage_message is not None:
+        return _fail(storage_message)
+
     _log(f"pulling image {image}")
-    return run_docker(docker_cmd, ["pull", image]).returncode
+    rc = run_docker(docker_cmd, ["pull", image]).returncode
+    if rc != 0:
+        storage_message = low_docker_storage_message(docker_cmd, image)
+        if storage_message is not None:
+            _log(f"image pull failed and Docker storage is still low. {storage_message}")
+    return rc
 
 
 def ensure_host_paths(config: ContainerConfig) -> int:
@@ -135,6 +188,27 @@ def build_volume_args(config: ContainerConfig) -> list[str]:
         f"{config.host_cache_dir}:/root/.cache",
     ]
 
+    symlink_mounts: set[tuple[str, str]] = set()
+    workspace_root = Path(config.host_workspace_root)
+    if workspace_root.is_dir():
+        for child_path in workspace_root.iterdir():
+            if not child_path.is_symlink():
+                continue
+
+            try:
+                resolved_path = child_path.resolve(strict=True)
+            except OSError:
+                continue
+
+            resolved_str = str(resolved_path)
+            if resolved_str.startswith(f"{config.host_workspace_root.rstrip('/')}/"):
+                continue
+
+            symlink_mounts.add((resolved_str, resolved_str))
+
+    for source_path, target_path in sorted(symlink_mounts):
+        volume_args.extend(["-v", f"{source_path}:{target_path}"])
+
     for host_path in (
         "/usr/local/dcmi",
         "/usr/local/Ascend/driver/tools/hccn_tool",
@@ -158,6 +232,32 @@ def ensure_container_image_matches(docker_cmd: list[str], config: ContainerConfi
             "Remove it first or choose a different --container-name."
         )
     return 0
+
+
+def container_has_expected_mounts(docker_cmd: list[str], config: ContainerConfig) -> bool:
+    proc = docker_capture(docker_cmd, ["inspect", "-f", "{{json .Mounts}}", config.container_name])
+    if proc.returncode != 0:
+        return False
+
+    try:
+        mounts = json.loads(proc.stdout.strip())
+    except json.JSONDecodeError:
+        return False
+
+    actual_mounts = {
+        (mount.get("Source", ""), mount.get("Destination", ""))
+        for mount in mounts
+    }
+
+    expected_mounts = set()
+    volume_args = build_volume_args(config)
+    for index in range(0, len(volume_args), 2):
+        if volume_args[index] != "-v":
+            continue
+        source_path, target_path = volume_args[index + 1].split(":", 1)
+        expected_mounts.add((source_path, target_path))
+
+    return expected_mounts.issubset(actual_mounts)
 
 
 def container_bootstrap_snippet(config: ContainerConfig) -> str:
@@ -214,6 +314,7 @@ def build_container_ssh_setup_command(
         [
             "set -euo pipefail",
             f"AUTHORIZED_KEYS_SOURCE={shlex.quote(authorized_keys_source)}",
+            f"CONTAINER_WORKSPACE_ROOT={shlex.quote(config.container_workspace_root)}",
             f"SSH_USER={shlex.quote(ssh_user)}",
             f"SSH_PORT={shlex.quote(str(ssh_port))}",
             "if [[ ! -f \"$AUTHORIZED_KEYS_SOURCE\" ]]; then",
@@ -225,12 +326,39 @@ def build_container_ssh_setup_command(
             "  apt-get update",
             "  apt-get install -y openssh-server",
             "fi",
-            "if ! id -u \"$SSH_USER\" >/dev/null 2>&1; then",
-            "  useradd -m -s /bin/bash \"$SSH_USER\"",
+            "WORKSPACE_UID=$(stat -c %u \"$CONTAINER_WORKSPACE_ROOT\" 2>/dev/null || echo 0)",
+            "WORKSPACE_GID=$(stat -c %g \"$CONTAINER_WORKSPACE_ROOT\" 2>/dev/null || echo 0)",
+            "SSH_GROUP=$SSH_USER",
+            "if [[ \"$WORKSPACE_GID\" != \"0\" ]]; then",
+            "  if getent group \"$WORKSPACE_GID\" >/dev/null 2>&1; then",
+            "    SSH_GROUP=$(getent group \"$WORKSPACE_GID\" | cut -d: -f1)",
+            "  elif getent group \"$SSH_USER\" >/dev/null 2>&1; then",
+            "    groupmod -g \"$WORKSPACE_GID\" \"$SSH_USER\"",
+            "    SSH_GROUP=$SSH_USER",
+            "  else",
+            "    groupadd -g \"$WORKSPACE_GID\" \"$SSH_USER\"",
+            "  fi",
             "fi",
+            "if ! id -u \"$SSH_USER\" >/dev/null 2>&1; then",
+            "  if [[ \"$WORKSPACE_UID\" != \"0\" && \"$WORKSPACE_GID\" != \"0\" ]]; then",
+            "    useradd -m -u \"$WORKSPACE_UID\" -g \"$SSH_GROUP\" -s /bin/bash \"$SSH_USER\"",
+            "  else",
+            "    useradd -m -s /bin/bash \"$SSH_USER\"",
+            "  fi",
+            "else",
+            "  CURRENT_UID=$(id -u \"$SSH_USER\")",
+            "  CURRENT_GID=$(id -g \"$SSH_USER\")",
+            "  if [[ \"$WORKSPACE_UID\" != \"0\" && \"$CURRENT_UID\" != \"$WORKSPACE_UID\" ]]; then",
+            "    usermod -u \"$WORKSPACE_UID\" \"$SSH_USER\"",
+            "  fi",
+            "  if [[ \"$WORKSPACE_GID\" != \"0\" && \"$CURRENT_GID\" != \"$WORKSPACE_GID\" ]]; then",
+            "    usermod -g \"$SSH_GROUP\" \"$SSH_USER\"",
+            "  fi",
+            "fi",
+            f"chown -R \"$SSH_USER\":\"$SSH_GROUP\" {shlex.quote(user_home)}",
             f"install -d -m 700 -o \"$SSH_USER\" -g \"$SSH_USER\" {shlex.quote(user_home)}/.ssh",
             f"cp \"$AUTHORIZED_KEYS_SOURCE\" {shlex.quote(user_home)}/.ssh/authorized_keys",
-            f"chown \"$SSH_USER\":\"$SSH_USER\" {shlex.quote(user_home)}/.ssh/authorized_keys",
+            f"chown \"$SSH_USER\":\"$SSH_GROUP\" {shlex.quote(user_home)}/.ssh/authorized_keys",
             f"chmod 600 {shlex.quote(user_home)}/.ssh/authorized_keys",
             "mkdir -p /run/sshd",
             "ssh-keygen -A",
@@ -271,9 +399,9 @@ def install_container(
         if rc != 0:
             return rc
 
-        if require_runtime_bootstrap and not container_has_expected_startup(docker_cmd, config):
+        if (require_runtime_bootstrap and not container_has_expected_startup(docker_cmd, config)) or not container_has_expected_mounts(docker_cmd, config):
             _log(
-                f"recreating legacy container {config.container_name} so startup hooks run automatically on restart"
+                f"recreating container {config.container_name} so startup hooks and bind mounts match the current quickstart configuration"
             )
             if container_running(docker_cmd, config.container_name):
                 rc = run_docker(docker_cmd, ["stop", config.container_name]).returncode
