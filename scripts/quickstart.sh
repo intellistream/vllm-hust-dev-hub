@@ -410,6 +410,43 @@ is_package_installed_in_env() {
   run_conda_env_cmd "$env_name" python -m pip show "$project_name" >/dev/null 2>&1
 }
 
+repo_requires_ascend_runtime() {
+  local repo_path="$1"
+
+  [[ "$repo_path" == "$WORKSPACE_ROOT/vllm-ascend-hust" ]]
+}
+
+install_editable_repo_into_env() {
+  local repo_path="$1"
+  local reconcile_mode="${2:-without-runtime-reconcile}"
+  local pip_args=(-v -e "$repo_path")
+
+  if repo_requires_ascend_runtime "$repo_path"; then
+    if ! should_reconcile_ascend_runtime; then
+      log "Skipping Ascend-only repo '$repo_path' because no Ascend runtime was detected on this host."
+      return 10
+    fi
+
+    if ! is_package_installed_in_env "$ENV_NAME" "torch-npu"; then
+      if [[ "$reconcile_mode" == "with-runtime-reconcile" ]]; then
+        log "Skipping Ascend-only repo '$repo_path' because torch-npu is still unavailable after runtime reconciliation."
+      else
+        log "Skipping Ascend-only repo '$repo_path' because torch-npu is not installed in '$ENV_NAME'. Run quickstart with --conda to reconcile the Ascend Python stack first."
+      fi
+      return 11
+    fi
+
+    # vllm-ascend documents editable installs with --no-build-isolation to
+    # avoid torch/torch-npu resolver conflicts in the temporary build env.
+    pip_args=(-v --no-build-isolation -e "$repo_path")
+  fi
+
+  log "Installing editable package from: $repo_path"
+  run_with_heartbeat \
+    "installing editable package from $repo_path" \
+    run_conda_env_cmd "$ENV_NAME" python -m pip install "${pip_args[@]}"
+}
+
 should_reconcile_ascend_runtime() {
   if [[ ! -f "$WORKSPACE_ROOT/vllm-ascend-hust/pyproject.toml" ]]; then
     return 1
@@ -521,10 +558,7 @@ install_workspace_repos_into_env() {
       log "Skipping already installed package '$project_name' from: $repo_path"
       skipped_list+=("$repo_path ($project_name)")
     else
-      log "Installing editable package from: $repo_path"
-      run_with_heartbeat \
-        "installing editable package from $repo_path" \
-        run_conda_env_cmd "$ENV_NAME" python -m pip install -v -e "$repo_path"
+      install_editable_repo_into_env "$repo_path" "$reconcile_mode"
       installed_any=1
       installed_list+=("$repo_path ($project_name)")
     fi
@@ -546,10 +580,10 @@ install_workspace_repos_into_env() {
       continue
     fi
 
-    log "Installing editable package from: $repo_path"
-    run_with_heartbeat \
-      "installing editable package from $repo_path" \
-      run_conda_env_cmd "$ENV_NAME" python -m pip install -v -e "$repo_path"
+    if ! install_editable_repo_into_env "$repo_path" "$reconcile_mode"; then
+      skipped_list+=("$repo_path ($project_name)")
+      continue
+    fi
     installed_any=1
     installed_list+=("$repo_path ($project_name)")
   done
