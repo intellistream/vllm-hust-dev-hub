@@ -153,6 +153,8 @@ bash scripts/quickstart.sh
 
 - 脚本会把 conda 自动激活逻辑写入 `~/.bashrc`
 - `~/.bashrc` 的自动激活只对新的交互式 shell 生效，不会立刻改变当前正在运行的终端
+- conda 环境激活时会自动探测 `https://hf-mirror.com`：可达则设置 `HF_ENDPOINT=https://hf-mirror.com`，不可达则自动回退默认 Hugging Face 上游
+- 如需禁用上述自动镜像切换，可在当前 shell 设置 `HUST_DEV_HUB_DISABLE_HF_MIRROR_AUTOSET=1`
 - `quickstart.sh` 只处理用户态环境，不会尝试 `sudo`、`sg`、`HwHiAiUser` 或其他系统级修改
 - 相关上游对照仓库会被克隆到 `reference-repos/`，用于对比，不会自动安装进当前环境
 

@@ -52,7 +52,20 @@ def _run_shell(
         else:
             shell_cmd = f"sudo {shell_cmd}"
 
-    proc = subprocess.run(["bash", "-lc", shell_cmd])
+    cmd_env = os.environ.copy()
+    target_prefix = sys.prefix
+    if not (Path(target_prefix) / "conda-meta").exists():
+        target_prefix = cmd_env.get("CONDA_PREFIX") or target_prefix
+    if (Path(target_prefix) / "conda-meta").exists():
+        cmd_env["CONDA_PREFIX"] = target_prefix
+        cmd_env["CONDA_DEFAULT_ENV"] = Path(target_prefix).name
+        target_bin = str(Path(target_prefix) / "bin")
+        path_parts = cmd_env.get("PATH", "").split(":") if cmd_env.get("PATH") else []
+        if target_bin not in path_parts:
+            cmd_env["PATH"] = f"{target_bin}:{cmd_env.get('PATH', '')}".rstrip(":")
+
+    # Use non-login shell to avoid ~/.bashrc auto-activate changing conda target env.
+    proc = subprocess.run(["bash", "-c", shell_cmd], env=cmd_env)
     if proc.returncode != 0 and use_sudo and (non_interactive or not sys.stdin.isatty()):
         print("[setup] sudo authentication is required for a system step, but non-interactive mode is enabled.")
         return SUDO_INTERACTION_REQUIRED_EXIT_CODE

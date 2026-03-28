@@ -314,12 +314,7 @@ create_or_update_conda_env() {
     run_conda_env_cmd "$ENV_NAME" python -m pip install pytest pre-commit
 
   install_workspace_repos_into_env "refresh" "$INSTALL_SCOPE" "with-runtime-reconcile"
-
-  if run_conda_env_cmd "$ENV_NAME" vllm --help >/dev/null 2>&1; then
-    log "Verified: 'vllm' command is available in conda env '$ENV_NAME'"
-  else
-    log "Warning: 'vllm' command is still unavailable in conda env '$ENV_NAME'"
-  fi
+  report_vllm_cli_status "$ENV_NAME" || true
 
   log "Conda env ready: $ENV_NAME"
   log "Activate with: conda activate $ENV_NAME"
@@ -423,6 +418,42 @@ is_package_installed_in_env() {
   run_conda_env_cmd "$env_name" python -m pip show "$project_name" >/dev/null 2>&1
 }
 
+has_vllm_cli_in_env() {
+  local env_name="$1"
+  run_conda_env_cmd "$env_name" python -c 'import shutil, sys; sys.exit(0 if shutil.which("vllm") else 1)'
+}
+
+report_vllm_cli_status() {
+  local env_name="$1"
+
+  if ! has_vllm_cli_in_env "$env_name"; then
+    log "Warning: 'vllm' command is unavailable in conda env '$env_name'"
+    return 1
+  fi
+
+  if run_conda_env_cmd "$env_name" env TORCH_DEVICE_BACKEND_AUTOLOAD=0 vllm --help >/dev/null 2>&1; then
+    log "Verified: 'vllm' command is available in conda env '$env_name'"
+    return 0
+  fi
+
+  log "Warning: 'vllm' command exists in '$env_name' but runtime validation failed (for example missing backend/runtime libs)."
+  return 1
+}
+ensure_pip_package_in_env() {
+  local env_name="$1"
+  local package_spec="$2"
+  local package_name="${package_spec%%[<>=!~; ]*}"
+
+  if is_package_installed_in_env "$env_name" "$package_name"; then
+    return 0
+  fi
+
+  log "Installing missing build dependency '$package_spec' into '$env_name'"
+  run_with_heartbeat \
+    "installing $package_spec into $env_name" \
+    run_conda_env_cmd "$env_name" python -m pip install "$package_spec"
+}
+
 repo_requires_ascend_runtime() {
   local repo_path="$1"
 
@@ -433,6 +464,7 @@ install_editable_repo_into_env() {
   local repo_path="$1"
   local reconcile_mode="${2:-without-runtime-reconcile}"
   local pip_args=(-v -e "$repo_path")
+  local compile_custom_kernels="${COMPILE_CUSTOM_KERNELS:-0}"
 
   if repo_requires_ascend_runtime "$repo_path"; then
     if ! should_reconcile_ascend_runtime; then
@@ -451,7 +483,20 @@ install_editable_repo_into_env() {
 
     # vllm-ascend documents editable installs with --no-build-isolation to
     # avoid torch/torch-npu resolver conflicts in the temporary build env.
-    pip_args=(-v --no-build-isolation -e "$repo_path")
+    # Align quickstart with scripts/install_local_ascend_plugin.sh so local
+    # plugin installation does not require the full custom-kernel toolchain.
+    ensure_pip_package_in_env "$ENV_NAME" "setuptools-scm>=8"
+    # Keep lightweight mode runnable without pulling the full optional dependency set.
+    ensure_pip_package_in_env "$ENV_NAME" "decorator"
+    ensure_pip_package_in_env "$ENV_NAME" "scipy"
+    pip_args=(-v --no-build-isolation --no-deps -e "$repo_path")
+
+    log "Installing editable package from: $repo_path"
+    log "Using lightweight Ascend plugin mode: COMPILE_CUSTOM_KERNELS=$compile_custom_kernels, --no-deps"
+    run_with_heartbeat \
+      "installing editable package from $repo_path" \
+      run_conda_env_cmd "$ENV_NAME" env COMPILE_CUSTOM_KERNELS="$compile_custom_kernels" TORCH_DEVICE_BACKEND_AUTOLOAD=0 python -m pip install "${pip_args[@]}"
+    return 0
   fi
 
   log "Installing editable package from: $repo_path"
@@ -499,6 +544,9 @@ reconcile_ascend_runtime_with_manager() {
   fi
 
   local manager_args=(setup --install-python-stack)
+  if [[ "${HUST_DEV_HUB_SKIP_ASCEND_SYSTEM_APPLY:-0}" != "1" ]]; then
+    manager_args+=(--apply-system)
+  fi
   if [[ -f "$MANAGER_MANIFEST_DEFAULT" ]]; then
     manager_args+=(--manifest "$MANAGER_MANIFEST_DEFAULT")
   fi
@@ -627,11 +675,7 @@ install_workspace_repos_into_env() {
     log "Warning: vllm-ascend-hust exists but has no pyproject.toml, skipped install"
   fi
 
-  if run_conda_env_cmd "$ENV_NAME" vllm --help >/dev/null 2>&1; then
-    log "Verified: 'vllm' command is available in conda env '$ENV_NAME'"
-  else
-    log "Warning: 'vllm' command is still unavailable in conda env '$ENV_NAME'"
-  fi
+  report_vllm_cli_status "$ENV_NAME" || true
 }
 
 configure_conda_env_library_hooks() {
@@ -656,11 +700,11 @@ configure_conda_env_library_hooks() {
 
   cat > "$activate_script" <<'EOF'
 if [[ -n "${CONDA_PREFIX:-}" && -d "${CONDA_PREFIX}/lib" ]]; then
-  if [[ -z "${VLLM_HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH+x}" ]]; then
+  if [[ -z "${HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH+x}" ]]; then
     if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
-      export VLLM_HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+      export HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
     else
-      export VLLM_HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH="__UNSET__"
+      export HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH="__UNSET__"
     fi
   fi
 
@@ -670,34 +714,96 @@ if [[ -n "${CONDA_PREFIX:-}" && -d "${CONDA_PREFIX}/lib" ]]; then
   esac
 fi
 
-if [[ -z "${VLLM_HUST_DEV_HUB_SAVED_GIT_SSH_COMMAND+x}" ]]; then
+if [[ -z "${HUST_DEV_HUB_SAVED_GIT_SSH_COMMAND+x}" ]]; then
   if [[ -n "${GIT_SSH_COMMAND:-}" ]]; then
-    export VLLM_HUST_DEV_HUB_SAVED_GIT_SSH_COMMAND="$GIT_SSH_COMMAND"
+    export HUST_DEV_HUB_SAVED_GIT_SSH_COMMAND="$GIT_SSH_COMMAND"
   else
-    export VLLM_HUST_DEV_HUB_SAVED_GIT_SSH_COMMAND="__UNSET__"
+    export HUST_DEV_HUB_SAVED_GIT_SSH_COMMAND="__UNSET__"
   fi
 fi
 
 export GIT_SSH_COMMAND='env -u LD_LIBRARY_PATH /usr/bin/ssh'
+
+if [[ -z "${HUST_DEV_HUB_SAVED_PYTHONPATH+x}" ]]; then
+  if [[ -n "${PYTHONPATH:-}" ]]; then
+    export HUST_DEV_HUB_SAVED_PYTHONPATH="$PYTHONPATH"
+  else
+    export HUST_DEV_HUB_SAVED_PYTHONPATH="__UNSET__"
+  fi
+fi
+
+_ascend_pyacl_path=""
+for _candidate in \
+  "${ASCEND_HOME_PATH:-/usr/local/Ascend/ascend-toolkit/latest}/pyACL/python/site-packages" \
+  "/usr/local/Ascend/ascend-toolkit/latest/pyACL/python/site-packages" \
+  "/usr/local/Ascend/ascend-toolkit/latest/python/site-packages"; do
+  if [[ -d "$_candidate" ]]; then
+    _ascend_pyacl_path="$_candidate"
+    break
+  fi
+done
+
+if [[ -n "$_ascend_pyacl_path" ]]; then
+  case ":${PYTHONPATH:-}:" in
+    *":${_ascend_pyacl_path}:"*) ;;
+    *) export PYTHONPATH="${_ascend_pyacl_path}${PYTHONPATH:+:$PYTHONPATH}" ;;
+  esac
+fi
+unset _ascend_pyacl_path _candidate
+
+if [[ -z "${HUST_DEV_HUB_SAVED_HF_ENDPOINT+x}" ]]; then
+  if [[ -n "${HF_ENDPOINT:-}" ]]; then
+    export HUST_DEV_HUB_SAVED_HF_ENDPOINT="$HF_ENDPOINT"
+  else
+    export HUST_DEV_HUB_SAVED_HF_ENDPOINT="__UNSET__"
+  fi
+fi
+
+if [[ "${HUST_DEV_HUB_DISABLE_HF_MIRROR_AUTOSET:-0}" != "1" ]]; then
+  if command -v curl >/dev/null 2>&1 \
+    && curl -fsSIL --connect-timeout 2 --max-time 3 https://hf-mirror.com >/dev/null 2>&1; then
+    export HF_ENDPOINT="https://hf-mirror.com"
+  else
+    unset HF_ENDPOINT
+  fi
+fi
 EOF
 
   cat > "$deactivate_script" <<'EOF'
-if [[ -n "${VLLM_HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH+x}" ]]; then
-  if [[ "$VLLM_HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH" == "__UNSET__" ]]; then
+if [[ -n "${HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH+x}" ]]; then
+  if [[ "$HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH" == "__UNSET__" ]]; then
     unset LD_LIBRARY_PATH
   else
-    export LD_LIBRARY_PATH="$VLLM_HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH"
+    export LD_LIBRARY_PATH="$HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH"
   fi
-  unset VLLM_HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH
+  unset HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH
 fi
 
-if [[ -n "${VLLM_HUST_DEV_HUB_SAVED_GIT_SSH_COMMAND+x}" ]]; then
-  if [[ "$VLLM_HUST_DEV_HUB_SAVED_GIT_SSH_COMMAND" == "__UNSET__" ]]; then
+if [[ -n "${HUST_DEV_HUB_SAVED_GIT_SSH_COMMAND+x}" ]]; then
+  if [[ "$HUST_DEV_HUB_SAVED_GIT_SSH_COMMAND" == "__UNSET__" ]]; then
     unset GIT_SSH_COMMAND
   else
-    export GIT_SSH_COMMAND="$VLLM_HUST_DEV_HUB_SAVED_GIT_SSH_COMMAND"
+    export GIT_SSH_COMMAND="$HUST_DEV_HUB_SAVED_GIT_SSH_COMMAND"
   fi
-  unset VLLM_HUST_DEV_HUB_SAVED_GIT_SSH_COMMAND
+  unset HUST_DEV_HUB_SAVED_GIT_SSH_COMMAND
+fi
+
+if [[ -n "${HUST_DEV_HUB_SAVED_PYTHONPATH+x}" ]]; then
+  if [[ "$HUST_DEV_HUB_SAVED_PYTHONPATH" == "__UNSET__" ]]; then
+    unset PYTHONPATH
+  else
+    export PYTHONPATH="$HUST_DEV_HUB_SAVED_PYTHONPATH"
+  fi
+  unset HUST_DEV_HUB_SAVED_PYTHONPATH
+fi
+
+if [[ -n "${HUST_DEV_HUB_SAVED_HF_ENDPOINT+x}" ]]; then
+  if [[ "$HUST_DEV_HUB_SAVED_HF_ENDPOINT" == "__UNSET__" ]]; then
+    unset HF_ENDPOINT
+  else
+    export HF_ENDPOINT="$HUST_DEV_HUB_SAVED_HF_ENDPOINT"
+  fi
+  unset HUST_DEV_HUB_SAVED_HF_ENDPOINT
 fi
 EOF
 
@@ -775,15 +881,14 @@ Python version : $PYTHON_VERSION
 1) 一键初始化（同步仓库 + 创建/修复环境 + 安装核心仓库）
 2) 仅同步仓库
 3) 仅创建/修复 conda 环境
-4) 安装缺失本地仓库（核心）
-5) 安装缺失本地仓库（核心 + 扩展）
-6) 刷新重装本地仓库（核心）
-7) 刷新重装本地仓库（核心 + 扩展）
-8) 仅更新 ~/.bashrc 自动激活
-9) 退出
+4) 安装或更新本地仓库（核心）
+5) 安装或更新本地仓库（核心 + 扩展）
+6) 创建/启动官方 Ascend Docker instance
+7) 仅更新 ~/.bashrc 自动激活
+8) 退出
 EOF
 
-  read -r -p "请选择 [1-9]: " choice
+  read -r -p "请选择 [1-8]: " choice
   case "$choice" in
     1)
       DO_CLONE=1
@@ -803,35 +908,33 @@ EOF
       ;;
     4)
       DO_INSTALL=1
-      INSTALL_MODE="install"
+      INSTALL_MODE="refresh"
       INSTALL_SCOPE="core"
       MENU_CONFIRMED=1
       ;;
     5)
       DO_INSTALL=1
-      INSTALL_MODE="install"
+      INSTALL_MODE="refresh"
       INSTALL_SCOPE="full"
       MENU_CONFIRMED=1
       ;;
     6)
-      DO_INSTALL=1
-      INSTALL_MODE="refresh"
-      INSTALL_SCOPE="core"
-      MENU_CONFIRMED=1
+      if [[ -x "$SCRIPT_DIR/ascend-official-container.sh" ]]; then
+        bash "$SCRIPT_DIR/ascend-official-container.sh" start
+      else
+        log "未找到容器脚本: $SCRIPT_DIR/ascend-official-container.sh"
+        exit 2
+      fi
+      log "容器已启动或已复用。可执行: bash scripts/ascend-official-container.sh shell"
+      exit 0
       ;;
     7)
-      DO_INSTALL=1
-      INSTALL_MODE="refresh"
-      INSTALL_SCOPE="full"
-      MENU_CONFIRMED=1
-      ;;
-    8)
       ensure_conda_available
       configure_bashrc_auto_activate_env
       log "已完成 ~/.bashrc 自动激活设置更新。"
       exit 0
       ;;
-    9)
+    8)
       log "已退出。"
       exit 0
       ;;
