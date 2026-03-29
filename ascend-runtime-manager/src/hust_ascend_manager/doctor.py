@@ -3,10 +3,24 @@ import os
 import platform
 import re
 import shlex
+import shutil
 import subprocess
 import sys
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
+
+
+_ASCEND_ENV_EXPORT_KEYS = (
+    "ASCEND_HOME_PATH",
+    "ASCEND_OPP_PATH",
+    "ASCEND_AICPU_PATH",
+    "TORCH_DEVICE_BACKEND_AUTOLOAD",
+    "HUST_ASCEND_RUNTIME_VERSION",
+    "HUST_ASCEND_HAS_STREAM_ATTR",
+    "HUST_ASCEND_OPP_OVERLAY_ROOT",
+    "HUST_ATB_SET_ENV",
+)
 
 
 def _run(cmd: list[str]) -> tuple[int, str, str]:
@@ -28,6 +42,18 @@ def _read_os_release() -> dict[str, str]:
 
 
 def _find_toolkit_root() -> str | None:
+    env_candidates = [
+        os.getenv("ASCEND_HOME_PATH"),
+        os.getenv("ASCEND_TOOLKIT_HOME"),
+        os.getenv("ASCEND_AICPU_PATH"),
+    ]
+    for candidate in env_candidates:
+        if not candidate:
+            continue
+        candidate_path = Path(candidate)
+        if (candidate_path / "runtime/lib64").is_dir():
+            return str(candidate_path)
+
     conda_prefix = os.getenv("CONDA_PREFIX")
     if conda_prefix:
         candidates = [
@@ -39,6 +65,7 @@ def _find_toolkit_root() -> str | None:
                 return str(c)
 
     candidates = [
+        *sorted(Path("/usr/local/Ascend").glob("cann-*"), reverse=True),
         Path("/usr/local/Ascend/ascend-toolkit/latest"),
         Path("/usr/local/Ascend/ascend-toolkit.bak.8.1/latest"),
     ]
@@ -97,7 +124,15 @@ def _collect_runtime_lib_dirs(root: str, hccl_lib: str | None) -> list[str]:
         root_path / "runtime/lib64",
         root_path / "compiler/lib64",
         root_path / "aarch64-linux/lib64",
+        root_path / "aarch64-linux/lib64/device/lib64",
+        root_path / "aarch64-linux/devlib",
+        root_path / "aarch64-linux/devlib/device",
         root_path / "opp/built-in/op_impl/ai_core/tbe/op_tiling",
+        root_path / "opp/built-in/op_impl/ai_core/tbe/op_tiling/lib/linux/aarch64",
+        root_path / "lib64/plugin/opskernel",
+        root_path / "lib64/plugin/nnengine",
+        root_path / "tools/aml/lib64",
+        root_path / "tools/aml/lib64/plugin",
     ]
 
     parent = root_path.parent
@@ -106,6 +141,9 @@ def _collect_runtime_lib_dirs(root: str, hccl_lib: str | None) -> list[str]:
             parent / "hccl/lib64",
             parent / "compiler/lib64",
             parent / "aarch64-linux/lib64",
+            parent / "driver/lib64",
+            parent / "driver/lib64/common",
+            parent / "driver/lib64/driver",
         ]
     )
 
@@ -115,6 +153,122 @@ def _collect_runtime_lib_dirs(root: str, hccl_lib: str | None) -> list[str]:
 
     existing = [str(path) for path in candidates if path.is_dir()]
     return _dedupe_paths(existing)
+
+
+def _detect_broken_legacy_kernel_layout(root: str | None) -> dict[str, str] | None:
+    if not root:
+        return None
+
+    kernel_root = Path(root) / "opp/built-in/op_impl/ai_core/tbe/kernel"
+    config_root = kernel_root / "config/ascend910_93/ops_legacy"
+    if not config_root.is_dir():
+        return None
+
+    probes = [
+        config_root / "zeros_like.json",
+        config_root / "add.json",
+        config_root / "cast.json",
+    ]
+    for config_path in probes:
+        if not config_path.exists():
+            continue
+
+        try:
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+
+        for entry in data.get("binList", []):
+            json_file_path = entry.get("binInfo", {}).get("jsonFilePath")
+            if not json_file_path:
+                continue
+
+            direct_path = kernel_root / json_file_path
+            if direct_path.exists():
+                continue
+
+            legacy_path = (
+                kernel_root
+                / "ascend910_93/ops_legacy"
+                / Path(json_file_path).parent.name
+                / Path(json_file_path).name
+            )
+            if legacy_path.exists():
+                return {
+                    "probe_config": str(config_path),
+                    "missing_kernel_json": str(direct_path),
+                    "legacy_kernel_json": str(legacy_path),
+                    "message": (
+                        "Detected a broken Ascend OPP legacy kernel layout: dynamic kernel "
+                        "configs reference kernel/ascend910_93/<op>/..., but the installed "
+                        "files only exist under kernel/ascend910_93/ops_legacy/<op>/.... "
+                        "This breaks basic torch_npu ops such as torch.zeros(). Reinstall or "
+                        "repair the host CANN ops package before using vLLM on this machine."
+                    ),
+                }
+
+    return None
+
+
+def _opp_overlay_cache_dir() -> Path:
+    xdg_cache_home = os.getenv("XDG_CACHE_HOME")
+    if xdg_cache_home:
+        return Path(xdg_cache_home) / "hust-ascend-manager" / "opp-overlays"
+    return Path.home() / ".cache" / "hust-ascend-manager" / "opp-overlays"
+
+
+def _symlink_force(target: Path, link_path: Path) -> None:
+    link_path.parent.mkdir(parents=True, exist_ok=True)
+    if link_path.is_symlink() or link_path.exists():
+        if link_path.is_dir() and not link_path.is_symlink():
+            shutil.rmtree(link_path)
+        else:
+            link_path.unlink()
+    link_path.symlink_to(target)
+
+
+def _ensure_legacy_kernel_overlay(root: str) -> str:
+    root_path = Path(root)
+    real_opp_root = root_path / "opp"
+    kernel_root = real_opp_root / "built-in/op_impl/ai_core/tbe/kernel"
+    legacy_ops_root = kernel_root / "ascend910_93/ops_legacy"
+    if not legacy_ops_root.is_dir():
+        return str(real_opp_root)
+
+    cache_key = sha256(str(root_path).encode("utf-8")).hexdigest()[:16]
+    overlay_root = _opp_overlay_cache_dir() / cache_key
+    overlay_opp_root = overlay_root / "opp"
+    overlay_kernel_root = overlay_opp_root / "built-in/op_impl/ai_core/tbe/kernel"
+    overlay_ascend_root = overlay_kernel_root / "ascend910_93"
+
+    tmp_root = overlay_root.with_name(f"{overlay_root.name}.tmp-{os.getpid()}")
+    if tmp_root.exists():
+        shutil.rmtree(tmp_root)
+
+    tmp_opp_root = tmp_root / "opp"
+    tmp_kernel_root = tmp_opp_root / "built-in/op_impl/ai_core/tbe/kernel"
+    tmp_ascend_root = tmp_kernel_root / "ascend910_93"
+    tmp_ascend_root.mkdir(parents=True, exist_ok=True)
+
+    _symlink_force(kernel_root / "config", tmp_kernel_root / "config")
+    _symlink_force(legacy_ops_root, tmp_ascend_root / "ops_legacy")
+
+    for op_dir in legacy_ops_root.iterdir():
+        if not op_dir.is_dir():
+            continue
+        _symlink_force(op_dir, tmp_ascend_root / op_dir.name)
+
+    (tmp_root / ".source-root").write_text(str(root_path), encoding="utf-8")
+
+    overlay_root.parent.mkdir(parents=True, exist_ok=True)
+    if overlay_root.exists():
+        shutil.rmtree(overlay_root)
+    tmp_root.rename(overlay_root)
+
+    if not overlay_kernel_root.exists() or not overlay_ascend_root.exists():
+        raise RuntimeError(f"Failed to construct Ascend OPP overlay under {overlay_root}")
+
+    return str(overlay_opp_root)
 
 
 def _ascend_has_stream_attr(root: str | None) -> bool:
@@ -222,6 +376,17 @@ def _sanitize_ld_path(old_ld: str) -> str:
     return ":".join(kept)
 
 
+def _has_active_vendor_ascend_env(root: str) -> bool:
+    active_root_candidates = [
+        os.getenv("ASCEND_HOME_PATH"),
+        os.getenv("ASCEND_TOOLKIT_HOME"),
+        os.getenv("ASCEND_AICPU_PATH"),
+    ]
+    current_ld = os.getenv("LD_LIBRARY_PATH", "")
+    root_path = Path(root)
+    return any(candidate and Path(candidate) == root_path for candidate in active_root_candidates) and "/Ascend/" in current_ld
+
+
 def _probe_torch_npu_import(env: dict[str, str]) -> tuple[bool, str | None]:
     probe_env = os.environ.copy()
     probe_env.update(env)
@@ -261,24 +426,37 @@ def build_env_dict(ascend_root: str | None = None) -> dict[str, str]:
         runtime_version = m.group(1) if m else None
 
     has_stream_attr = _ascend_has_stream_attr(root)
-    clean_ld = _sanitize_ld_path(os.getenv("LD_LIBRARY_PATH", ""))
+    legacy_kernel_layout_issue = _detect_broken_legacy_kernel_layout(root)
+    current_ld = os.getenv("LD_LIBRARY_PATH", "")
 
-    new_ld_parts = _collect_runtime_lib_dirs(root, hccl_lib)
-    if atb_lib:
-        new_ld_parts.append(atb_lib)
-    if clean_ld:
-        new_ld_parts.extend([item for item in clean_ld.split(":") if item])
-    new_ld_parts = _dedupe_paths(new_ld_parts)
+    if _has_active_vendor_ascend_env(root):
+        new_ld = current_ld
+    else:
+        clean_ld = _sanitize_ld_path(current_ld)
+        new_ld_parts = _collect_runtime_lib_dirs(root, hccl_lib)
+        if atb_lib:
+            new_ld_parts.append(atb_lib)
+        if clean_ld:
+            new_ld_parts.extend([item for item in clean_ld.split(":") if item])
+        new_ld_parts = _dedupe_paths(new_ld_parts)
+        new_ld = ":".join(new_ld_parts)
+
+    opp_path = f"{root}/opp"
+    if legacy_kernel_layout_issue is not None:
+        opp_path = _ensure_legacy_kernel_overlay(root)
 
     exports: dict[str, str] = {
         "ASCEND_HOME_PATH": root,
-        "ASCEND_OPP_PATH": f"{root}/opp",
+        "ASCEND_OPP_PATH": opp_path,
         "ASCEND_AICPU_PATH": root,
-        "LD_LIBRARY_PATH": ":".join(new_ld_parts),
+        "LD_LIBRARY_PATH": new_ld,
         "TORCH_DEVICE_BACKEND_AUTOLOAD": os.getenv("TORCH_DEVICE_BACKEND_AUTOLOAD", "1"),
         "HUST_ASCEND_RUNTIME_VERSION": runtime_version or "",
         "HUST_ASCEND_HAS_STREAM_ATTR": "1" if has_stream_attr else "0",
     }
+
+    if legacy_kernel_layout_issue is not None:
+        exports["HUST_ASCEND_OPP_OVERLAY_ROOT"] = opp_path
 
     atb_set_env = _find_atb_set_env(root=root)
     if atb_set_env:
@@ -311,6 +489,7 @@ def collect_report() -> dict[str, Any]:
             runtime_version = m.group(1) if m else None
 
     atb_set_env = _find_atb_set_env(root=toolkit)
+    legacy_kernel_layout_issue = _detect_broken_legacy_kernel_layout(toolkit)
     env_exports = None
     torch_npu_import_ok = False
     torch_npu_import_error = None
@@ -323,6 +502,11 @@ def collect_report() -> dict[str, Any]:
             torch_npu_import_ok, torch_npu_import_error = _probe_torch_npu_import(env_exports)
     else:
         torch_npu_import_error = "toolkit not found"
+
+    manager_env_opp_path = env_exports["ASCEND_OPP_PATH"] if env_exports else None
+    manager_env_uses_opp_overlay = bool(
+        env_exports and env_exports.get("HUST_ASCEND_OPP_OVERLAY_ROOT")
+    )
 
     return {
         "host": {
@@ -340,8 +524,12 @@ def collect_report() -> dict[str, Any]:
             "has_aclrt_set_stream_attribute": _ascend_has_stream_attr(toolkit),
             "atb_set_env_exists": atb_set_env is not None,
             "atb_set_env_path": atb_set_env,
+            "legacy_kernel_layout_ok": legacy_kernel_layout_issue is None,
+            "legacy_kernel_layout_issue": legacy_kernel_layout_issue,
             "manager_env_torch_npu_import_ok": torch_npu_import_ok,
             "manager_env_torch_npu_import_error": torch_npu_import_error,
+            "manager_env_opp_path": manager_env_opp_path,
+            "manager_env_uses_opp_overlay": manager_env_uses_opp_overlay,
             "manager_env_ld_library_path": env_exports["LD_LIBRARY_PATH"] if env_exports else None,
         },
         "python_stack": {
@@ -367,6 +555,11 @@ def print_human(report: dict[str, Any]) -> None:
     print(f"  runtime_version: {ascend['runtime_version']}")
     print(f"  has_aclrtSetStreamAttribute: {ascend['has_aclrt_set_stream_attribute']}")
     print(f"  npu_smi_available: {ascend['npu_smi_available']}")
+    print(f"  legacy_kernel_layout_ok: {ascend['legacy_kernel_layout_ok']}")
+    if ascend["legacy_kernel_layout_issue"]:
+        print(f"  legacy_kernel_layout_issue: {ascend['legacy_kernel_layout_issue']['message']}")
+    print(f"  manager_env_uses_opp_overlay: {ascend['manager_env_uses_opp_overlay']}")
+    print(f"  manager_env_opp_path: {ascend['manager_env_opp_path']}")
     print(f"  manager_env_torch_npu_import_ok: {ascend['manager_env_torch_npu_import_ok']}")
     if ascend["manager_env_torch_npu_import_error"]:
         print(f"  manager_env_torch_npu_import_error: {ascend['manager_env_torch_npu_import_error']}")

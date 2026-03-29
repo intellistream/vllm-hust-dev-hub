@@ -25,9 +25,9 @@ This repository isolates system-level Ascend dependency management from runtime 
 Default `euleros-910b` manifest includes:
 
 - `conda config --add channels https://repo.huaweicloud.com/ascend/repos/conda/`
-- `conda install ascend::cann-toolkit==8.5.0`
-- `conda install ascend::cann-910b-ops==8.5.0`
-- `conda install ascend::cann-nnal==8.5.0`
+- `conda install ascend-cann-toolkit==8.5.0`
+- `conda install ascend-cann-910b-ops==8.5.0`
+- `conda install ascend-cann-nnal==8.5.0`
 
 When a system step declares `requires_group: HwHiAiUser`, manager will run it via
 `sg HwHiAiUser -c ...` automatically when needed.
@@ -40,6 +40,15 @@ host only has directories like `/usr/local/Ascend/ascend-toolkit.bak.8.1/latest`
 instead of the canonical `/usr/local/Ascend/ascend-toolkit/latest` symlink.
 `doctor` verifies whether `torch_npu` can be imported under the manager-generated
 environment, and `launch` always runs with that normalized environment.
+`doctor` also detects a broken host OPP legacy-kernel layout where
+`kernel/config/ascend910_93/ops_legacy/*.json` points at
+`kernel/ascend910_93/<op>/...` but the installed files only exist under
+`kernel/ascend910_93/ops_legacy/<op>/...`. When this happens, even basic
+`torch_npu` operators such as `torch.zeros()` can fail before vLLM starts; the
+correct fix is to repair or reinstall the host CANN ops package. As a practical
+workaround, `env --shell` and `launch` now auto-generate a user-space OPP
+overlay under `~/.cache/hust-ascend-manager/opp-overlays/` and point
+`ASCEND_OPP_PATH` at that overlay when this broken layout is detected.
 
 `launch` also enables a prefill compatibility mode by default on Ascend: it
 injects `--no-enable-prefix-caching` and `--no-enable-chunked-prefill` unless
@@ -94,6 +103,8 @@ CI publish:
 
 - `setup --apply-system` executes commands from manifest and may require sudo.
 - Use `setup --non-interactive` when calling manager from automation. It will fail fast instead of hanging on an interactive `sg` or `sudo` password prompt.
+- `setup --install-python-stack` now auto-probes `https://pypi.tuna.tsinghua.edu.cn/simple` when `PIP_INDEX_URL` is unset, and falls back to the default upstream index when the mirror is unreachable.
+- Tune large wheel downloads with `HUST_ASCEND_MANAGER_PIP_RETRIES`, `HUST_ASCEND_MANAGER_PIP_TIMEOUT`, `HUST_ASCEND_MANAGER_PIP_RESUME_RETRIES`, `HUST_ASCEND_MANAGER_PIP_INDEX_URL`, and `HUST_ASCEND_MANAGER_PIP_EXTRA_INDEX_URL`. Set `HUST_ASCEND_MANAGER_DISABLE_PYPI_MIRROR_AUTOSET=1` to disable automatic mirror selection.
 - `container` uses `docker` directly when available, otherwise falls back to `sudo -n docker`.
 - `container ssh-deploy` is the one-click path for direct SSH-to-container access.
 - `container ssh-enable` defaults to host port `2222`, user `shuhao`, and `authorized_keys` source `/workspace/.ssh/authorized_keys`.

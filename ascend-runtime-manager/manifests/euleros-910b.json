@@ -14,21 +14,21 @@
     {
       "id": "install-cann-toolkit-8-5",
       "description": "Install CANN toolkit 8.5.0 from Ascend conda channel",
-      "run": "conda install -y ascend::cann-toolkit==8.5.0",
+      "run": "conda install -y ascend-cann-toolkit==8.5.0",
       "requires_sudo": false,
       "requires_group": "HwHiAiUser"
     },
     {
       "id": "install-cann-910b-ops-8-5",
       "description": "Install CANN 910B ops 8.5.0 from Ascend conda channel",
-      "run": "conda install -y ascend::cann-910b-ops==8.5.0",
+      "run": "conda install -y ascend-cann-910b-ops==8.5.0",
       "requires_sudo": false,
       "requires_group": "HwHiAiUser"
     },
     {
       "id": "install-cann-nnal-8-5",
       "description": "Install CANN NNAL/ATB 8.5.0 from Ascend conda channel",
-      "run": "ASCEND_HOME_PATH=${CONDA_PREFIX}/Ascend/cann ASCEND_TOOLKIT_HOME=${CONDA_PREFIX}/Ascend/cann ASCEND_NNAE_HOME=${CONDA_PREFIX}/Ascend/cann/nnal conda install -y ascend::cann-nnal==8.5.0",
+      "run": "ASCEND_HOME_PATH=${CONDA_PREFIX}/Ascend/cann ASCEND_TOOLKIT_HOME=${CONDA_PREFIX}/Ascend/cann ASCEND_NNAE_HOME=${CONDA_PREFIX}/Ascend/cann/nnal conda install -y ascend-cann-nnal==8.5.0",
       "requires_sudo": false,
       "requires_group": "HwHiAiUser"
     }

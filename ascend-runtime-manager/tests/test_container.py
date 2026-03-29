@@ -151,6 +151,8 @@ def test_build_container_ssh_setup_command_contains_expected_settings():
     assert "Port $SSH_PORT" in command
     assert "AllowUsers $SSH_USER" in command
     assert "/workspace/.ssh/authorized_keys" in command
+    assert "ln -sfn \"$WORKSPACE_ENTRY\" \"$ENTRY_LINK\"" in command
+    assert "find \"$CONTAINER_WORKSPACE_ROOT\" -mindepth 1 -maxdepth 1" in command
 
 
 def test_discover_device_args_includes_special_devices(tmp_path: Path):

@@ -7,17 +7,47 @@ ROOT_DIR="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 TARGET_BASE_DIR="$(cd -- "$ROOT_DIR/.." && pwd)"
 CLONE_JOBS="${CLONE_JOBS:-4}"
 AUTO_YES=0
+TEMP_GIT_SSH_CONFIG=""
 
-configure_git_ssh_defaults() {
-  if [[ -n "${GIT_SSH_COMMAND:-}" ]]; then
-    return 0
+cleanup_temp_git_ssh_config() {
+  if [[ -n "$TEMP_GIT_SSH_CONFIG" && -f "$TEMP_GIT_SSH_CONFIG" ]]; then
+    rm -f "$TEMP_GIT_SSH_CONFIG"
+  fi
+}
+
+build_git_ssh_command() {
+  local ssh_binary
+  local workspace_ssh_dir="/workspace/.ssh"
+  local known_hosts_file="$HOME/.ssh/known_hosts"
+  local identity_file=""
+  local -a ssh_command
+
+  ssh_binary="$(command -v ssh)"
+  ssh_command=(
+    env -u LD_LIBRARY_PATH "$ssh_binary"
+    -o StrictHostKeyChecking=accept-new
+    -o "UserKnownHostsFile=$known_hosts_file"
+  )
+
+  identity_file="$(find "$workspace_ssh_dir" -maxdepth 1 -type f -name 'id_*' ! -name '*.pub' | sort | head -n 1 || true)"
+  if [[ -n "$identity_file" ]]; then
+    ssh_command+=( -i "$identity_file" -o IdentitiesOnly=yes )
+  elif [[ -f "$workspace_ssh_dir/config" ]]; then
+    TEMP_GIT_SSH_CONFIG="$(mktemp)"
+    sed -E "s#(/home/[^/]+/\.ssh/)#$workspace_ssh_dir/#g" "$workspace_ssh_dir/config" > "$TEMP_GIT_SSH_CONFIG"
+    chmod 600 "$TEMP_GIT_SSH_CONFIG"
+    ssh_command+=( -F "$TEMP_GIT_SSH_CONFIG" )
   fi
 
+  printf '%q ' "${ssh_command[@]}"
+}
+
+configure_git_ssh_defaults() {
   mkdir -p "$HOME/.ssh"
   chmod 700 "$HOME/.ssh"
   touch "$HOME/.ssh/known_hosts"
   chmod 600 "$HOME/.ssh/known_hosts"
-  export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+  export GIT_SSH_COMMAND="$(build_git_ssh_command)"
 }
 
 if ! command -v git >/dev/null 2>&1; then
@@ -86,6 +116,22 @@ clone_destination() {
   printf '%s\n' "$TARGET_BASE_DIR/$1"
 }
 
+github_repo_path_from_url() {
+  local repo_url="$1"
+
+  if [[ "$repo_url" =~ ^git@github\.com:(.+)$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]%.git}"
+    return 0
+  fi
+
+  if [[ "$repo_url" =~ ^https://github\.com/(.+)$ ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]%.git}"
+    return 0
+  fi
+
+  return 1
+}
+
 https_url_from_ssh_url() {
   local repo_url="$1"
 
@@ -95,6 +141,28 @@ https_url_from_ssh_url() {
   fi
 
   return 1
+}
+
+maybe_sync_origin_remote_to_ssh() {
+  local destination="$1"
+  local desired_repo_url="$2"
+  local current_repo_url
+  local current_repo_path
+  local desired_repo_path
+
+  current_repo_url="$(git -C "$destination" remote get-url origin 2>/dev/null || true)"
+  if [[ -z "$current_repo_url" || "$current_repo_url" == "$desired_repo_url" ]]; then
+    return 0
+  fi
+
+  current_repo_path="$(github_repo_path_from_url "$current_repo_url" 2>/dev/null || true)"
+  desired_repo_path="$(github_repo_path_from_url "$desired_repo_url" 2>/dev/null || true)"
+  if [[ -z "$current_repo_path" || -z "$desired_repo_path" || "$current_repo_path" != "$desired_repo_path" ]]; then
+    return 0
+  fi
+
+  git -C "$destination" remote set-url origin "$desired_repo_url"
+  echo "[remote] $(basename -- "$destination") origin -> $desired_repo_url"
 }
 
 queue_clone() {
@@ -120,6 +188,7 @@ queue_clone() {
 
 maybe_pull_updates() {
   local relative_path="$1"
+  local repo_url="$2"
   local destination
   local branch_name
   local upstream_ref
@@ -133,6 +202,8 @@ maybe_pull_updates() {
     echo "[skip] $relative_path already exists and is not a git repository"
     return 0
   fi
+
+  maybe_sync_origin_remote_to_ssh "$destination" "$repo_url"
 
   branch_name="$(git -C "$destination" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
   if [[ -z "$branch_name" || "$branch_name" == "HEAD" ]]; then
@@ -180,6 +251,7 @@ REPOS=(
 )
 
 parse_args "$@"
+trap cleanup_temp_git_ssh_config EXIT
 configure_git_ssh_defaults
 
 running_jobs=0
@@ -192,7 +264,7 @@ for entry in "${REPOS[@]}"; do
   destination="$(clone_destination "$relative_path")"
 
   if [[ -e "$destination" ]]; then
-    maybe_pull_updates "$relative_path"
+    maybe_pull_updates "$relative_path" "$repo_url"
     continue
   fi
 

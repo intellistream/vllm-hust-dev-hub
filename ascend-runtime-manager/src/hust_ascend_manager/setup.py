@@ -4,6 +4,8 @@ import os
 import shlex
 import subprocess
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +14,11 @@ from .doctor import collect_report
 
 GROUP_MEMBERSHIP_REQUIRED_EXIT_CODE = 32
 SUDO_INTERACTION_REQUIRED_EXIT_CODE = 33
+DEFAULT_PIP_INDEX_MIRROR_URL = "https://pypi.tuna.tsinghua.edu.cn/simple"
+DEFAULT_PIP_RETRIES = 8
+DEFAULT_PIP_TIMEOUT_SECONDS = 120
+DEFAULT_PIP_RESUME_RETRIES = 8
+DEFAULT_PIP_MIRROR_PROBE_TIMEOUT_SECONDS = 3
 
 
 def _user_in_group(group_name: str) -> bool:
@@ -72,11 +79,109 @@ def _run_shell(
     return proc.returncode
 
 
+def _read_positive_int_env(name: str, default: int) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+
+    try:
+        parsed_value = int(raw_value)
+    except ValueError:
+        return default
+
+    if parsed_value <= 0:
+        return default
+    return parsed_value
+
+
+def _url_is_reachable(url: str, timeout_seconds: int) -> bool:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout_seconds):
+            return True
+    except (urllib.error.URLError, ValueError):
+        return False
+
+
+def _select_pip_index_url() -> str | None:
+    explicit_index_url = os.getenv("PIP_INDEX_URL") or os.getenv("HUST_ASCEND_MANAGER_PIP_INDEX_URL")
+    if explicit_index_url:
+        return explicit_index_url
+
+    if os.getenv("HUST_ASCEND_MANAGER_DISABLE_PYPI_MIRROR_AUTOSET") == "1":
+        return None
+
+    mirror_url = os.getenv("HUST_ASCEND_MANAGER_PIP_MIRROR_URL", DEFAULT_PIP_INDEX_MIRROR_URL)
+    probe_timeout = _read_positive_int_env(
+        "HUST_ASCEND_MANAGER_PIP_MIRROR_TIMEOUT",
+        DEFAULT_PIP_MIRROR_PROBE_TIMEOUT_SECONDS,
+    )
+    if _url_is_reachable(mirror_url, timeout_seconds=probe_timeout):
+        return mirror_url
+    return None
+
+
+def _pip_supports_option(option: str) -> bool:
+    proc = subprocess.run(
+        ["python", "-m", "pip", "install", "--help"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    if proc.returncode != 0:
+        return False
+    return option in proc.stdout
+
+
+def _build_pip_install_cmd(specs: list[str]) -> list[str]:
+    cmd = [
+        "python",
+        "-m",
+        "pip",
+        "install",
+        "--upgrade",
+        "--retries",
+        str(_read_positive_int_env("HUST_ASCEND_MANAGER_PIP_RETRIES", DEFAULT_PIP_RETRIES)),
+        "--timeout",
+        str(_read_positive_int_env("HUST_ASCEND_MANAGER_PIP_TIMEOUT", DEFAULT_PIP_TIMEOUT_SECONDS)),
+    ]
+    if _pip_supports_option("--resume-retries"):
+        cmd.extend(
+            [
+                "--resume-retries",
+                str(
+                    _read_positive_int_env(
+                        "HUST_ASCEND_MANAGER_PIP_RESUME_RETRIES",
+                        DEFAULT_PIP_RESUME_RETRIES,
+                    )
+                ),
+            ]
+        )
+    cmd.extend(specs)
+    return cmd
+
+
+def _build_pip_install_env() -> dict[str, str]:
+    cmd_env = os.environ.copy()
+    cmd_env.setdefault("PIP_DISABLE_PIP_VERSION_CHECK", "1")
+
+    index_url = _select_pip_index_url()
+    if index_url and not cmd_env.get("PIP_INDEX_URL"):
+        cmd_env["PIP_INDEX_URL"] = index_url
+        print(f"[setup] using pip index: {index_url}")
+
+    extra_index_url = os.getenv("HUST_ASCEND_MANAGER_PIP_EXTRA_INDEX_URL")
+    if extra_index_url and not cmd_env.get("PIP_EXTRA_INDEX_URL"):
+        cmd_env["PIP_EXTRA_INDEX_URL"] = extra_index_url
+        print(f"[setup] using pip extra index: {extra_index_url}")
+
+    return cmd_env
+
+
 def _pip_install(specs: list[str]) -> int:
     if not specs:
         return 0
-    cmd = ["python", "-m", "pip", "install", "--upgrade", *specs]
-    return subprocess.run(cmd).returncode
+    cmd = _build_pip_install_cmd(specs)
+    return subprocess.run(cmd, env=_build_pip_install_env()).returncode
 
 
 def _ensure_conda_env_metadata() -> None:

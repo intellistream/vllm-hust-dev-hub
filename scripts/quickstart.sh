@@ -26,9 +26,18 @@ CONDA_R_CHANNEL="https://repo.anaconda.com/pkgs/r"
 CONDA_ASCEND_CHANNEL="https://repo.huaweicloud.com/ascend/repos/conda/"
 CONDA_FORGE_MIRROR_CHANNEL="https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/"
 CONDA_FORGE_FALLBACK_CHANNEL="conda-forge"
+PIP_INDEX_MIRROR_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
+QUICKSTART_SETUPTOOLS_VERSION="77.0.3"
 TOS_MARKER_ROOT="$HOME/.config/vllm-hust-dev-hub"
 CONDA_RUN_STREAM_FLAG=""
 CONTAINER_EXTRA_AUTH_KEYS_FILE="$WORKSPACE_ROOT/.ssh/vllm-ascend-extra-authorized_keys"
+PIP_DEFAULTS_INITIALIZED=0
+PIP_SELECTED_INDEX_URL=""
+PIP_SELECTED_EXTRA_INDEX_URL=""
+PIP_INSTALL_RETRIES=""
+PIP_INSTALL_TIMEOUT=""
+PIP_INSTALL_RESUME_RETRIES=""
+PIP_SUPPORTS_RESUME_RETRIES="unknown"
 
 print_help() {
   cat <<'EOF'
@@ -193,6 +202,141 @@ run_with_heartbeat() {
   kill "$heartbeat_pid" >/dev/null 2>&1 || true
   wait "$heartbeat_pid" >/dev/null 2>&1 || true
   return "$exit_code"
+}
+
+get_first_nonempty_env() {
+  local variable_name
+  local value
+
+  for variable_name in "$@"; do
+    value="${!variable_name:-}"
+    if [[ -n "$value" ]]; then
+      printf '%s\n' "$value"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+read_positive_int_env_with_fallback() {
+  local default_value="$1"
+  shift
+  local variable_name
+  local raw_value
+
+  for variable_name in "$@"; do
+    raw_value="${!variable_name:-}"
+    if [[ "$raw_value" =~ ^[1-9][0-9]*$ ]]; then
+      printf '%s\n' "$raw_value"
+      return 0
+    fi
+  done
+
+  printf '%s\n' "$default_value"
+}
+
+select_pip_index_url() {
+  local explicit_index_url
+  local disable_auto_mirror
+  local mirror_url
+  local probe_timeout
+
+  explicit_index_url="$(get_first_nonempty_env PIP_INDEX_URL HUST_DEV_HUB_PIP_INDEX_URL HUST_ASCEND_MANAGER_PIP_INDEX_URL || true)"
+  if [[ -n "$explicit_index_url" ]]; then
+    printf '%s\n' "$explicit_index_url"
+    return 0
+  fi
+
+  disable_auto_mirror="$(get_first_nonempty_env HUST_DEV_HUB_DISABLE_PYPI_MIRROR_AUTOSET HUST_ASCEND_MANAGER_DISABLE_PYPI_MIRROR_AUTOSET || true)"
+  if [[ "$disable_auto_mirror" == "1" ]]; then
+    return 0
+  fi
+
+  mirror_url="$(get_first_nonempty_env HUST_DEV_HUB_PIP_MIRROR_URL HUST_ASCEND_MANAGER_PIP_MIRROR_URL || true)"
+  mirror_url="${mirror_url:-$PIP_INDEX_MIRROR_URL}"
+  probe_timeout="$(read_positive_int_env_with_fallback 3 HUST_DEV_HUB_PIP_MIRROR_TIMEOUT HUST_ASCEND_MANAGER_PIP_MIRROR_TIMEOUT)"
+
+  if command -v curl >/dev/null 2>&1 \
+    && curl -fsSIL --connect-timeout "$probe_timeout" --max-time "$((probe_timeout + 2))" "${mirror_url%/}/" >/dev/null 2>&1; then
+    printf '%s\n' "$mirror_url"
+  fi
+}
+
+ensure_pip_install_defaults() {
+  if (( PIP_DEFAULTS_INITIALIZED == 1 )); then
+    return 0
+  fi
+
+  PIP_SELECTED_INDEX_URL="$(select_pip_index_url || true)"
+  PIP_SELECTED_EXTRA_INDEX_URL="$(get_first_nonempty_env PIP_EXTRA_INDEX_URL HUST_DEV_HUB_PIP_EXTRA_INDEX_URL HUST_ASCEND_MANAGER_PIP_EXTRA_INDEX_URL || true)"
+  PIP_INSTALL_RETRIES="$(read_positive_int_env_with_fallback 8 HUST_DEV_HUB_PIP_RETRIES HUST_ASCEND_MANAGER_PIP_RETRIES)"
+  PIP_INSTALL_TIMEOUT="$(read_positive_int_env_with_fallback 120 HUST_DEV_HUB_PIP_TIMEOUT HUST_ASCEND_MANAGER_PIP_TIMEOUT)"
+  PIP_INSTALL_RESUME_RETRIES="$(read_positive_int_env_with_fallback 8 HUST_DEV_HUB_PIP_RESUME_RETRIES HUST_ASCEND_MANAGER_PIP_RESUME_RETRIES)"
+
+  if [[ -n "$PIP_SELECTED_INDEX_URL" ]]; then
+    log "Using pip index for quickstart installs: $PIP_SELECTED_INDEX_URL"
+  fi
+  if [[ -n "$PIP_SELECTED_EXTRA_INDEX_URL" ]]; then
+    log "Using pip extra index for quickstart installs: $PIP_SELECTED_EXTRA_INDEX_URL"
+  fi
+
+  PIP_DEFAULTS_INITIALIZED=1
+}
+
+pip_install_supports_option() {
+  local env_name="$1"
+  local option="$2"
+
+  run_conda_env_cmd "$env_name" python -m pip install --help 2>/dev/null | grep -q -- "$option"
+}
+
+run_pip_install_in_env() {
+  local env_name="$1"
+  shift
+  local extra_env_args=()
+  local pip_args=()
+  local pip_install_args=()
+  local command_args=()
+
+  while [[ $# -gt 0 ]]; do
+    if [[ "$1" == "--" ]]; then
+      shift
+      break
+    fi
+    extra_env_args+=("$1")
+    shift
+  done
+  pip_args=("$@")
+
+  ensure_pip_install_defaults
+  pip_install_args=(
+    --retries "$PIP_INSTALL_RETRIES"
+    --timeout "$PIP_INSTALL_TIMEOUT"
+  )
+
+  if [[ "$PIP_SUPPORTS_RESUME_RETRIES" == "unknown" ]]; then
+    if pip_install_supports_option "$env_name" "--resume-retries"; then
+      PIP_SUPPORTS_RESUME_RETRIES="1"
+    else
+      PIP_SUPPORTS_RESUME_RETRIES="0"
+    fi
+  fi
+
+  if [[ "$PIP_SUPPORTS_RESUME_RETRIES" == "1" ]]; then
+    pip_install_args+=(--resume-retries "$PIP_INSTALL_RESUME_RETRIES")
+  fi
+
+  command_args=(env PIP_DISABLE_PIP_VERSION_CHECK=1)
+  if [[ -n "$PIP_SELECTED_INDEX_URL" && -z "${PIP_INDEX_URL:-}" ]]; then
+    command_args+=("PIP_INDEX_URL=$PIP_SELECTED_INDEX_URL")
+  fi
+  if [[ -n "$PIP_SELECTED_EXTRA_INDEX_URL" && -z "${PIP_EXTRA_INDEX_URL:-}" ]]; then
+    command_args+=("PIP_EXTRA_INDEX_URL=$PIP_SELECTED_EXTRA_INDEX_URL")
+  fi
+  command_args+=("${extra_env_args[@]}" python -m pip install "${pip_install_args[@]}" "${pip_args[@]}")
+
+  run_conda_env_cmd "$env_name" "${command_args[@]}"
 }
 
 find_conda_bin() {
@@ -378,10 +522,10 @@ create_or_update_conda_env() {
   log "Installing baseline tools into '$ENV_NAME'..."
   run_with_heartbeat \
     "installing baseline Python tooling into $ENV_NAME" \
-    run_conda_env_cmd "$ENV_NAME" python -m pip install --upgrade pip setuptools wheel
+    run_pip_install_in_env "$ENV_NAME" -- --upgrade pip "setuptools==$QUICKSTART_SETUPTOOLS_VERSION" wheel
   run_with_heartbeat \
     "installing pytest and pre-commit into $ENV_NAME" \
-    run_conda_env_cmd "$ENV_NAME" python -m pip install pytest pre-commit
+    run_pip_install_in_env "$ENV_NAME" -- pytest pre-commit
 
   install_workspace_repos_into_env "refresh" "$INSTALL_SCOPE" "with-runtime-reconcile"
   report_vllm_cli_status "$ENV_NAME" || true
@@ -521,13 +665,19 @@ ensure_pip_package_in_env() {
   log "Installing missing build dependency '$package_spec' into '$env_name'"
   run_with_heartbeat \
     "installing $package_spec into $env_name" \
-    run_conda_env_cmd "$env_name" python -m pip install "$package_spec"
+    run_pip_install_in_env "$env_name" -- "$package_spec"
 }
 
 repo_requires_ascend_runtime() {
   local repo_path="$1"
 
   [[ "$repo_path" == "$WORKSPACE_ROOT/vllm-ascend-hust" ]]
+}
+
+repo_prefers_no_build_isolation() {
+  local repo_path="$1"
+
+  [[ "$repo_path" == "$MANAGER_REPO" || "$repo_path" == "$WORKSPACE_ROOT/vllm-hust-benchmark" ]]
 }
 
 install_editable_repo_into_env() {
@@ -565,14 +715,18 @@ install_editable_repo_into_env() {
     log "Using lightweight Ascend plugin mode: COMPILE_CUSTOM_KERNELS=$compile_custom_kernels, --no-deps"
     run_with_heartbeat \
       "installing editable package from $repo_path" \
-      run_conda_env_cmd "$ENV_NAME" env COMPILE_CUSTOM_KERNELS="$compile_custom_kernels" TORCH_DEVICE_BACKEND_AUTOLOAD=0 python -m pip install "${pip_args[@]}"
+      run_pip_install_in_env "$ENV_NAME" "COMPILE_CUSTOM_KERNELS=$compile_custom_kernels" "TORCH_DEVICE_BACKEND_AUTOLOAD=0" -- "${pip_args[@]}"
     return 0
+  fi
+
+  if repo_prefers_no_build_isolation "$repo_path"; then
+    pip_args=(--no-build-isolation "${pip_args[@]}")
   fi
 
   log "Installing editable package from: $repo_path"
   run_with_heartbeat \
     "installing editable package from $repo_path" \
-    run_conda_env_cmd "$ENV_NAME" python -m pip install "${pip_args[@]}"
+    run_pip_install_in_env "$ENV_NAME" -- "${pip_args[@]}"
 }
 
 should_reconcile_ascend_runtime() {
@@ -595,6 +749,18 @@ should_reconcile_ascend_runtime() {
   return 1
 }
 
+should_apply_ascend_system_steps_in_quickstart() {
+  if [[ "${HUST_DEV_HUB_SKIP_ASCEND_SYSTEM_APPLY:-0}" == "1" ]]; then
+    return 1
+  fi
+
+  if [[ "${HUST_DEV_HUB_APPLY_ASCEND_SYSTEM_STEPS:-0}" == "1" ]]; then
+    return 0
+  fi
+
+  return 1
+}
+
 reconcile_ascend_runtime_with_manager() {
   if ! should_reconcile_ascend_runtime; then
     log "Skipping Ascend Python stack reconciliation because no Ascend runtime was detected on this host."
@@ -606,7 +772,7 @@ reconcile_ascend_runtime_with_manager() {
       log "Installing ascend-runtime-manager before Ascend runtime reconciliation"
       run_with_heartbeat \
         "installing editable package from $MANAGER_REPO" \
-        run_conda_env_cmd "$ENV_NAME" python -m pip install -v -e "$MANAGER_REPO"
+        run_pip_install_in_env "$ENV_NAME" -- --no-build-isolation -v -e "$MANAGER_REPO"
     else
       log "Warning: hust-ascend-manager is not installed and local repo is unavailable; skipping Ascend runtime reconciliation"
       return 0
@@ -614,8 +780,11 @@ reconcile_ascend_runtime_with_manager() {
   fi
 
   local manager_args=(setup --install-python-stack)
-  if [[ "${HUST_DEV_HUB_SKIP_ASCEND_SYSTEM_APPLY:-0}" != "1" ]]; then
+  if should_apply_ascend_system_steps_in_quickstart; then
     manager_args+=(--apply-system)
+    log "Opt-in enabled: quickstart will also apply system-level Ascend setup steps"
+  else
+    log "Quickstart keeps Ascend reconciliation in user space only; set HUST_DEV_HUB_APPLY_ASCEND_SYSTEM_STEPS=1 to opt into system-level steps"
   fi
   if [[ -f "$MANAGER_MANIFEST_DEFAULT" ]]; then
     manager_args+=(--manifest "$MANAGER_MANIFEST_DEFAULT")
@@ -769,6 +938,22 @@ configure_conda_env_library_hooks() {
   mkdir -p "$activate_dir" "$deactivate_dir"
 
   cat > "$activate_script" <<'EOF'
+_hust_dev_hub_save_var() {
+  local var_name="$1"
+  local saved_name="HUST_DEV_HUB_SAVED_${var_name}"
+
+  if [[ -n "${!saved_name+x}" ]]; then
+    return 0
+  fi
+
+  if [[ -n "${!var_name+x}" ]]; then
+    printf -v "$saved_name" '%s' "${!var_name}"
+  else
+    printf -v "$saved_name" '%s' "__UNSET__"
+  fi
+  export "$saved_name"
+}
+
 if [[ -n "${CONDA_PREFIX:-}" && -d "${CONDA_PREFIX}/lib" ]]; then
   if [[ -z "${HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH+x}" ]]; then
     if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
@@ -782,6 +967,26 @@ if [[ -n "${CONDA_PREFIX:-}" && -d "${CONDA_PREFIX}/lib" ]]; then
     *":${CONDA_PREFIX}/lib:"*) ;;
     *) export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;
   esac
+fi
+
+for _hust_dev_hub_var in \
+  ASCEND_HOME_PATH \
+  ASCEND_OPP_PATH \
+  ASCEND_AICPU_PATH \
+  TORCH_DEVICE_BACKEND_AUTOLOAD \
+  HUST_ASCEND_RUNTIME_VERSION \
+  HUST_ASCEND_HAS_STREAM_ATTR \
+  HUST_ASCEND_OPP_OVERLAY_ROOT \
+  HUST_ATB_SET_ENV; do
+  _hust_dev_hub_save_var "$_hust_dev_hub_var"
+done
+
+if command -v hust-ascend-manager >/dev/null 2>&1; then
+  _hust_dev_hub_manager_env="$(hust-ascend-manager env --shell 2>/dev/null || true)"
+  if [[ -n "$_hust_dev_hub_manager_env" ]]; then
+    eval "$_hust_dev_hub_manager_env"
+  fi
+  unset _hust_dev_hub_manager_env
 fi
 
 if [[ -z "${HUST_DEV_HUB_SAVED_GIT_SSH_COMMAND+x}" ]]; then
@@ -820,6 +1025,8 @@ if [[ -n "$_ascend_pyacl_path" ]]; then
   esac
 fi
 unset _ascend_pyacl_path _candidate
+unset _hust_dev_hub_var
+unset -f _hust_dev_hub_save_var
 
 if [[ -z "${HUST_DEV_HUB_SAVED_HF_ENDPOINT+x}" ]]; then
   if [[ -n "${HF_ENDPOINT:-}" ]]; then
@@ -875,6 +1082,28 @@ if [[ -n "${HUST_DEV_HUB_SAVED_HF_ENDPOINT+x}" ]]; then
   fi
   unset HUST_DEV_HUB_SAVED_HF_ENDPOINT
 fi
+
+for _hust_dev_hub_var in \
+  ASCEND_HOME_PATH \
+  ASCEND_OPP_PATH \
+  ASCEND_AICPU_PATH \
+  TORCH_DEVICE_BACKEND_AUTOLOAD \
+  HUST_ASCEND_RUNTIME_VERSION \
+  HUST_ASCEND_HAS_STREAM_ATTR \
+  HUST_ASCEND_OPP_OVERLAY_ROOT \
+  HUST_ATB_SET_ENV; do
+  _hust_dev_hub_saved_name="HUST_DEV_HUB_SAVED_${_hust_dev_hub_var}"
+  if [[ -n "${!_hust_dev_hub_saved_name+x}" ]]; then
+    if [[ "${!_hust_dev_hub_saved_name}" == "__UNSET__" ]]; then
+      unset "$_hust_dev_hub_var"
+    else
+      printf -v "$_hust_dev_hub_var" '%s' "${!_hust_dev_hub_saved_name}"
+      export "$_hust_dev_hub_var"
+    fi
+    unset "$_hust_dev_hub_saved_name"
+  fi
+done
+unset _hust_dev_hub_var _hust_dev_hub_saved_name
 EOF
 
   chmod 0644 "$activate_script" "$deactivate_script"
