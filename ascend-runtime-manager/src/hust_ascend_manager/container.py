@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -10,7 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-DEFAULT_IMAGE = "quay.io/ascend/vllm-ascend:v0.13.0-a3"
+DEFAULT_IMAGE_REPOSITORY = "quay.io/ascend/vllm-ascend"
+DEFAULT_IMAGE_TAG = "v0.9.1-dev"
+DEFAULT_IMAGE_PROFILE = "910b"
+DEFAULT_IMAGE_OS_FLAVOR = "ubuntu"
+DEFAULT_IMAGE = f"{DEFAULT_IMAGE_REPOSITORY}:{DEFAULT_IMAGE_TAG}"
 DEFAULT_CONTAINER_NAME = "vllm-ascend-dev"
 DEFAULT_CONTAINER_WORKSPACE_ROOT = "/workspace"
 DEFAULT_SHM_SIZE = "16g"
@@ -20,6 +25,22 @@ DEFAULT_CONTAINER_SSH_USER = "shuhao"
 STATUS_TABLE_FORMAT = "table {{.Names}}\t{{.Status}}\t{{.Image}}"
 IDLE_COMMAND = "trap : TERM INT; sleep infinity & wait"
 MIN_DOCKER_PULL_FREE_SPACE_BYTES = 8 * 1024 * 1024 * 1024
+
+_OFFICIAL_IMAGE_SUFFIXES = {
+    ("910b", "ubuntu"): "",
+    ("910b", "openeuler"): "-openeuler",
+    ("a3", "ubuntu"): "-a3",
+    ("a3", "openeuler"): "-a3-openeuler",
+}
+_PROFILE_PROMPT_OPTIONS = [
+    ("1", "910b", "Atlas A2 / Ascend 910B"),
+    ("2", "a3", "Atlas A3 / Ascend 910C"),
+    ("3", "custom", "Custom image"),
+]
+_OS_PROMPT_OPTIONS = [
+    ("1", "ubuntu", "Ubuntu / default official image"),
+    ("2", "openeuler", "openEuler official image"),
+]
 
 
 @dataclass(slots=True)
@@ -52,6 +73,161 @@ def _log(message: str) -> None:
 def _fail(message: str) -> int:
     print(f"[container] {message}", file=sys.stderr)
     return 1
+
+
+def _default_image_tag() -> str:
+    value = os.getenv("HUST_ASCEND_MANAGER_DEFAULT_IMAGE_TAG", DEFAULT_IMAGE_TAG).strip()
+    return value or DEFAULT_IMAGE_TAG
+
+
+def build_official_image(profile: str, os_flavor: str, image_tag: str | None = None) -> str | None:
+    suffix = _OFFICIAL_IMAGE_SUFFIXES.get((profile, os_flavor))
+    if suffix is None:
+        return None
+    tag = image_tag or _default_image_tag()
+    return f"{DEFAULT_IMAGE_REPOSITORY}:{tag}{suffix}"
+
+
+def detect_host_os_flavor() -> str | None:
+    os_release = Path("/etc/os-release")
+    if not os_release.exists():
+        return None
+
+    values: list[str] = []
+    for line in os_release.read_text(encoding="utf-8", errors="ignore").splitlines():
+        if "=" not in line:
+            continue
+        _, raw_value = line.split("=", 1)
+        values.append(raw_value.strip().strip('"').lower())
+
+    if any("openeuler" in value for value in values):
+        return "openeuler"
+    return "ubuntu"
+
+
+def detect_host_ascend_profile() -> str | None:
+    npu_smi = shutil.which("npu-smi")
+    if not npu_smi:
+        return None
+
+    proc = subprocess.run(
+        [npu_smi, "info"],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        return None
+
+    output = proc.stdout.lower()
+    if not output.strip():
+        return None
+
+    if "atlas a3" in output or "910c" in output or re.search(r"\ba3\b", output):
+        return "a3"
+    if "atlas a2" in output or "910b" in output or re.search(r"\ba2\b", output):
+        return "910b"
+    return None
+
+
+def _has_interactive_tty() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _prompt_choice(prompt: str, options: list[tuple[str, str, str]], default_value: str) -> str:
+    _log(prompt)
+    for key, value, label in options:
+        default_marker = " (default)" if value == default_value else ""
+        print(f"[container]   {key}) {label}{default_marker}")
+
+    normalized_map: dict[str, str] = {}
+    for key, value, _ in options:
+        normalized_map[key.lower()] = value
+        normalized_map[value.lower()] = value
+
+    while True:
+        try:
+            reply = input("[container] Enter choice: ").strip().lower()
+        except EOFError:
+            return default_value
+
+        if not reply:
+            return default_value
+
+        selected = normalized_map.get(reply)
+        if selected is not None:
+            return selected
+
+        _log("invalid choice, please retry")
+
+
+def _prompt_custom_image(default_image: str | None = None) -> str:
+    hint = f" [{default_image}]" if default_image else ""
+    while True:
+        try:
+            reply = input(f"[container] Enter the full container image{hint}: ").strip()
+        except EOFError:
+            reply = ""
+
+        if reply:
+            return reply
+        if default_image:
+            return default_image
+        _log("a custom image is required for this selection")
+
+
+def prompt_for_container_image(
+    detected_profile: str | None,
+    detected_os_flavor: str | None,
+) -> str:
+    default_profile = detected_profile if detected_profile in {"910b", "a3"} else "910b"
+    default_os_flavor = detected_os_flavor if detected_os_flavor in {"ubuntu", "openeuler"} else DEFAULT_IMAGE_OS_FLAVOR
+
+    profile = _prompt_choice(
+        "No container image override was provided. Select the Ascend device profile for the official image:",
+        _PROFILE_PROMPT_OPTIONS,
+        default_profile,
+    )
+    if profile == "custom":
+        return _prompt_custom_image()
+
+    os_flavor = _prompt_choice(
+        "Select the official image OS flavor:",
+        _OS_PROMPT_OPTIONS,
+        default_os_flavor,
+    )
+    image = build_official_image(profile, os_flavor)
+    if image is None:
+        return _prompt_custom_image(DEFAULT_IMAGE)
+
+    _log(f"selected official image {image}")
+    return image
+
+
+def resolve_container_image(image: str | None, *, non_interactive: bool = False) -> str:
+    if image and image.strip():
+        return image.strip()
+
+    detected_profile = detect_host_ascend_profile()
+    detected_os_flavor = detect_host_os_flavor()
+
+    if not non_interactive and _has_interactive_tty():
+        return prompt_for_container_image(detected_profile, detected_os_flavor)
+
+    resolved = build_official_image(
+        detected_profile or DEFAULT_IMAGE_PROFILE,
+        detected_os_flavor or DEFAULT_IMAGE_OS_FLAVOR,
+    )
+    if resolved is None:
+        _log(
+            "could not determine a supported official Ascend image automatically; "
+            f"falling back to {DEFAULT_IMAGE}"
+        )
+        return DEFAULT_IMAGE
+
+    reason_profile = detected_profile or DEFAULT_IMAGE_PROFILE
+    reason_os = detected_os_flavor or DEFAULT_IMAGE_OS_FLAVOR
+    _log(f"using official image {resolved} (profile={reason_profile}, os={reason_os})")
+    return resolved
 
 
 def _format_bytes(num_bytes: int) -> str:

@@ -124,7 +124,7 @@ Non-interactive examples:
 bash scripts/quickstart.sh --all -y
 
 # only conda setup with custom env name and python version
-bash scripts/quickstart.sh --conda --env-name vllm-hust-dev --python 3.10 -y
+bash scripts/quickstart.sh --conda --env-name vllm-hust-dev --python 3.11 -y
 
 # only install missing local repositories into an existing conda env
 bash scripts/quickstart.sh --install --env-name vllm-hust-dev -y
@@ -160,6 +160,7 @@ bash scripts/ssh-into-ascend-container.sh
 For direct host-to-container development on the official Huawei image, use `scripts/ascend-official-container.sh`.
 
 - It uses `docker` directly when available, otherwise falls back to `sudo -n docker`.
+- If `IMAGE` is unset, it now asks for the Ascend device profile and chooses a matching official `quay.io/ascend/vllm-ascend:v0.9.1-dev` variant.
 - It mounts the whole workspace parent directory into `/workspace`, so sibling repos like `/home/<your name>/vllm-hust` become available inside the container at `/workspace/vllm-hust`.
 - It also mounts resolved external symlink targets under the workspace root, so sibling repos symlinked into `/data/...` remain valid inside the container.
 - It reuses a persistent container named `vllm-ascend-dev` by default, so repeated `shell` and `exec` calls do not need to rebuild the mount/device list.

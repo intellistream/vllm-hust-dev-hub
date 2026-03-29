@@ -7,7 +7,7 @@ HUB_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 WORKSPACE_ROOT="$(cd -- "$HUB_ROOT/.." && pwd)"
 MANAGER_SRC="$HUB_ROOT/ascend-runtime-manager/src"
 
-IMAGE="${IMAGE:-quay.io/ascend/vllm-ascend:v0.13.0-a3}"
+IMAGE="${IMAGE:-}"
 CONTAINER_NAME="${CONTAINER_NAME:-vllm-ascend-dev}"
 HOST_WORKSPACE_ROOT="${HOST_WORKSPACE_ROOT:-$WORKSPACE_ROOT}"
 CONTAINER_WORKSPACE_ROOT="${CONTAINER_WORKSPACE_ROOT:-/workspace}"
@@ -332,6 +332,7 @@ main() {
   local suggested_private_key=""
   local python_bin
   local -a extra_container_args=()
+  local -a manager_cmd
 
   python_bin="$(find_python)"
 
@@ -357,19 +358,30 @@ main() {
     fi
   fi
 
-  PYTHONPATH="$MANAGER_SRC${PYTHONPATH:+:$PYTHONPATH}" \
-    "$python_bin" -m hust_ascend_manager.cli \
-    container \
-    "$effective_action" \
-    --image "$IMAGE" \
-    --container-name "$CONTAINER_NAME" \
-    --host-workspace-root "$HOST_WORKSPACE_ROOT" \
-    --container-workspace-root "$CONTAINER_WORKSPACE_ROOT" \
-    --container-workdir "$CONTAINER_WORKDIR" \
-    --host-cache-dir "$HOST_CACHE_DIR" \
-    --shm-size "$SHM_SIZE" \
-    "${extra_container_args[@]}" \
-    "${@:2}"
+  manager_cmd=(
+    "$python_bin" -m hust_ascend_manager.cli
+    container
+    "$effective_action"
+    --container-name "$CONTAINER_NAME"
+    --host-workspace-root "$HOST_WORKSPACE_ROOT"
+    --container-workspace-root "$CONTAINER_WORKSPACE_ROOT"
+    --container-workdir "$CONTAINER_WORKDIR"
+    --host-cache-dir "$HOST_CACHE_DIR"
+    --shm-size "$SHM_SIZE"
+  )
+
+  if [[ -n "$IMAGE" ]]; then
+    manager_cmd+=(--image "$IMAGE")
+  fi
+
+  if [[ "${VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE:-0}" == "1" ]]; then
+    manager_cmd+=(--non-interactive)
+  fi
+
+  manager_cmd+=("${extra_container_args[@]}")
+  manager_cmd+=("${@:2}")
+
+  PYTHONPATH="$MANAGER_SRC${PYTHONPATH:+:$PYTHONPATH}" "${manager_cmd[@]}"
 }
 
 main "$@"

@@ -11,7 +11,7 @@ MANAGER_REPO="$HUB_ROOT/ascend-runtime-manager"
 MANAGER_MANIFEST_DEFAULT="$MANAGER_REPO/manifests/euleros-910b.json"
 
 ENV_NAME="vllm-hust-dev"
-PYTHON_VERSION="3.10"
+PYTHON_VERSION="3.11"
 AUTO_YES=0
 DO_CLONE=0
 DO_CONDA=0
@@ -51,7 +51,7 @@ print_help() {
   --install-scope SCOPE    安装范围: core 或 full (默认: core)。
   --all                    执行 clone + conda + install(core)。
   --env-name NAME          conda 环境名 (默认: vllm-hust-dev)。
-  --python VERSION         conda 环境 Python 版本 (默认: 3.10)。
+  --python VERSION         conda 环境 Python 版本 (默认: 3.11)。
   -y, --yes                非交互模式；容器公钥可通过 VLLM_HUST_CONTAINER_PUBKEY 传入。
   -h, --help               显示本帮助。
 

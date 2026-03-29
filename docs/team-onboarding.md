@@ -82,7 +82,7 @@ bash scripts/ascend-official-container.sh shell
 说明：
 
 - 默认容器名是 `vllm-ascend-dev`
-- 默认镜像是 `quay.io/ascend/vllm-ascend:v0.13.0-a3`
+- 默认会按交互提示选择合适的官方镜像，当前推荐基线是 `quay.io/ascend/vllm-ascend:v0.9.1-dev` 家族（A3 / openEuler 会自动切换对应后缀）
 - 宿主机工作区根目录会挂载到容器内的 `/workspace`
 - 容器内的默认工作目录是 `/workspace/vllm-hust-dev-hub`
 
@@ -185,7 +185,7 @@ bash scripts/quickstart.sh
 
 - 同步/克隆常用工作区仓库
 - 安装或检测 Miniconda
-- 创建 `vllm-hust-dev` conda 环境（默认 Python 3.10）
+- 创建 `vllm-hust-dev` conda 环境（默认 Python 3.11）
 - 安装基础工具：`pip`、`setuptools`、`wheel`、`pytest`、`pre-commit`
 - 以 editable 方式安装核心本地仓库
 

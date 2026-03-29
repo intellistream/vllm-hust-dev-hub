@@ -5,8 +5,10 @@ from pathlib import Path
 from unittest.mock import Mock
 from unittest.mock import patch
 
+from hust_ascend_manager.container import DEFAULT_IMAGE
 from hust_ascend_manager.container import ContainerConfig
 from hust_ascend_manager.container import MIN_DOCKER_PULL_FREE_SPACE_BYTES
+from hust_ascend_manager.container import build_official_image
 from hust_ascend_manager.container import build_container_ssh_setup_command
 from hust_ascend_manager.container import build_volume_args
 from hust_ascend_manager.container import container_has_expected_startup
@@ -20,10 +22,54 @@ from hust_ascend_manager.container import enable_container_ssh
 from hust_ascend_manager.container import ensure_image_present
 from hust_ascend_manager.container import install_container
 from hust_ascend_manager.container import parse_ssh_enable_options
+from hust_ascend_manager.container import resolve_container_image
 from hust_ascend_manager.container import run_container_action
 
 
 DiskUsage = namedtuple("DiskUsage", ["total", "used", "free"])
+
+
+def test_build_official_image_uses_expected_suffixes():
+    assert build_official_image("910b", "ubuntu") == "quay.io/ascend/vllm-ascend:v0.9.1-dev"
+    assert build_official_image("910b", "openeuler") == "quay.io/ascend/vllm-ascend:v0.9.1-dev-openeuler"
+    assert build_official_image("a3", "ubuntu") == "quay.io/ascend/vllm-ascend:v0.9.1-dev-a3"
+    assert build_official_image("a3", "openeuler") == "quay.io/ascend/vllm-ascend:v0.9.1-dev-a3-openeuler"
+
+
+def test_resolve_container_image_prefers_explicit_override():
+    assert resolve_container_image("quay.io/example/custom:tag", non_interactive=True) == "quay.io/example/custom:tag"
+
+
+def test_resolve_container_image_noninteractive_uses_detected_variant():
+    with (
+        patch("hust_ascend_manager.container.detect_host_ascend_profile", return_value="a3"),
+        patch("hust_ascend_manager.container.detect_host_os_flavor", return_value="openeuler"),
+    ):
+        image = resolve_container_image(None, non_interactive=True)
+
+    assert image == "quay.io/ascend/vllm-ascend:v0.9.1-dev-a3-openeuler"
+
+
+def test_resolve_container_image_interactively_accepts_detected_defaults():
+    with (
+        patch("hust_ascend_manager.container.detect_host_ascend_profile", return_value="a3"),
+        patch("hust_ascend_manager.container.detect_host_os_flavor", return_value="openeuler"),
+        patch("hust_ascend_manager.container._has_interactive_tty", return_value=True),
+        patch("builtins.input", side_effect=["", ""]),
+    ):
+        image = resolve_container_image(None, non_interactive=False)
+
+    assert image == "quay.io/ascend/vllm-ascend:v0.9.1-dev-a3-openeuler"
+
+
+def test_resolve_container_image_noninteractive_falls_back_to_default_when_detection_missing():
+    with (
+        patch("hust_ascend_manager.container.detect_host_ascend_profile", return_value=None),
+        patch("hust_ascend_manager.container.detect_host_os_flavor", return_value=None),
+    ):
+        image = resolve_container_image(None, non_interactive=True)
+
+    assert image == DEFAULT_IMAGE
 
 
 def test_build_volume_args_includes_workspace_and_cache(tmp_path: Path):

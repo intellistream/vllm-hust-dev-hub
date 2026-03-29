@@ -18,6 +18,7 @@ This repository isolates system-level Ascend dependency management from runtime 
 - `hust-ascend-manager launch Qwen/Qwen2.5-1.5B-Instruct`
 - `hust-ascend-manager container install --host-workspace-root /home/shuhao`
 - `hust-ascend-manager container shell --host-workspace-root /home/shuhao`
+- `hust-ascend-manager container install --non-interactive --host-workspace-root /home/shuhao`
 - `hust-ascend-manager container exec --host-workspace-root /home/shuhao -- python -c 'import torch; import torch_npu; print(torch.npu.device_count())'`
 - `hust-ascend-manager container ssh-deploy --host-workspace-root /home/shuhao --ssh-user shuhao --ssh-port 2222`
 - `hust-ascend-manager container ssh-enable --host-workspace-root /home/shuhao --ssh-user shuhao --ssh-port 2222`
@@ -60,6 +61,10 @@ model/runtime combinations. To opt out, pass `--no-prefill-compat-mode`.
 workflow. `container install` is the one-click path: it pulls the configured
 image when needed, mounts Ascend devices and driver paths from the host, mounts
 your workspace into `/workspace`, and creates or starts a persistent container.
+When `--image` is omitted, the manager now defaults to the `v0.9.1-dev` image
+family, probes the host for an A2/910B vs A3 recommendation, and interactively
+confirms the official variant (`v0.9.1-dev`, `-a3`, `-openeuler`, or
+`-a3-openeuler`). Use `--non-interactive` to skip prompts in automation.
 Use `container shell` to enter that environment later without rebuilding the
 mount list, and `container exec -- ...` to run one-off checks or launches.
 If you want a single-command deployment for direct SSH access into the container,

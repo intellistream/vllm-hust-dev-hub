@@ -6,6 +6,7 @@ from .container import DEFAULT_CONTAINER_NAME
 from .container import DEFAULT_CONTAINER_WORKSPACE_ROOT
 from .container import DEFAULT_IMAGE
 from .container import DEFAULT_SHM_SIZE
+from .container import resolve_container_image
 from .container import run_container_action
 from .doctor import build_shell_env_exports, collect_report, print_human, print_json
 from .launch import launch_vllm
@@ -59,7 +60,11 @@ def build_parser() -> argparse.ArgumentParser:
         choices=["install", "start", "shell", "exec", "ssh-enable", "ssh-deploy", "status", "stop", "rm", "pull"],
         help="Container action to run",
     )
-    p_container.add_argument("--image", default=None, help="Container image to use")
+    p_container.add_argument(
+        "--image",
+        default=None,
+        help="Container image to use; when omitted, choose an official image from host detection and interactive prompts",
+    )
     p_container.add_argument("--container-name", default=None, help="Persistent container name")
     p_container.add_argument(
         "--host-workspace-root",
@@ -78,6 +83,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_container.add_argument("--host-cache-dir", default=None, help="Host cache directory to mount to /root/.cache")
     p_container.add_argument("--shm-size", default=None, help="Container shared memory size")
+    p_container.add_argument(
+        "--non-interactive",
+        action="store_true",
+        help="Skip image selection prompts and rely on host auto-detection/defaults",
+    )
     return parser
 
 
@@ -126,8 +136,11 @@ def main() -> int:
         )
 
     if args.cmd == "container":
+        image = args.image
+        if args.action in {"install", "start", "shell", "exec", "ssh-enable", "ssh-deploy", "pull"}:
+            image = resolve_container_image(args.image, non_interactive=bool(args.non_interactive))
         config = ContainerConfig(
-            image=args.image or DEFAULT_IMAGE,
+            image=image or DEFAULT_IMAGE,
             container_name=args.container_name or DEFAULT_CONTAINER_NAME,
             host_workspace_root=args.host_workspace_root or "",
             container_workspace_root=args.container_workspace_root or DEFAULT_CONTAINER_WORKSPACE_ROOT,

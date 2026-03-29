@@ -138,5 +138,6 @@ Then update the Windows SSH alias to match the new port.
 
 - The default container name is `vllm-ascend-dev`.
 - The container image is managed by `ascend-runtime-manager`.
+- When you do not pass `--image`, the manager asks for the Ascend hardware profile and selects the matching `v0.9.1-dev` official image variant.
 - The first run is slower because the container installs `openssh-server`.
 - When the host Docker root under `/var/lib/docker` is low on space and `/data` has room, the helper can relocate Docker data-root to `/data/docker` before pulling the image.
