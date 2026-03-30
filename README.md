@@ -30,6 +30,7 @@ The default workspace includes these repositories when they exist under `/home/<
 - `scripts/install-miniconda.sh`: download and install Miniconda into the current user's home directory.
 - `scripts/quickstart.sh`: interactive one-command bootstrap for clone + conda environment setup, plus menu option 6 for the official Ascend container and container SSH setup.
 - `scripts/ascend-official-container.sh`: start, reuse, and enter the official Ascend vLLM container from the host.
+- `scripts/enable-existing-container-ssh.sh`: fallback helper for an already-running custom container when you need to turn on direct SSH access and surface mounted repos under the login home.
 
 ## Usage
 
@@ -166,6 +167,7 @@ For direct host-to-container development on the official Huawei image, use `scri
 - It reuses a persistent container named `vllm-ascend-dev` by default, so repeated `shell` and `exec` calls do not need to rebuild the mount/device list.
 - It sources `/usr/local/Ascend/ascend-toolkit/set_env.sh` and `/usr/local/Ascend/nnal/atb/set_env.sh` automatically before dropping you into the shell or running your command.
 - It can auto-configure container SSH on `start` or `install`, using host `authorized_keys`, discovered `*.pub` files, and `~/.ssh/vllm-ascend-extra-authorized_keys`.
+- If you already have a running custom container and only need direct SSH plus home-directory links back to the mounted repos, use `bash scripts/enable-existing-container-ssh.sh`.
 - When direct public access to host port `2222` is unavailable, use a client-side SSH alias with `HostName 127.0.0.1`, `Port 2222`, and `ProxyJump <host-alias>`.
 - If you need to recreate the container with different settings, run `bash scripts/ascend-official-container.sh rm` first.
 - For remote Windows SSH, see [docs/train8-container-quickstart.md](docs/train8-container-quickstart.md) for the generic team setup for direct SSH-to-container access.
