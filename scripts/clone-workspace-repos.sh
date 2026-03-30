@@ -17,7 +17,7 @@ cleanup_temp_git_ssh_config() {
 
 build_git_ssh_command() {
   local ssh_binary
-  local workspace_ssh_dir="/workspace/.ssh"
+  local workspace_ssh_dir="$TARGET_BASE_DIR/.ssh"
   local known_hosts_file="$HOME/.ssh/known_hosts"
   local identity_file=""
   local -a ssh_command
@@ -29,7 +29,10 @@ build_git_ssh_command() {
     -o "UserKnownHostsFile=$known_hosts_file"
   )
 
-  identity_file="$(find "$workspace_ssh_dir" -maxdepth 1 -type f -name 'id_*' ! -name '*.pub' | sort | head -n 1 || true)"
+  if [[ -d "$workspace_ssh_dir" ]]; then
+    identity_file="$(find "$workspace_ssh_dir" -maxdepth 1 -type f -name 'id_*' ! -name '*.pub' | sort | head -n 1 || true)"
+  fi
+
   if [[ -n "$identity_file" ]]; then
     ssh_command+=( -i "$identity_file" -o IdentitiesOnly=yes )
   elif [[ -f "$workspace_ssh_dir/config" ]]; then
