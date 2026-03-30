@@ -10,6 +10,7 @@ from .container import resolve_container_image
 from .container import run_container_action
 from .doctor import build_shell_env_exports, collect_report, print_human, print_json
 from .launch import launch_vllm
+from .runtime import check_vllm_runtime, repair_vllm_runtime
 from .setup import setup_environment
 
 
@@ -53,6 +54,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_launch.set_defaults(apply_system=True)
+
+    p_runtime = sub.add_parser("runtime", help="Check or repair vllm-hust runtime environment")
+    p_runtime.add_argument("action", choices=["check", "repair"], help="Runtime action")
+    p_runtime.add_argument("--repo", default=None, help="Path to the vllm-hust repo root")
+    p_runtime.add_argument("--python", dest="python_bin", default=None, help="Python interpreter to use")
+    p_runtime.add_argument("--json", action="store_true", help="Output check result as JSON")
+    p_runtime.add_argument("--skip-torch-install", action="store_true", help="Skip torch reinstall during repair")
+    p_runtime.add_argument("--skip-build-deps", action="store_true", help="Skip requirements/build.txt during repair")
+    p_runtime.add_argument("--skip-rebuild", action="store_true", help="Skip editable reinstall during repair")
 
     p_container = sub.add_parser("container", help="Manage the official Ascend vLLM container")
     p_container.add_argument(
@@ -133,6 +143,19 @@ def main() -> int:
             enable_prefill_compat_mode=bool(args.prefill_compat_mode),
             non_interactive=bool(args.non_interactive),
             extra_args=list(unknown_args),
+        )
+
+    if args.cmd == "runtime":
+        if unknown_args:
+            parser.error("unrecognized arguments: " + " ".join(unknown_args))
+        if args.action == "check":
+            return check_vllm_runtime(args.repo, args.python_bin, json_output=bool(args.json))
+        return repair_vllm_runtime(
+            args.repo,
+            args.python_bin,
+            skip_torch_install=bool(args.skip_torch_install),
+            skip_build_deps=bool(args.skip_build_deps),
+            skip_rebuild=bool(args.skip_rebuild),
         )
 
     if args.cmd == "container":

@@ -15,6 +15,8 @@ This repository isolates system-level Ascend dependency management from runtime 
 - `hust-ascend-manager setup --manifest manifests/euleros-910b.json --dry-run`
 - `hust-ascend-manager setup --manifest manifests/euleros-910b.json --install-python-stack`
 - `hust-ascend-manager setup --manifest manifests/euleros-910b.json --apply-system`
+- `hust-ascend-manager runtime check --repo /home/shuhao/vllm-hust`
+- `hust-ascend-manager runtime repair --repo /home/shuhao/vllm-hust`
 - `hust-ascend-manager launch Qwen/Qwen2.5-1.5B-Instruct`
 - `hust-ascend-manager container install --host-workspace-root /home/shuhao`
 - `hust-ascend-manager container shell --host-workspace-root /home/shuhao`
@@ -35,6 +37,30 @@ When a system step declares `requires_group: HwHiAiUser`, manager will run it vi
 
 `env --shell` is the source of truth for Ascend runtime exports. Runtime repos
 should consume this output instead of carrying duplicated shell logic.
+
+`runtime` is the source of truth for repairing a broken `vllm-hust` Python
+environment from adjacent runtime repos such as `vllm-hust-workstation`.
+It checks whether the active Python can import `torch`, `transformers`,
+`tokenizers`, `huggingface_hub`, and `vllm.entrypoints.cli.main` under a clean
+`PYTHONNOUSERSITE=1` environment. `runtime repair` then reconciles the common
+runtime deps, force-reinstalls the Hugging Face stack, installs build deps from
+`requirements/build.txt` without replacing the active torch wheel twice, and
+rebuilds editable `vllm-hust` against the currently selected Python runtime.
+
+What `runtime repair` covers:
+
+- broken or incomplete Python runtime deps in the active env
+- mismatched `transformers` / `tokenizers` / `huggingface_hub` installs
+- missing build tools from `requirements/build.txt` such as `cmake` and `ninja`
+- stale local `vllm/*.so` artifacts that need an editable reinstall against the current torch wheel
+
+What still remains machine-specific or manual:
+
+- NVIDIA / Ascend driver packages and kernel modules on the host
+- CANN / NNAL / ATB system layout problems that require `doctor` / `setup`
+- model weights, Hugging Face reachability, mirror policy, and local cache completeness
+- systemd user-session availability and public ingress plumbing such as Cloudflare Tunnel
+- any repo-local changes that require a different torch major/minor than the manager default
 
 The manager also normalizes non-standard Ascend installs, for example when the
 host only has directories like `/usr/local/Ascend/ascend-toolkit.bak.8.1/latest`
