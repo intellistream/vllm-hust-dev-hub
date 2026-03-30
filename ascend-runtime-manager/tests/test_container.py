@@ -374,6 +374,31 @@ def test_install_container_recreates_container_when_mounts_are_stale(tmp_path: P
     assert run_mock.call_args_list[2].args[1][0:2] == ["run", "-d"]
 
 
+def test_install_container_preserves_stale_container_for_shell_like_actions(tmp_path: Path, capsys):
+    workspace_root = tmp_path / "workspace"
+    workspace_root.mkdir()
+    config = ContainerConfig(
+        image="image:latest",
+        container_name="demo",
+        host_workspace_root=str(workspace_root),
+        container_workdir="/workspace/demo",
+    )
+
+    with (
+        patch("hust_ascend_manager.container.ensure_image_present", return_value=0),
+        patch("hust_ascend_manager.container.container_exists", return_value=True),
+        patch("hust_ascend_manager.container.ensure_container_image_matches", return_value=0),
+        patch("hust_ascend_manager.container.container_has_expected_mounts", return_value=False),
+        patch("hust_ascend_manager.container.container_running", return_value=False),
+        patch("hust_ascend_manager.container.run_docker", return_value=Mock(returncode=0)) as run_mock,
+    ):
+        rc = install_container(["docker"], config, recreate_outdated_container=False)
+
+    assert rc == 0
+    run_mock.assert_called_once_with(["docker"], ["start", "demo"])
+    assert "preserving existing container demo" in capsys.readouterr().out
+
+
 def test_enable_container_ssh_runs_setup_inside_container(tmp_path: Path):
     workspace_root = tmp_path / "workspace"
     workspace_root.mkdir()

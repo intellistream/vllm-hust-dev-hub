@@ -69,7 +69,7 @@ path_free_bytes() {
 docker_daemon_data_root() {
   local python_bin="$1"
 
-  sudo -n "$python_bin" - <<'PY'
+  sudo -n "$python_bin" - 2>/dev/null <<'PY'
 import json
 from pathlib import Path
 

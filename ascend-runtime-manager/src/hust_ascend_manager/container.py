@@ -573,6 +573,7 @@ def install_container(
     docker_cmd: list[str],
     config: ContainerConfig,
     require_runtime_bootstrap: bool = False,
+    recreate_outdated_container: bool = True,
 ) -> int:
     rc = ensure_host_paths(config)
     if rc != 0:
@@ -587,17 +588,38 @@ def install_container(
         if rc != 0:
             return rc
 
-        if (require_runtime_bootstrap and not container_has_expected_startup(docker_cmd, config)) or not container_has_expected_mounts(docker_cmd, config):
-            _log(
-                f"recreating container {config.container_name} so startup hooks and bind mounts match the current quickstart configuration"
-            )
-            if container_running(docker_cmd, config.container_name):
-                rc = run_docker(docker_cmd, ["stop", config.container_name]).returncode
+        needs_startup_refresh = require_runtime_bootstrap and not container_has_expected_startup(docker_cmd, config)
+        mounts_are_stale = not container_has_expected_mounts(docker_cmd, config)
+
+        if needs_startup_refresh or mounts_are_stale:
+            if recreate_outdated_container:
+                _log(
+                    f"recreating container {config.container_name} so startup hooks and bind mounts match the current quickstart configuration"
+                )
+                if container_running(docker_cmd, config.container_name):
+                    rc = run_docker(docker_cmd, ["stop", config.container_name]).returncode
+                    if rc != 0:
+                        return rc
+                rc = run_docker(docker_cmd, ["rm", config.container_name]).returncode
                 if rc != 0:
                     return rc
-            rc = run_docker(docker_cmd, ["rm", config.container_name]).returncode
-            if rc != 0:
-                return rc
+            else:
+                reason_parts: list[str] = []
+                if needs_startup_refresh:
+                    reason_parts.append("startup hooks differ from the current quickstart configuration")
+                if mounts_are_stale:
+                    reason_parts.append("bind mounts differ from the current quickstart configuration")
+                _log(
+                    f"preserving existing container {config.container_name}; "
+                    + " and ".join(reason_parts)
+                    + ". Run 'container start' if you want to recreate it with the latest quickstart layout."
+                )
+                if container_running(docker_cmd, config.container_name):
+                    _log(f"container {config.container_name} is already running")
+                    return 0
+
+                _log(f"starting existing container {config.container_name}")
+                return run_docker(docker_cmd, ["start", config.container_name]).returncode
         else:
             if container_running(docker_cmd, config.container_name):
                 _log(f"container {config.container_name} is already running")
@@ -632,7 +654,7 @@ def install_container(
 
 
 def open_shell(docker_cmd: list[str], config: ContainerConfig) -> int:
-    rc = install_container(docker_cmd, config)
+    rc = install_container(docker_cmd, config, recreate_outdated_container=False)
     if rc != 0:
         return rc
 
@@ -650,7 +672,7 @@ def exec_in_container(docker_cmd: list[str], config: ContainerConfig, command: l
     if not command:
         return _fail("container exec requires a command after '--'")
 
-    rc = install_container(docker_cmd, config)
+    rc = install_container(docker_cmd, config, recreate_outdated_container=False)
     if rc != 0:
         return rc
 
