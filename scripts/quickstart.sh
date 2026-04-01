@@ -7,7 +7,7 @@ HUB_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 WORKSPACE_ROOT="$(cd -- "$HUB_ROOT/.." && pwd)"
 CLONE_SCRIPT="$SCRIPT_DIR/clone-workspace-repos.sh"
 MINICONDA_INSTALL_SCRIPT="$SCRIPT_DIR/install-miniconda.sh"
-MANAGER_REPO="$HUB_ROOT/ascend-runtime-manager"
+MANAGER_REPO="$WORKSPACE_ROOT/ascend-runtime-manager"
 MANAGER_MANIFEST_DEFAULT="$MANAGER_REPO/manifests/euleros-910b.json"
 
 ENV_NAME="vllm-hust-dev"

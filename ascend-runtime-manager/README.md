@@ -106,7 +106,7 @@ and runtime adaptation should live outside the upstream core runtime path.
 ## Install
 
 ```bash
-cd /home/shuhao/vllm-hust-dev-hub/ascend-runtime-manager
+cd /home/shuhao/ascend-runtime-manager
 python -m pip install -e .
 ```
 
@@ -121,7 +121,7 @@ python -m pip install --upgrade hust-ascend-manager
 Local publish with token:
 
 ```bash
-cd /home/shuhao/vllm-hust-dev-hub/ascend-runtime-manager
+cd /home/shuhao/ascend-runtime-manager
 PYPI_TOKEN=pypi-xxxxx bash scripts/publish_pypi.sh
 ```
 

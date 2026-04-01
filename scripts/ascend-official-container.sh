@@ -5,7 +5,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 HUB_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 WORKSPACE_ROOT="$(cd -- "$HUB_ROOT/.." && pwd)"
-MANAGER_SRC="$HUB_ROOT/ascend-runtime-manager/src"
+MANAGER_SRC="$WORKSPACE_ROOT/ascend-runtime-manager/src"
 
 IMAGE="${IMAGE:-}"
 CONTAINER_NAME="${CONTAINER_NAME:-vllm-ascend-dev}"

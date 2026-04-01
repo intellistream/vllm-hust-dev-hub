@@ -91,7 +91,7 @@ bash scripts/ascend-official-container.sh shell
 如果需要在 CI、远程脚本或显式运维流程里跳过 quickstart 菜单，也可以直接执行：
 
 ```bash
-cd /home/<your-user>/vllm-hust-dev-hub/ascend-runtime-manager
+cd /home/<your-user>/ascend-runtime-manager
 PYTHONPATH=src python3 -m hust_ascend_manager.cli container ssh-deploy \
   --host-workspace-root /home/<your-user> \
   --ssh-user <your-user> \

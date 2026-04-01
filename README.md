@@ -108,6 +108,8 @@ During environment setup, `quickstart.sh` installs both sibling repositories in 
 - `vllm-ascend-hust`
 - `vllm-hust-benchmark`
 
+`ascend-runtime-manager` now lives as a sibling repository under the workspace root, not inside `vllm-hust-dev-hub`.
+
 On Ascend-capable hosts, quickstart treats `ascend-runtime-manager` as the source of truth for user-space Python stack repair. After the core repos are installed, it calls `hust-ascend-manager setup --install-python-stack` with the local workspace manifest so `torch` and `torch-npu` stay aligned without attempting host-level CANN or group-managed system changes.
 
 `quickstart.sh` is intentionally user-space only. It does not attempt `sudo`, `sg`, `HwHiAiUser`, or other system-level setup by default. If a machine still needs host-level Ascend packages or permissions, run `hust-ascend-manager setup` manually with the appropriate privileges outside quickstart. If you explicitly want quickstart to invoke manager system steps, set `HUST_DEV_HUB_APPLY_ASCEND_SYSTEM_STEPS=1` first.

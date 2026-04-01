@@ -41,7 +41,7 @@ That flow can now:
 Run this on `train8` once:
 
 ```bash
-cd /home/shuhao/vllm-hust-dev-hub/ascend-runtime-manager
+cd /home/shuhao/ascend-runtime-manager
 PYTHONPATH=src python3 -m hust_ascend_manager.cli container ssh-deploy \
   --host-workspace-root /home/shuhao \
   --ssh-user <ssh-user> \
@@ -159,7 +159,7 @@ If everything is correct, you should see the available NPU count.
 If `2222` is already used on the host, redeploy with another port:
 
 ```bash
-cd /home/shuhao/vllm-hust-dev-hub/ascend-runtime-manager
+cd /home/shuhao/ascend-runtime-manager
 PYTHONPATH=src python3 -m hust_ascend_manager.cli container ssh-deploy \
   --host-workspace-root /home/shuhao \
   --ssh-user <ssh-user> \
