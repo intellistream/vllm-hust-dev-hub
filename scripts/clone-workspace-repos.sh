@@ -241,6 +241,7 @@ maybe_pull_updates() {
 # Use SSH URLs to avoid HTTPS connectivity issues.
 # Keep upstream comparison repos under reference-repos/ rather than as top-level siblings.
 REPOS=(
+  "ascend-runtime-manager|git@github.com:intellistream/ascend-runtime-manager.git"
   "vllm-hust|git@github.com:intellistream/vllm-hust.git"
   "vllm-hust-workstation|git@github.com:intellistream/vllm-hust-workstation.git"
   "vllm-hust-website|git@github.com:intellistream/vllm-hust-website.git"
