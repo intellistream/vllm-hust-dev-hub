@@ -372,11 +372,7 @@ input_files = [
 ]
 
 supplemental_requirements = [
-  "annotated-doc>=0.0.2",
   "annotated-types>=0.7.0",
-  "aiohappyeyeballs>=2.4.0",
-  "aiosignal>=1.3.1",
-  "async-timeout>=4.0.3",
   "anyio>=4.8.0",
   "attrs>=23.2.0",
   "certifi>=2024.7.4",
@@ -391,19 +387,19 @@ supplemental_requirements = [
   "h11>=0.14.0",
   "httpcore>=1.0.7",
   "httpx>=0.28.1",
-  "huggingface-hub==0.34.4",
+  "huggingface-hub>=0.34.0,<1.0",
   "idna>=3.10",
   "jiter>=0.8.2",
   "MarkupSafe>=3.0.2",
   "multidict>=6.1.0",
   "orjson>=3.10.15",
   "propcache>=0.2.0",
-  "pydantic-core==2.41.5",
+  "pydantic-core>=2.33.2",
   "python-dotenv>=1.0.1",
   "python-multipart>=0.0.20",
   "safetensors>=0.4.3",
   "sniffio>=1.3.1",
-  "starlette>=0.40.0,<0.51.0",
+  "starlette>=0.41.3",
   "tokenizers>=0.22.0,<=0.23.0",
   "typing-inspection>=0.4.0",
   "urllib3>=2.2.3",
@@ -425,25 +421,10 @@ optional_names_to_skip = {
     ("aarch64", "xgrammar"),
     ("aarch64", "arctic-inference"),
   ("aarch64", "triton-ascend"),
-    ("aarch64", "lm-format-enforcer"),
-    ("aarch64", "outlines_core"),
-  ("aarch64", "compressed-tensors"),
-  ("aarch64", "compressed_tensors"),
-  ("aarch64", "mistral-common"),
-  ("aarch64", "mistral_common"),
-  ("aarch64", "depyf"),
-  ("aarch64", "model-hosting-container-standards"),
-  ("aarch64", "mcp"),
-  ("aarch64", "opentelemetry-sdk"),
-  ("aarch64", "opentelemetry-api"),
-  ("aarch64", "opentelemetry-exporter-otlp"),
-  ("aarch64", "opentelemetry-semantic-conventions-ai"),
-  ("aarch64", "anthropic"),
 }
 
 target_specific_overrides = {
-  ("aarch64", "fastapi"): "fastapi<0.124.0",
-  ("aarch64", "setuptools-scm"): "setuptools-scm==8.1.0",
+  ("aarch64", "outlines_core"): "outlines_core==0.2.3",
 }
 
 marker_env = {
@@ -533,15 +514,6 @@ prepare_wheelhouse() {
     "xgrammar (structured outputs backend; skipped on aarch64 offline path)"
     "arctic-inference (suffix speculative decoding; skipped on aarch64 offline path)"
     "triton-ascend (optional Triton kernels; skipped on aarch64 offline path)"
-    "lm-format-enforcer (structured outputs backend; skipped on aarch64 offline path)"
-    "outlines_core (structured outputs backend; skipped on aarch64 offline path)"
-    "compressed-tensors (quantization support; skipped on aarch64 offline path)"
-    "mistral-common (Mistral-specific support; skipped on aarch64 offline path)"
-    "depyf (compile/debug helper; skipped on aarch64 offline path)"
-    "model-hosting-container-standards (serving integration; skipped on aarch64 offline path)"
-    "mcp (serving integration; skipped on aarch64 offline path)"
-    "OpenTelemetry packages (observability integration; skipped on aarch64 offline path)"
-    "anthropic (serving integration; skipped on aarch64 offline path)"
   )
 
   mkdir -p "$WHEELHOUSE_DIR"
@@ -682,7 +654,7 @@ sync_model_assets() {
 }
 
 install_in_container() {
-  local model_name="__NO_MODEL__"
+  local model_name=""
   if (( SYNC_MODEL == 1 )); then
     model_name="$(resolved_model_name)"
   fi
@@ -704,142 +676,44 @@ model_root="$3"
 model_name="$4"
 run_import_check="$5"
 
-if [[ "$model_name" == "__NO_MODEL__" ]]; then
-  model_name=""
-fi
-
-if [[ -d /workspace/miniconda3 ]] && [[ ! -e /home/shuhao/miniconda3 ]]; then
+if [[ -x /workspace/miniconda3/bin/conda ]] && [[ ! -e /home/shuhao/miniconda3 ]]; then
   ln -sfn /workspace/miniconda3 /home/shuhao/miniconda3
 fi
 
-find_first_executable() {
-  local path=""
-  for path in "$@"; do
-    if [[ -n "$path" && -x "$path" ]]; then
-      printf '%s\n' "$path"
-      return 0
-    fi
-  done
-  return 1
-}
-
-find_first_directory() {
-  local path=""
-  for path in "$@"; do
-    if [[ -n "$path" && -d "$path" ]]; then
-      printf '%s\n' "$path"
-      return 0
-    fi
-  done
-  return 1
-}
-
-conda_root="$(find_first_directory \
-  /home/shuhao/miniconda3 \
-  /workspace/miniconda3 \
-  /opt/conda \
-  "$HOME/miniconda3")" || {
-  echo "[offline-sync] unable to locate a Miniconda root in the container" >&2
+conda_bin="/home/shuhao/miniconda3/bin/conda"
+if [[ ! -x "$conda_bin" ]]; then
+  echo "[offline-sync] conda executable not found in container: $conda_bin" >&2
   exit 1
-}
+fi
 
-base_python="$(find_first_executable \
-  "$conda_root/bin/python" \
-  "$conda_root/bin/python3" \
-  "$conda_root/bin/python3.13" \
-  "$conda_root/bin/python3.12" \
-  "$conda_root/bin/python3.11" \
-  "$conda_root/bin/python3.10")" || {
-  echo "[offline-sync] unable to locate the base Miniconda Python under: $conda_root" >&2
-  exit 1
-}
-
-env_root="$conda_root/envs/$env_name"
-if [[ ! -d "$env_root" ]]; then
+if ! "$conda_bin" env list | awk '{print $1}' | grep -Fxq "$env_name"; then
   echo "[offline-sync] conda env not found in container: $env_name" >&2
   exit 1
 fi
 
-env_python="$(find_first_executable \
-  "$env_root/bin/python" \
-  "$env_root/bin/python3" \
-  "$env_root/bin/python3.10" \
-  "$env_root/bin/python3.11" \
-  "$env_root/bin/python3.12" \
-  "$env_root/bin/python3.13")" || {
-  echo "[offline-sync] unable to locate the env Python under: $env_root" >&2
-  exit 1
-}
-
-run_env_python() {
-  "$env_python" "$@"
-}
-
-prepend_ld_library_path() {
-  local candidate=""
-  for candidate in "$@"; do
-    if [[ -d "$candidate" ]]; then
-      case ":${LD_LIBRARY_PATH:-}:" in
-        *":$candidate:"*) ;;
-        *) LD_LIBRARY_PATH="$candidate${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ;;
-      esac
-    fi
-  done
-}
-
-if [[ -f /usr/local/Ascend/ascend-toolkit/set_env.sh ]]; then
-  # The offline install and later runtime checks need the Ascend shared libraries.
-  set +u
-  source /usr/local/Ascend/ascend-toolkit/set_env.sh
-  set -u
-fi
-
-if [[ -f /usr/local/Ascend/nnal/atb/set_env.sh ]]; then
-  set +u
-  source /usr/local/Ascend/nnal/atb/set_env.sh
-  set -u
-fi
-
-# The stock toolkit env scripts in this container do not expose all runtime
-# libraries needed by torch_npu and npu-smi.
-export LD_LIBRARY_PATH="/usr/local/Ascend/driver/lib64/driver:/usr/local/Ascend/ascend-toolkit/latest/aarch64-linux/lib64:/usr/local/Ascend/ascend-toolkit/latest/aarch64-linux/devlib:/usr/local/Ascend/ascend-toolkit/latest/compiler/lib64:${LD_LIBRARY_PATH:-}"
-prepend_ld_library_path /usr/local/lib64 /usr/local/lib
-prepend_ld_library_path \
-  /usr/local/Ascend/nnal/atb/latest/atb/cxx_abi_0/lib \
-  /usr/local/Ascend/nnal/atb/latest/atb/cxx_abi_1/lib
-for atb_lib_dir in /usr/local/Ascend/nnal/atb/*/atb/cxx_abi_0/lib /usr/local/Ascend/nnal/atb/*/atb/cxx_abi_1/lib; do
-  prepend_ld_library_path "$atb_lib_dir"
-done
-export LD_LIBRARY_PATH
-
 if [[ -f "$asset_root/requirements-target.txt" ]]; then
-  if find "$asset_root/wheelhouse" -maxdepth 1 -type f \( -name '*.whl' -o -name '*.tar.gz' -o -name '*.zip' \) | grep -q .; then
-    run_env_python -m pip install \
-      --no-index \
-      --find-links "$asset_root/wheelhouse" \
-      --no-build-isolation \
-      -r "$asset_root/requirements-target.txt"
+  mapfile -t offline_pkgs < <(find "$asset_root/wheelhouse" -maxdepth 1 -type f \( -name '*.whl' -o -name '*.tar.gz' -o -name '*.zip' \) | sort)
+  if [[ ${#offline_pkgs[@]} -gt 0 ]]; then
+    "$conda_bin" run -n "$env_name" python -m pip install --no-deps "${offline_pkgs[@]}"
   fi
 fi
 
 if [[ -f /workspace/ascend-runtime-manager/pyproject.toml ]]; then
-  run_env_python -m pip install -e /workspace/ascend-runtime-manager --no-build-isolation --no-deps
+  "$conda_bin" run -n "$env_name" python -m pip install -e /workspace/ascend-runtime-manager --no-deps
 fi
 
 if [[ -f /workspace/vllm-hust-benchmark/pyproject.toml ]]; then
-  run_env_python -m pip install -e /workspace/vllm-hust-benchmark --no-build-isolation --no-deps
+  "$conda_bin" run -n "$env_name" python -m pip install -e /workspace/vllm-hust-benchmark --no-deps
 fi
 
 VLLM_TARGET_DEVICE=empty \
-  TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
-  run_env_python -m pip install -e /workspace/vllm-hust --no-build-isolation --no-deps
+  "$conda_bin" run -n "$env_name" python -m pip install -e /workspace/vllm-hust --no-build-isolation --no-deps
 
 COMPILE_CUSTOM_KERNELS=0 \
-  TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
-  run_env_python -m pip install -e /workspace/vllm-ascend-hust --no-build-isolation --no-deps
+  "$conda_bin" run -n "$env_name" python -m pip install -e /workspace/vllm-ascend-hust --no-build-isolation --no-deps
 
 if [[ "$run_import_check" == "1" ]]; then
-  run_env_python - <<'PY'
+  "$conda_bin" run -n "$env_name" python - <<'PY'
 import importlib.util
 
 modules = ["torch", "torch_npu", "vllm"]
