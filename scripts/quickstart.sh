@@ -233,122 +233,6 @@ default_ascend_compile_custom_kernels() {
   printf '0\n'
 }
 
-has_usable_npu_smi() {
-  command -v npu-smi >/dev/null 2>&1 || return 1
-  npu-smi info >/dev/null 2>&1
-}
-
-detect_host_ascend_profile() {
-  local output
-
-  if ! has_usable_npu_smi; then
-    return 1
-  fi
-
-  output="$(npu-smi info 2>/dev/null | tr '[:upper:]' '[:lower:]')" || return 1
-  if [[ -z "$output" ]]; then
-    return 1
-  fi
-
-  if grep -Eq 'atlas[[:space:]]+a3|910c|(^|[[:space:]])a3($|[[:space:]])' <<< "$output"; then
-    printf 'a3\n'
-    return 0
-  fi
-
-  if grep -Eq 'atlas[[:space:]]+a2|910b|(^|[[:space:]])a2($|[[:space:]])' <<< "$output"; then
-    printf '910b\n'
-    return 0
-  fi
-
-  if grep -Eq '310p|atlas[[:space:]]+300i' <<< "$output"; then
-    printf '310p\n'
-    return 0
-  fi
-
-  return 1
-}
-
-infer_ascend_profile_from_manifest_path() {
-  local manifest_path="$1"
-  local manifest_name
-
-  if [[ -z "$manifest_path" ]]; then
-    return 1
-  fi
-
-  manifest_name="$(basename -- "$manifest_path" | tr '[:upper:]' '[:lower:]')"
-
-  case "$manifest_name" in
-    *910b*|*a2*)
-      printf '910b\n'
-      return 0
-      ;;
-    *910c*|*a3*)
-      printf 'a3\n'
-      return 0
-      ;;
-    *310p*|*300i*)
-      printf '310p\n'
-      return 0
-      ;;
-  esac
-
-  return 1
-}
-
-infer_ascend_soc_version_from_profile() {
-  local profile="$1"
-
-  case "$profile" in
-    910b)
-      printf 'ascend910b1\n'
-      return 0
-      ;;
-    a3)
-      printf 'ascend910_9391\n'
-      return 0
-      ;;
-    310p)
-      printf 'ascend310p1\n'
-      return 0
-      ;;
-  esac
-
-  return 1
-}
-
-resolve_ascend_soc_version_entry() {
-  local explicit_soc
-  local profile
-  local soc_version
-
-  explicit_soc="$(get_first_nonempty_env HUST_DEV_HUB_ASCEND_SOC_VERSION SOC_VERSION || true)"
-  if [[ -n "$explicit_soc" ]]; then
-    printf '%s|%s\n' "$explicit_soc" 'environment override'
-    return 0
-  fi
-
-  profile="$(detect_host_ascend_profile || true)"
-  if [[ -n "$profile" ]]; then
-    soc_version="$(infer_ascend_soc_version_from_profile "$profile" || true)"
-    if [[ -n "$soc_version" ]]; then
-      printf '%s|%s\n' "$soc_version" "host probe ($profile)"
-      return 0
-    fi
-  fi
-
-  profile="$(infer_ascend_profile_from_manifest_path "$MANAGER_MANIFEST_DEFAULT" || true)"
-  if [[ -n "$profile" ]]; then
-    soc_version="$(infer_ascend_soc_version_from_profile "$profile" || true)"
-    if [[ -n "$soc_version" ]]; then
-      printf '%s|%s\n' "$soc_version" "manifest fallback ($profile)"
-      return 0
-    fi
-  fi
-
-  return 1
-}
-
 persist_conda_env_var() {
   local env_name="$1"
   local key="$2"
@@ -362,17 +246,6 @@ persist_ascend_lightweight_mode_in_conda_env() {
 
   persist_conda_env_var "$ENV_NAME" "COMPILE_CUSTOM_KERNELS" "$compile_custom_kernels"
   log "Persisted COMPILE_CUSTOM_KERNELS=$compile_custom_kernels to conda env '$ENV_NAME' for Ascend lightweight startup. Reactivate the environment to apply it in new shells."
-}
-
-persist_ascend_soc_version_in_conda_env() {
-  local soc_version="$1"
-
-  if [[ -z "$soc_version" ]]; then
-    return 0
-  fi
-
-  persist_conda_env_var "$ENV_NAME" "SOC_VERSION" "$soc_version"
-  log "Persisted SOC_VERSION=$soc_version to conda env '$ENV_NAME'. Reactivate the environment to apply it in new shells."
 }
 
 read_positive_int_env_with_fallback() {
@@ -841,9 +714,6 @@ install_editable_repo_into_env() {
   local reconcile_mode="${2:-without-runtime-reconcile}"
   local pip_args=(-v -e "$repo_path")
   local compile_custom_kernels
-  local ascend_soc_entry=""
-  local ascend_soc_version=""
-  local ascend_soc_reason=""
 
   compile_custom_kernels="$(default_ascend_compile_custom_kernels)"
 
@@ -871,26 +741,12 @@ install_editable_repo_into_env() {
     ensure_pip_package_in_env "$ENV_NAME" "decorator"
     ensure_pip_package_in_env "$ENV_NAME" "scipy"
     pip_args=(-v --no-build-isolation --no-deps -e "$repo_path")
-    ascend_soc_entry="$(resolve_ascend_soc_version_entry || true)"
-    if [[ -n "$ascend_soc_entry" ]]; then
-      ascend_soc_version="${ascend_soc_entry%%|*}"
-      ascend_soc_reason="${ascend_soc_entry#*|}"
-    fi
 
     log "Installing editable package from: $repo_path"
     log "Using lightweight Ascend plugin mode: COMPILE_CUSTOM_KERNELS=$compile_custom_kernels, --no-deps"
-    if [[ -n "$ascend_soc_version" ]]; then
-      log "Resolved SOC_VERSION=$ascend_soc_version for lightweight Ascend install via $ascend_soc_reason"
-      run_with_heartbeat \
-        "installing editable package from $repo_path" \
-        run_pip_install_in_env "$ENV_NAME" "COMPILE_CUSTOM_KERNELS=$compile_custom_kernels" "TORCH_DEVICE_BACKEND_AUTOLOAD=0" "SOC_VERSION=$ascend_soc_version" -- "${pip_args[@]}"
-      persist_ascend_soc_version_in_conda_env "$ascend_soc_version"
-    else
-      log "Warning: could not resolve SOC_VERSION automatically. If editable metadata generation fails, set HUST_DEV_HUB_ASCEND_SOC_VERSION or SOC_VERSION and retry."
-      run_with_heartbeat \
-        "installing editable package from $repo_path" \
-        run_pip_install_in_env "$ENV_NAME" "COMPILE_CUSTOM_KERNELS=$compile_custom_kernels" "TORCH_DEVICE_BACKEND_AUTOLOAD=0" -- "${pip_args[@]}"
-    fi
+    run_with_heartbeat \
+      "installing editable package from $repo_path" \
+      run_pip_install_in_env "$ENV_NAME" "COMPILE_CUSTOM_KERNELS=$compile_custom_kernels" "TORCH_DEVICE_BACKEND_AUTOLOAD=0" -- "${pip_args[@]}"
     persist_ascend_lightweight_mode_in_conda_env "$compile_custom_kernels"
     return 0
   fi
@@ -910,7 +766,7 @@ should_reconcile_ascend_runtime() {
     return 1
   fi
 
-  if has_usable_npu_smi; then
+  if command -v npu-smi >/dev/null 2>&1; then
     return 0
   fi
 

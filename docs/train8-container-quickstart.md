@@ -56,35 +56,6 @@ What it does:
 - exposes the container SSH service on host port `2222`
 - ensures future container restarts also bring `sshd` back automatically
 
-## Fallback for an Existing Custom Container
-
-If you already have a running container such as `vllm-ascend-v091-dev`, and the
-preferred manager flow cannot finish because the host or container has no public
-network/DNS access, use the fallback helper from the host workspace root:
-
-```bash
-cd /home/shuhao/vllm-hust-dev-hub
-bash scripts/enable-existing-container-ssh.sh
-```
-
-What this fallback does:
-
-- targets an already-running container instead of recreating it
-- tries `apt-get install openssh-server` first when network access is available
-- supports an offline `.deb` bundle through `OFFLINE_DEB_DIR=/path/to/debs`
-- creates or aligns the container SSH user with the mounted workspace owner
-- copies `authorized_keys` into the container user home
-- adds `~/workspace` plus repo symlinks in `~/` so login immediately shows the code
-
-Example with an offline package bundle:
-
-```bash
-cd /home/shuhao/vllm-hust-dev-hub
-OFFLINE_DEB_DIR=/tmp/v091_ssh_debs_host \
-CONTAINER_NAME=vllm-ascend-v091-dev \
-bash scripts/enable-existing-container-ssh.sh
-```
-
 ## Windows SSH Config
 
 Add a second SSH alias in Windows `~/.ssh/config`.
@@ -125,11 +96,6 @@ Connect straight to the container with:
 ```bash
 ssh train8-container
 ```
-
-After login, the mounted workspace is available in two ways:
-
-- directly under `~/workspace`
-- as convenience symlinks such as `~/vllm-hust`, `~/vllm-hust-dev-hub`, and `~/reference-repos`
 
 If the container was recreated and the client complains about a changed host key, clear the stale entries and retry:
 
@@ -174,5 +140,4 @@ Then update the Windows SSH alias to match the new port.
 - The container image is managed by `ascend-runtime-manager`.
 - When you do not pass `--image`, the manager asks for the Ascend hardware profile and selects the matching `v0.9.1-dev` official image variant.
 - The first run is slower because the container installs `openssh-server`.
-- The fallback helper defaults to `vllm-ascend-v091-dev`, because that is the common name for the manually imported `v0.9.1-dev` container.
 - When the host Docker root under `/var/lib/docker` is low on space and `/data` has room, the helper can relocate Docker data-root to `/data/docker` before pulling the image.
