@@ -3,3 +3,5 @@
 *.tmp
 .DS_Store
 .env
+Ascend-Machine/results/*
+Ascend-Machine/build/*

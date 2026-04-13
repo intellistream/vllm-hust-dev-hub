@@ -10,7 +10,9 @@ HCCL_BUILD_DIR="$BUILD_DIR/hccl_test"
 ACL_BENCH_BIN="$BUILD_DIR/acl_copy_bench"
 NUMA_MEMCPY_BIN="$BUILD_DIR/numa_memcpy_bench"
 FIO_FILE=${FIO_FILE:-/data/ascend_machine_nvme_bw.bin}
-MPI_HOME=${MPI_HOME:-/usr/lib/aarch64-linux-gnu/openmpi}
+MPI_HOME=${MPI_HOME:-}
+MPI_INC_DIR=${MPI_INC_DIR:-}
+MPI_LIB_DIR=${MPI_LIB_DIR:-}
 ASCEND_TOOLKIT_HOME=${ASCEND_TOOLKIT_HOME:-/usr/local/Ascend/ascend-toolkit/latest}
 ASCEND_HCCL_SRC=${ASCEND_HCCL_SRC:-$ASCEND_TOOLKIT_HOME/tools/hccl_test}
 NPU_SMI_BIN=${NPU_SMI_BIN:-}
@@ -82,6 +84,40 @@ run_with_privilege() {
     return 1
 }
 
+resolve_mpi_layout() {
+    local mpi_roots=()
+    local root
+
+    if [[ -n "$MPI_HOME" ]]; then
+        mpi_roots+=("$MPI_HOME")
+    fi
+
+    mpi_roots+=(
+        /usr/lib/aarch64-linux-gnu/openmpi
+        /usr/lib/x86_64-linux-gnu/openmpi
+        /usr/local/openmpi
+        /opt/openmpi
+    )
+
+    for root in "${mpi_roots[@]}"; do
+        if [[ -z "$MPI_INC_DIR" && -f "$root/include/mpi.h" ]]; then
+            MPI_INC_DIR="$root/include"
+        fi
+        if [[ -z "$MPI_LIB_DIR" ]]; then
+            if [[ -f "$root/lib/libmpi.so" || -f "$root/lib/libmpi.a" ]]; then
+                MPI_LIB_DIR="$root/lib"
+            elif [[ -f "$root/lib64/libmpi.so" || -f "$root/lib64/libmpi.a" ]]; then
+                MPI_LIB_DIR="$root/lib64"
+            fi
+        fi
+        if [[ -n "$MPI_INC_DIR" && -n "$MPI_LIB_DIR" ]]; then
+            return 0
+        fi
+    done
+
+    return 1
+}
+
 compile_hccl_binary() {
     local output_name=$1
     local source_name=$2
@@ -101,11 +137,11 @@ compile_hccl_binary() {
         "$HCCL_BUILD_DIR/opbase_test/$source_name" \
         -I"$HCCL_BUILD_DIR/common/src" \
         -I"$ASCEND_TOOLKIT_HOME/include" \
-        -I"$MPI_HOME/include" \
+        -I"$MPI_INC_DIR" \
         -I"$HCCL_BUILD_DIR/opbase_test" \
         -L"$ASCEND_TOOLKIT_HOME/lib64" \
         -Wl,-rpath,"$ASCEND_TOOLKIT_HOME/lib64" \
-        -L"$MPI_HOME/lib" \
+        -L"$MPI_LIB_DIR" \
         -lhccl_v2 \
         -lacl_rt \
         -lmpi \
@@ -244,6 +280,19 @@ run_acl_copy_cases() {
 
 build_hccl_test() {
     log "Building hccl_test"
+
+    if ! resolve_mpi_layout; then
+        cat > "$OUT_DIR/hccl-build.txt" <<EOF
+HCCL_BUILD_FAILED exit_code=127
+reason=OpenMPI headers or libraries were not found
+MPI_HOME=${MPI_HOME:-unset}
+MPI_INC_DIR=${MPI_INC_DIR:-unset}
+MPI_LIB_DIR=${MPI_LIB_DIR:-unset}
+expected_one_of=/usr/lib/aarch64-linux-gnu/openmpi,/usr/lib/x86_64-linux-gnu/openmpi,/usr/local/openmpi,/opt/openmpi
+EOF
+        return 1
+    fi
+
     rm -rf "$HCCL_BUILD_DIR"
     cp -rL "$ASCEND_HCCL_SRC" "$HCCL_BUILD_DIR"
 
@@ -268,6 +317,8 @@ build_hccl_test() {
             echo "HCCL_BUILD_FAILED exit_code=$rc"
             echo "ASCEND_HCCL_SRC=$ASCEND_HCCL_SRC"
             echo "ASCEND_TOOLKIT_HOME=$ASCEND_TOOLKIT_HOME"
+            echo "MPI_INC_DIR=$MPI_INC_DIR"
+            echo "MPI_LIB_DIR=$MPI_LIB_DIR"
             echo
             cat "$OUT_DIR/hccl-build.txt"
         } > "$OUT_DIR/hccl-build.txt.tmp"
