@@ -58,6 +58,25 @@ ask_yes_no() {
   done
 }
 
+log() {
+  printf '[install-miniconda] %s\n' "$1"
+}
+
+conda_prefix_is_usable() {
+  local prefix="$1"
+  local conda_bin="$prefix/bin/conda"
+
+  [[ -x "$conda_bin" ]] || return 1
+  "$conda_bin" info --base >/dev/null 2>&1
+}
+
+backup_broken_prefix() {
+  local backup_prefix="$1.broken.$(date +%Y%m%d%H%M%S)"
+
+  mv "$1" "$backup_prefix"
+  log "Moved unusable Miniconda prefix to $backup_prefix"
+}
+
 detect_platform() {
   local os_name
   local arch_name
@@ -112,13 +131,27 @@ download_installer() {
 main() {
   parse_args "$@"
 
-  if [[ -x "$INSTALL_PREFIX/bin/conda" ]]; then
-    echo "[install-miniconda] Miniconda already exists at $INSTALL_PREFIX"
-    exit 0
+  if [[ -e "$INSTALL_PREFIX" ]]; then
+    if conda_prefix_is_usable "$INSTALL_PREFIX"; then
+      log "Miniconda already exists at $INSTALL_PREFIX"
+      exit 0
+    fi
+
+    if [[ -x "$INSTALL_PREFIX/bin/conda" ]]; then
+      log "Found an unusable Miniconda prefix at $INSTALL_PREFIX"
+      if ! ask_yes_no "Back up and reinstall Miniconda at $INSTALL_PREFIX?"; then
+        log "Installation cancelled"
+        exit 1
+      fi
+      backup_broken_prefix "$INSTALL_PREFIX"
+    elif [[ -n "$(find "$INSTALL_PREFIX" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]]; then
+      echo "[install-miniconda] Installation prefix exists and is not an empty Miniconda prefix: $INSTALL_PREFIX" >&2
+      exit 1
+    fi
   fi
 
   if ! ask_yes_no "Install Miniconda to $INSTALL_PREFIX?"; then
-    echo "[install-miniconda] Installation cancelled"
+    log "Installation cancelled"
     exit 1
   fi
 
@@ -128,8 +161,8 @@ main() {
   bash "$installer_path" -b -p "$INSTALL_PREFIX"
   rm -f "$installer_path"
 
-  echo "[install-miniconda] Installed Miniconda to $INSTALL_PREFIX"
-  echo "[install-miniconda] Activate later with: source $INSTALL_PREFIX/etc/profile.d/conda.sh && conda activate"
+  log "Installed Miniconda to $INSTALL_PREFIX"
+  log "Activate later with: source $INSTALL_PREFIX/etc/profile.d/conda.sh && conda activate"
 }
 
 main "$@"

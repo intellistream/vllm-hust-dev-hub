@@ -38,6 +38,9 @@ PIP_INSTALL_RETRIES=""
 PIP_INSTALL_TIMEOUT=""
 PIP_INSTALL_RESUME_RETRIES=""
 PIP_SUPPORTS_RESUME_RETRIES="unknown"
+CONDA_BIN=""
+CONDA_BASE=""
+BROKEN_CONDA_PREFIX=""
 
 print_help() {
   cat <<'EOF'
@@ -134,7 +137,13 @@ prompt_and_store_container_public_key() {
 
 run_conda_cmd() {
   # Keep conda operations isolated from external PYTHONPATH overrides.
-  (unset PYTHONPATH; conda "$@")
+  local conda_runner=(conda)
+
+  if [[ -n "$CONDA_BIN" ]]; then
+    conda_runner=("$CONDA_BIN")
+  fi
+
+  (unset PYTHONPATH; "${conda_runner[@]}" "$@")
 }
 
 get_conda_env_prefix() {
@@ -368,29 +377,66 @@ run_pip_install_in_env() {
   run_conda_env_cmd "$env_name" "${command_args[@]}"
 }
 
+resolve_conda_root_from_bin() {
+  local conda_bin="$1"
+
+  cd -- "$(dirname -- "$conda_bin")/.." && pwd
+}
+
+conda_bin_is_usable() {
+  local conda_bin="$1"
+
+  [[ -x "$conda_bin" ]] || return 1
+  (unset PYTHONPATH; "$conda_bin" info --base >/dev/null 2>&1)
+}
+
+record_broken_conda_prefix() {
+  local conda_bin="$1"
+  local conda_root=""
+
+  conda_root="$(resolve_conda_root_from_bin "$conda_bin")"
+  if [[ -n "$conda_root" && -z "$BROKEN_CONDA_PREFIX" ]]; then
+    BROKEN_CONDA_PREFIX="$conda_root"
+  fi
+}
+
+accept_conda_candidate() {
+  local conda_bin="$1"
+
+  [[ -n "$conda_bin" ]] || return 1
+  [[ -x "$conda_bin" ]] || return 1
+
+  if conda_bin_is_usable "$conda_bin"; then
+    printf '%s\n' "$conda_bin"
+    return 0
+  fi
+
+  record_broken_conda_prefix "$conda_bin"
+  return 1
+}
+
 find_conda_bin() {
-  if [[ -n "${CONDA_EXE:-}" && -x "${CONDA_EXE}" ]]; then
-    printf '%s\n' "$CONDA_EXE"
-    return 0
-  fi
-
-  local resolved_path
-  if resolved_path="$(type -P conda 2>/dev/null)" && [[ -n "$resolved_path" ]]; then
-    printf '%s\n' "$resolved_path"
-    return 0
-  fi
-
+  local resolved_path=""
   local candidates=(
+    "$WORKSPACE_ROOT/miniconda3/bin/conda"
     "$HOME/miniconda3/bin/conda"
     "$HOME/anaconda3/bin/conda"
     "$HOME/miniforge3/bin/conda"
     "$HOME/mambaforge/bin/conda"
   )
-
   local path
+
+  if accept_conda_candidate "${CONDA_EXE:-}"; then
+    return 0
+  fi
+
+  resolved_path="$(type -P conda 2>/dev/null || true)"
+  if accept_conda_candidate "$resolved_path"; then
+    return 0
+  fi
+
   for path in "${candidates[@]}"; do
-    if [[ -x "$path" ]]; then
-      printf '%s\n' "$path"
+    if accept_conda_candidate "$path"; then
       return 0
     fi
   done
@@ -398,59 +444,55 @@ find_conda_bin() {
   return 1
 }
 
-source_conda_sh_if_present() {
-  local conda_base="$1"
-  local conda_sh="$conda_base/etc/profile.d/conda.sh"
-
-  if [[ -f "$conda_sh" ]]; then
-    # shellcheck disable=SC1091
-    source "$conda_sh"
-  fi
-}
-
 get_conda_base() {
-  local conda_bin="$1"
+  local conda_bin="${1:-$CONDA_BIN}"
 
-  if command -v conda >/dev/null 2>&1; then
-    run_conda_cmd info --base 2>/dev/null || true
-    return 0
-  fi
-
-  "$conda_bin" info --base 2>/dev/null || true
+  [[ -n "$conda_bin" ]] || return 0
+  (unset PYTHONPATH; "$conda_bin" info --base 2>/dev/null || true)
 }
 
 ensure_conda_available() {
   local conda_bin
+  local install_prefix=""
+
+  BROKEN_CONDA_PREFIX=""
   if conda_bin="$(find_conda_bin)"; then
-    local conda_root
-    conda_root="$(get_conda_base "$conda_bin")"
-    if [[ -z "$conda_root" ]]; then
-      conda_root="$(cd -- "$(dirname -- "$conda_bin")/.." && pwd)"
+    CONDA_BIN="$conda_bin"
+    CONDA_BASE="$(get_conda_base "$conda_bin")"
+    if [[ -z "$CONDA_BASE" ]]; then
+      CONDA_BASE="$(resolve_conda_root_from_bin "$conda_bin")"
     fi
-    source_conda_sh_if_present "$conda_root"
     return 0
   fi
 
-  log "conda was not found."
+  log "conda was not found or is unusable."
+  if [[ -n "$BROKEN_CONDA_PREFIX" ]]; then
+    install_prefix="$BROKEN_CONDA_PREFIX"
+    log "Detected a broken conda prefix; quickstart will attempt to repair it in place: $install_prefix"
+  fi
+
   if [[ ! -f "$MINICONDA_INSTALL_SCRIPT" ]]; then
     echo "[quickstart] Miniconda installer script not found: $MINICONDA_INSTALL_SCRIPT" >&2
     return 1
   fi
 
   if (( AUTO_YES == 1 )) || ask_yes_no "Download and install Miniconda automatically now?"; then
+    local install_args=()
+    if [[ -n "$install_prefix" ]]; then
+      install_args+=(--prefix "$install_prefix")
+    fi
     if (( AUTO_YES == 1 )); then
-      bash "$MINICONDA_INSTALL_SCRIPT" --yes
-    else
-      bash "$MINICONDA_INSTALL_SCRIPT"
+      install_args+=(--yes)
     fi
 
+    bash "$MINICONDA_INSTALL_SCRIPT" "${install_args[@]}"
+
     if conda_bin="$(find_conda_bin)"; then
-      local conda_root
-      conda_root="$(get_conda_base "$conda_bin")"
-      if [[ -z "$conda_root" ]]; then
-        conda_root="$(cd -- "$(dirname -- "$conda_bin")/.." && pwd)"
+      CONDA_BIN="$conda_bin"
+      CONDA_BASE="$(get_conda_base "$conda_bin")"
+      if [[ -z "$CONDA_BASE" ]]; then
+        CONDA_BASE="$(resolve_conda_root_from_bin "$conda_bin")"
       fi
-      source_conda_sh_if_present "$conda_root"
       return 0
     fi
   fi
@@ -1150,8 +1192,14 @@ configure_bashrc_auto_activate_env() {
 
   configure_conda_env_library_hooks
 
-  conda_base="$(run_conda_cmd info --base 2>/dev/null || true)"
+  conda_base="${CONDA_BASE:-}"
   if [[ -z "$conda_base" ]]; then
+    conda_base="$(run_conda_cmd info --base 2>/dev/null || true)"
+  fi
+  if [[ -z "$conda_base" ]]; then
+    conda_base="$WORKSPACE_ROOT/miniconda3"
+  fi
+  if [[ ! -d "$conda_base" ]]; then
     conda_base="$HOME/miniconda3"
   fi
   conda_sh="$conda_base/etc/profile.d/conda.sh"

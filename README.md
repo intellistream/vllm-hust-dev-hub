@@ -86,6 +86,8 @@ Then they let you choose a scope:
 
 If `conda` is not available yet, `quickstart.sh` can automatically call the Miniconda installer script for you.
 
+If a copied or relocated Miniconda prefix is present but unusable because its embedded interpreter path is stale, `quickstart.sh` now ignores that broken executable, backs up the bad prefix, and reinstalls Miniconda before continuing.
+
 After conda environment setup, `quickstart.sh` also updates `~/.bashrc` so new interactive shells auto-activate the selected environment.
 
 Quickstart now installs conda activate/deactivate hooks for the selected environment. On each `conda activate`, the hook probes `https://hf-mirror.com` and auto-sets `HF_ENDPOINT=https://hf-mirror.com` when reachable; otherwise it unsets `HF_ENDPOINT` so Hugging Face clients fall back to the default upstream endpoint.
