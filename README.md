@@ -84,7 +84,9 @@ Then they let you choose a scope:
 - `core`: `ascend-runtime-manager`, `vllm-hust`, `vllm-ascend-hust`, `vllm-hust-benchmark`
 - `full`: core repos plus extra local repos such as workstation, docs, website, and EvoScientist when they are installable
 
-If `conda` is not available yet, `quickstart.sh` can automatically call the Miniconda installer script for you.
+If `conda` is not available yet, `quickstart.sh` can automatically call the Miniconda installer script for flows that include conda setup (for example `--conda` / `--all`).
+
+Install-only runs (`--install` without `--conda`) will not auto-install Miniconda; they fail fast and ask you to run a conda setup flow first.
 
 If a copied or relocated Miniconda prefix is present but unusable because its embedded interpreter path is stale, `quickstart.sh` now ignores that broken executable, backs up the bad prefix, and reinstalls Miniconda before continuing.
 

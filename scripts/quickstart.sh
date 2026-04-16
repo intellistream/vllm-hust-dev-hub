@@ -679,6 +679,7 @@ get_conda_base() {
 }
 
 ensure_conda_available() {
+  local bootstrap_mode="${1:-allow-bootstrap}"
   local conda_bin
   local install_prefix=""
 
@@ -690,6 +691,11 @@ ensure_conda_available() {
       CONDA_BASE="$(resolve_conda_root_from_bin "$conda_bin")"
     fi
     return 0
+  fi
+
+  if [[ "$bootstrap_mode" == "no-bootstrap" ]]; then
+    log "conda is not available and auto-install is disabled for this flow."
+    return 1
   fi
 
   log "conda was not found or is unusable."
@@ -1102,7 +1108,10 @@ install_workspace_repos_into_env() {
   local install_scope="${2:-$INSTALL_SCOPE}"
   local reconcile_mode="${3:-without-runtime-reconcile}"
 
-  ensure_conda_available
+  if ! ensure_conda_available "no-bootstrap"; then
+    log "Install-only flow requires an existing conda setup. Run quickstart with --conda (or --all) first."
+    return 2
+  fi
 
   if ! conda_env_exists; then
     log "Conda env '$ENV_NAME' does not exist yet. Create it first with --conda."
