@@ -168,8 +168,9 @@ maybe_sync_origin_remote_to_ssh() {
     return 0
   fi
 
-  run_git -C "$destination" remote set-url origin "$desired_repo_url"
-  echo "[remote] $(basename -- "$destination") origin -> $desired_repo_url"
+  # Keep the existing protocol for established clones to avoid breaking hosts
+  # that only have HTTPS auth configured.
+  return 0
 }
 
 queue_clone() {
@@ -199,6 +200,10 @@ maybe_pull_updates() {
   local destination
   local branch_name
   local upstream_ref
+  local upstream_remote
+  local upstream_branch
+  local current_repo_url
+  local https_url
   local counts
   local ahead_count
   local behind_count
@@ -223,8 +228,29 @@ maybe_pull_updates() {
     echo "[skip] $relative_path has no upstream tracking branch"
     return 0
   fi
+  upstream_remote="${upstream_ref%%/*}"
+  upstream_branch="${upstream_ref#*/}"
 
-  run_git -C "$destination" fetch --quiet --prune
+  if ! run_git -C "$destination" fetch --quiet --prune; then
+    current_repo_url="$(run_git -C "$destination" remote get-url origin 2>/dev/null || true)"
+    https_url="$(https_url_from_ssh_url "$current_repo_url" 2>/dev/null || true)"
+    if [[ -z "$https_url" ]]; then
+      https_url="$(https_url_from_ssh_url "$repo_url" 2>/dev/null || true)"
+    fi
+
+    if [[ -n "$https_url" ]]; then
+      echo "[fetch] $relative_path SSH fetch failed; retrying via $https_url"
+      run_git -C "$destination" remote set-url origin "$https_url"
+      if ! run_git -C "$destination" fetch --quiet --prune; then
+        echo "[skip] $relative_path fetch failed after HTTPS fallback"
+        return 0
+      fi
+    else
+      echo "[skip] $relative_path fetch failed and no HTTPS fallback is available"
+      return 0
+    fi
+  fi
+
   counts="$(run_git -C "$destination" rev-list --left-right --count "$branch_name...$upstream_ref")"
   ahead_count="${counts%%$'\t'*}"
   behind_count="${counts##*$'\t'}"
@@ -236,13 +262,15 @@ maybe_pull_updates() {
 
   if ask_yes_no "Remote updates found for $relative_path (behind=$behind_count, ahead=$ahead_count). Pull with --ff-only?"; then
     echo "[pull] $relative_path"
-    run_git -C "$destination" pull --ff-only
+    if ! run_git -C "$destination" pull --ff-only "$upstream_remote" "$upstream_branch"; then
+      echo "[skip] $relative_path pull failed; leaving local branch unchanged"
+    fi
   else
     echo "[skip] $relative_path remote updates not pulled"
   fi
 }
 
-# Use SSH URLs to avoid HTTPS connectivity issues.
+# Prefer SSH URLs for fresh clones, with HTTPS fallback when SSH auth is unavailable.
 # Keep upstream comparison repos under reference-repos/ rather than as top-level siblings.
 REPOS=(
   "ascend-runtime-manager|git@github.com:intellistream/ascend-runtime-manager.git"

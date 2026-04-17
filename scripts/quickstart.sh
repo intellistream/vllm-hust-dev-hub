@@ -22,6 +22,8 @@ MENU_CONFIRMED=0
 UPDATE_BASHRC=0
 BASHRC_BEGIN="# >>> vllm-hust-dev-hub auto-activate >>>"
 BASHRC_END="# <<< vllm-hust-dev-hub auto-activate <<<"
+BASHRC_CONDA_INIT_BEGIN="# >>> vllm-hust-dev-hub conda-init >>>"
+BASHRC_CONDA_INIT_END="# <<< vllm-hust-dev-hub conda-init <<<"
 CONDA_MAIN_CHANNEL="https://repo.anaconda.com/pkgs/main"
 CONDA_R_CHANNEL="https://repo.anaconda.com/pkgs/r"
 CONDA_ASCEND_CHANNEL="https://repo.huaweicloud.com/ascend/repos/conda/"
@@ -834,6 +836,7 @@ create_or_update_conda_env() {
   install_workspace_repos_into_env "refresh" "$INSTALL_SCOPE" "with-runtime-reconcile"
   report_vllm_cli_status "$ENV_NAME" || true
 
+  configure_bashrc_conda_init
   maybe_update_bashrc_auto_activate_env
 
   log "Conda env ready: $ENV_NAME"
@@ -1456,13 +1459,9 @@ EOF
   log "Installed conda activate hooks for '$ENV_NAME' runtime libraries"
 }
 
-configure_bashrc_auto_activate_env() {
+resolve_conda_sh_path() {
   local conda_base
   local conda_sh
-  local bashrc_file
-  local tmp_file
-
-  configure_conda_env_library_hooks
 
   conda_base="${CONDA_BASE:-}"
   if [[ -z "$conda_base" ]]; then
@@ -1474,9 +1473,61 @@ configure_bashrc_auto_activate_env() {
   if [[ ! -d "$conda_base" ]]; then
     conda_base="$HOME/miniconda3"
   fi
-  conda_sh="$conda_base/etc/profile.d/conda.sh"
 
-  if [[ ! -f "$conda_sh" ]]; then
+  conda_sh="$conda_base/etc/profile.d/conda.sh"
+  if [[ -f "$conda_sh" ]]; then
+    printf '%s\n' "$conda_sh"
+    return 0
+  fi
+
+  return 1
+}
+
+configure_bashrc_conda_init() {
+  local conda_sh
+  local bashrc_file
+  local tmp_file
+
+  conda_sh="$(resolve_conda_sh_path || true)"
+  if [[ -z "$conda_sh" || ! -f "$conda_sh" ]]; then
+    log "Skip ~/.bashrc conda init setup because conda.sh was not found"
+    return 0
+  fi
+
+  bashrc_file="$HOME/.bashrc"
+  touch "$bashrc_file"
+  tmp_file="$(mktemp)"
+
+  awk -v begin="$BASHRC_CONDA_INIT_BEGIN" -v end="$BASHRC_CONDA_INIT_END" '
+    $0 == begin {skip=1; next}
+    $0 == end {skip=0; next}
+    !skip {print}
+  ' "$bashrc_file" > "$tmp_file"
+
+  {
+    cat "$tmp_file"
+    printf '\n%s\n' "$BASHRC_CONDA_INIT_BEGIN"
+    printf 'if [[ "$-" == *i* ]] && [[ -f "%s" ]]; then\n' "$conda_sh"
+    printf '  source "%s"\n' "$conda_sh"
+    printf 'fi\n'
+    printf '%s\n' "$BASHRC_CONDA_INIT_END"
+  } > "$bashrc_file"
+
+  rm -f "$tmp_file"
+  log "Updated ~/.bashrc to initialize conda command in new interactive shells"
+  log "Current shell is unchanged. Open a new interactive shell or run: source $conda_sh"
+}
+
+configure_bashrc_auto_activate_env() {
+  local conda_sh
+  local bashrc_file
+  local tmp_file
+
+  configure_conda_env_library_hooks
+
+  conda_sh="$(resolve_conda_sh_path || true)"
+
+  if [[ -z "$conda_sh" || ! -f "$conda_sh" ]]; then
     log "Skip bashrc auto-activate setup because conda.sh was not found: $conda_sh"
     return 0
   fi
@@ -1601,6 +1652,7 @@ EOF
       ;;
     7)
       ensure_conda_available
+      configure_bashrc_conda_init
       configure_bashrc_auto_activate_env
       log "已完成 ~/.bashrc 自动激活设置更新。"
       exit 0
