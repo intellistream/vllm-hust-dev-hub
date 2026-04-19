@@ -45,6 +45,7 @@ jobs:
           HOME: ${{ github.workspace }}/.ci-home
           XDG_CACHE_HOME: ${{ github.workspace }}/.ci-home/.cache
           XDG_CONFIG_HOME: ${{ github.workspace }}/.ci-home/.config
+          CONDA_SOLVER: classic
         run: |
           mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME"
           if command -v conda >/dev/null 2>&1 || [[ -x "$HOME/miniconda3/bin/conda" ]]; then
@@ -59,6 +60,7 @@ jobs:
           HOME: ${{ github.workspace }}/.ci-home
           XDG_CACHE_HOME: ${{ github.workspace }}/.ci-home/.cache
           XDG_CONFIG_HOME: ${{ github.workspace }}/.ci-home/.config
+          CONDA_SOLVER: classic
           RUNNER_FLAVOR: ${{ matrix.runner_flavor }}
           PYTHON_VERSION: '3.11'
           INSTALL_SCOPE: full
