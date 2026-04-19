@@ -1,0 +1,61 @@
+name: Quickstart CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  quickstart-bootstrap-and-test:
+    name: quickstart (${{ matrix.runner_name }})
+    runs-on: ${{ fromJson(matrix.runs_on) }}
+    timeout-minutes: ${{ matrix.timeout_minutes }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner_name: ubuntu
+            runner_flavor: ubuntu
+            runs_on: '["ubuntu-latest"]'
+            timeout_minutes: 90
+          - runner_name: self-hosted
+            runner_flavor: self-hosted
+            runs_on: '["self-hosted","linux"]'
+            timeout_minutes: 150
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: vllm-hust-dev-hub
+
+    steps:
+      - name: Checkout vllm-hust-dev-hub
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          path: vllm-hust-dev-hub
+
+      - name: Run quickstart CI bootstrap and tests
+        env:
+          RUNNER_FLAVOR: ${{ matrix.runner_flavor }}
+          PYTHON_VERSION: '3.11'
+          INSTALL_SCOPE: full
+          RESULTS_ROOT: ${{ github.workspace }}/ci-results
+          GITHUB_TOKEN: ${{ github.token }}
+          CI_GITHUB_TOKEN: ${{ secrets.VLLM_HUST_CLONE_TOKEN }}
+        run: bash scripts/ci/quickstart_ci.sh
+
+      - name: Upload quickstart CI artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quickstart-ci-${{ matrix.runner_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ci-results
+          if-no-files-found: warn
+          retention-days: 14

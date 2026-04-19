@@ -144,6 +144,10 @@ Long-running installs now emit verbose pip output when possible, plus periodic h
 
 When quickstart installs `vllm-ascend-hust`, it now always ensures `triton-ascend` is present, including lightweight plugin mode (`COMPILE_CUSTOM_KERNELS=0`).
 
+If the sibling `vllm-ascend-hust` repo is unavailable, quickstart now falls back
+to `hust-ascend-manager runtime repair --install-plugin` and installs the PyPI
+distribution `vllm-ascend-hust` directly into the selected conda environment.
+
 Quickstart conda activate hooks no longer prepend `${CONDA_PREFIX}/lib` to `LD_LIBRARY_PATH`, which avoids breaking host system tools such as `git` and `curl` in activated shells.
 
 Ascend custom-kernel selection now uses auto-detection by default and is not persisted into conda env vars. To force behavior explicitly, set `HUST_DEV_HUB_ASCEND_COMPILE_CUSTOM_KERNELS=1` (always compile) or `HUST_DEV_HUB_ASCEND_COMPILE_CUSTOM_KERNELS=0` (always lightweight mode) before running quickstart.

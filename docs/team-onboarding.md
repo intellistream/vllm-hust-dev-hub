@@ -198,6 +198,10 @@ bash scripts/quickstart.sh
 
 如果机器检测到 Ascend 运行时，脚本还会调用 `hust-ascend-manager setup --install-python-stack` 做 Python 栈对齐。
 
+如果本地缺少同级的 `vllm-ascend-hust` 仓库，quickstart 会自动回退到
+PyPI 分发包 `vllm-ascend-hust`，通过 `hust-ascend-manager runtime repair --install-plugin`
+完成插件安装和入口校验。
+
 说明：
 
 - 脚本会把 conda 自动激活逻辑写入 `~/.bashrc`

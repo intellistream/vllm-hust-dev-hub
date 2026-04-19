@@ -62,6 +62,67 @@ run_git() {
   env -u LD_LIBRARY_PATH git "$@"
 }
 
+is_git_work_tree() {
+  local repo_path="$1"
+
+  run_git -C "$repo_path" rev-parse --is-inside-work-tree >/dev/null 2>&1
+}
+
+is_empty_path() {
+  local target_path="$1"
+
+  if [[ -d "$target_path" ]]; then
+    [[ -z "$(find "$target_path" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]]
+    return
+  fi
+
+  return 1
+}
+
+next_backup_path() {
+  local target_path="$1"
+  local timestamp
+  local suffix=""
+  local counter=1
+  local candidate
+
+  timestamp="$(date +%Y%m%d%H%M%S)"
+  candidate="${target_path}.pre-git-reclone.${timestamp}"
+  while [[ -e "$candidate$suffix" ]]; do
+    suffix=".$counter"
+    counter=$((counter + 1))
+  done
+
+  printf '%s\n' "$candidate$suffix"
+}
+
+prepare_existing_destination_for_clone() {
+  local relative_path="$1"
+  local destination="$2"
+  local backup_path
+
+  if is_git_work_tree "$destination"; then
+    return 1
+  fi
+
+  if is_empty_path "$destination"; then
+    echo "[repair] $relative_path exists but is empty; removing it before re-clone"
+    rmdir "$destination"
+    return 0
+  fi
+
+  backup_path="$(next_backup_path "$destination")"
+  if (( AUTO_YES == 1 )) \
+    || ask_yes_no "$relative_path exists but is not a git repository. Move it to $backup_path and clone a fresh copy?"; then
+    mv "$destination" "$backup_path"
+    echo "[repair] $relative_path moved to $backup_path; a fresh clone will be created"
+    return 0
+  fi
+
+  echo "[skip] $relative_path exists but is not a git repository"
+  return 2
+}
+
 if [[ ! "$CLONE_JOBS" =~ ^[1-9][0-9]*$ ]]; then
   echo "CLONE_JOBS must be a positive integer" >&2
   exit 1
@@ -210,8 +271,8 @@ maybe_pull_updates() {
 
   destination="$(clone_destination "$relative_path")"
 
-  if [[ ! -d "$destination/.git" ]]; then
-    echo "[skip] $relative_path already exists and is not a git repository"
+  if ! is_git_work_tree "$destination"; then
+    echo "[skip] $relative_path exists but is not a git repository"
     return 0
   fi
 
@@ -300,7 +361,16 @@ for entry in "${REPOS[@]}"; do
   destination="$(clone_destination "$relative_path")"
 
   if [[ -e "$destination" ]]; then
-    maybe_pull_updates "$relative_path" "$repo_url"
+    if is_git_work_tree "$destination"; then
+      maybe_pull_updates "$relative_path" "$repo_url"
+    else
+      prepare_existing_destination_for_clone "$relative_path" "$destination" || repair_result=$?
+      repair_result="${repair_result:-0}"
+      if [[ "$repair_result" == "0" ]]; then
+        pending_clones+=("$entry")
+      fi
+      unset repair_result
+    fi
     continue
   fi
 

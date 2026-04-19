@@ -31,7 +31,15 @@ CONDA_FORGE_MIRROR_CHANNEL="https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/
 CONDA_FORGE_FALLBACK_CHANNEL="conda-forge"
 PIP_INDEX_MIRROR_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
 QUICKSTART_SETUPTOOLS_VERSION="77.0.3"
-TOS_MARKER_ROOT="$HOME/.config/vllm-hust-dev-hub"
+ASCEND_PLUGIN_PYPI_PACKAGE="vllm-ascend-hust"
+CURRENT_USER_NAME="$(id -un 2>/dev/null || printf '%s' "${USER:-}")"
+CURRENT_USER_HOME="$(getent passwd "$CURRENT_USER_NAME" 2>/dev/null | cut -d: -f6 || true)"
+if [[ -z "$CURRENT_USER_HOME" ]]; then
+  CURRENT_USER_HOME="${HOME:-}"
+fi
+CURRENT_USER_CACHE_HOME="$CURRENT_USER_HOME/.cache"
+CURRENT_USER_CONFIG_HOME="$CURRENT_USER_HOME/.config"
+TOS_MARKER_ROOT="$CURRENT_USER_CONFIG_HOME/vllm-hust-dev-hub"
 CONDA_RUN_STREAM_FLAG=""
 CONTAINER_EXTRA_AUTH_KEYS_FILE="$WORKSPACE_ROOT/.ssh/vllm-ascend-extra-authorized_keys"
 PIP_DEFAULTS_INITIALIZED=0
@@ -151,13 +159,33 @@ run_conda_cmd() {
     conda_runner=("$CONDA_BIN")
   fi
 
-  (unset PYTHONPATH; "${conda_runner[@]}" "$@")
+  mkdir -p "$CURRENT_USER_CACHE_HOME" "$CURRENT_USER_CONFIG_HOME"
+  (
+    unset PYTHONPATH
+    env \
+      HOME="$CURRENT_USER_HOME" \
+      XDG_CACHE_HOME="$CURRENT_USER_CACHE_HOME" \
+      XDG_CONFIG_HOME="$CURRENT_USER_CONFIG_HOME" \
+      "${conda_runner[@]}" "$@"
+  )
 }
 
 get_conda_env_prefix() {
   local env_name="$1"
 
   run_conda_cmd env list | awk -v target_env="$env_name" '$1 == target_env { print $NF; exit }'
+}
+
+get_conda_env_python_bin() {
+  local env_name="$1"
+  local env_prefix=""
+
+  env_prefix="$(get_conda_env_prefix "$env_name")"
+  if [[ -z "$env_prefix" ]]; then
+    return 1
+  fi
+
+  printf '%s\n' "$env_prefix/bin/python"
 }
 
 detect_conda_run_stream_flag() {
@@ -229,6 +257,20 @@ get_first_nonempty_env() {
     value="${!variable_name:-}"
     if [[ -n "$value" ]]; then
       printf '%s\n' "$value"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+extra_env_args_include_var() {
+  local variable_name="$1"
+  shift
+  local env_arg
+
+  for env_arg in "$@"; do
+    if [[ "$env_arg" == "$variable_name="* ]]; then
       return 0
     fi
   done
@@ -365,6 +407,7 @@ ensure_ascend_build_python_packages() {
     return 0
   fi
 
+  ensure_pip_package_in_env "$ENV_NAME" "cmake"
   pybind11_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "pybind11" || true)"
   ensure_pip_package_in_env "$ENV_NAME" "${pybind11_spec:-pybind11}"
 }
@@ -558,6 +601,70 @@ pip_install_supports_option() {
   run_conda_env_cmd "$env_name" python -m pip install --help 2>/dev/null | grep -q -- "$option"
 }
 
+python_bin_pip_install_supports_option() {
+  local python_bin="$1"
+  local option="$2"
+
+  "$python_bin" -m pip install --help 2>/dev/null | grep -q -- "$option"
+}
+
+run_pip_install_with_python_bin() {
+  local python_bin="$1"
+  shift
+  local extra_env_args=()
+  local pip_args=()
+  local pip_install_args=()
+  local command_args=()
+  local python_supports_resume_retries="unknown"
+
+  while [[ $# -gt 0 ]]; do
+    if [[ "$1" == "--" ]]; then
+      shift
+      break
+    fi
+    extra_env_args+=("$1")
+    shift
+  done
+  pip_args=("$@")
+
+  ensure_pip_install_defaults
+  pip_install_args=(
+    --retries "$PIP_INSTALL_RETRIES"
+    --timeout "$PIP_INSTALL_TIMEOUT"
+  )
+
+  if python_bin_pip_install_supports_option "$python_bin" "--resume-retries"; then
+    python_supports_resume_retries="1"
+  else
+    python_supports_resume_retries="0"
+  fi
+
+  if [[ "$python_supports_resume_retries" == "1" ]]; then
+    pip_install_args+=(--resume-retries "$PIP_INSTALL_RESUME_RETRIES")
+  fi
+
+  mkdir -p "$CURRENT_USER_CACHE_HOME/pip" "$CURRENT_USER_CONFIG_HOME"
+  command_args=(env PIP_DISABLE_PIP_VERSION_CHECK=1)
+  command_args+=(
+    "HOME=$CURRENT_USER_HOME"
+    "XDG_CACHE_HOME=$CURRENT_USER_CACHE_HOME"
+    "XDG_CONFIG_HOME=$CURRENT_USER_CONFIG_HOME"
+    "PIP_CACHE_DIR=$CURRENT_USER_CACHE_HOME/pip"
+  )
+  if ! extra_env_args_include_var "LD_LIBRARY_PATH" "${extra_env_args[@]}"; then
+    command_args+=("LD_LIBRARY_PATH=")
+  fi
+  if [[ -n "$PIP_SELECTED_INDEX_URL" && -z "${PIP_INDEX_URL:-}" ]]; then
+    command_args+=("PIP_INDEX_URL=$PIP_SELECTED_INDEX_URL")
+  fi
+  if [[ -n "$PIP_SELECTED_EXTRA_INDEX_URL" && -z "${PIP_EXTRA_INDEX_URL:-}" ]]; then
+    command_args+=("PIP_EXTRA_INDEX_URL=$PIP_SELECTED_EXTRA_INDEX_URL")
+  fi
+  command_args+=("${extra_env_args[@]}" "$python_bin" -m pip install "${pip_install_args[@]}" "${pip_args[@]}")
+
+  "${command_args[@]}"
+}
+
 run_pip_install_in_env() {
   local env_name="$1"
   shift
@@ -595,6 +702,15 @@ run_pip_install_in_env() {
   fi
 
   command_args=(env PIP_DISABLE_PIP_VERSION_CHECK=1)
+  command_args+=(
+    "HOME=$CURRENT_USER_HOME"
+    "XDG_CACHE_HOME=$CURRENT_USER_CACHE_HOME"
+    "XDG_CONFIG_HOME=$CURRENT_USER_CONFIG_HOME"
+    "PIP_CACHE_DIR=$CURRENT_USER_CACHE_HOME/pip"
+  )
+  if ! extra_env_args_include_var "LD_LIBRARY_PATH" "${extra_env_args[@]}"; then
+    command_args+=("LD_LIBRARY_PATH=")
+  fi
   if [[ -n "$PIP_SELECTED_INDEX_URL" && -z "${PIP_INDEX_URL:-}" ]]; then
     command_args+=("PIP_INDEX_URL=$PIP_SELECTED_INDEX_URL")
   fi
@@ -753,6 +869,108 @@ conda_env_exists() {
   run_conda_cmd env list | awk '{print $1}' | grep -Fxq "$ENV_NAME"
 }
 
+get_conda_env_python_version() {
+  local env_name="$1"
+
+  local env_python_bin=""
+
+  env_python_bin="$(get_conda_env_python_bin "$env_name" 2>/dev/null || true)"
+  if [[ -n "$env_python_bin" && -x "$env_python_bin" ]]; then
+    "$env_python_bin" - <<'PY'
+import sys
+
+print(f"{sys.version_info.major}.{sys.version_info.minor}")
+PY
+    return 0
+  fi
+
+  run_conda_env_cmd "$env_name" python - <<'PY'
+import sys
+
+print(f"{sys.version_info.major}.{sys.version_info.minor}")
+PY
+}
+
+reconcile_conda_env_python_version() {
+  local current_python_version=""
+
+  current_python_version="$(get_conda_env_python_version "$ENV_NAME" 2>/dev/null || true)"
+  if [[ -z "$current_python_version" ]]; then
+    log "Warning: could not determine Python version for conda env '$ENV_NAME'; quickstart will continue with the existing interpreter."
+    return 0
+  fi
+
+  if [[ "$current_python_version" == "$PYTHON_VERSION" ]]; then
+    log "Conda env '$ENV_NAME' already matches requested python=$PYTHON_VERSION"
+    return 0
+  fi
+
+  accept_conda_tos_if_needed
+  log "Conda env '$ENV_NAME' uses python=$current_python_version, but quickstart requested python=$PYTHON_VERSION"
+  log "Updating '$ENV_NAME' in place to python=$PYTHON_VERSION..."
+  log "Using explicit channels for Python reconciliation:"
+  log "  - $CONDA_ASCEND_CHANNEL"
+  log "  - $CONDA_FORGE_MIRROR_CHANNEL"
+  if ! run_conda_cmd install -y -n "$ENV_NAME" \
+    --override-channels \
+    -c "$CONDA_ASCEND_CHANNEL" \
+    -c "$CONDA_FORGE_MIRROR_CHANNEL" \
+    "python=$PYTHON_VERSION" pip; then
+    log "Mirror-based Python reconciliation failed; retrying with fallback channel '$CONDA_FORGE_FALLBACK_CHANNEL'"
+    run_conda_cmd install -y -n "$ENV_NAME" \
+      --override-channels \
+      -c "$CONDA_ASCEND_CHANNEL" \
+      -c "$CONDA_FORGE_FALLBACK_CHANNEL" \
+      "python=$PYTHON_VERSION" pip
+  fi
+
+  current_python_version="$(get_conda_env_python_version "$ENV_NAME" 2>/dev/null || true)"
+  if [[ "$current_python_version" == "$PYTHON_VERSION" ]]; then
+    log "Conda env '$ENV_NAME' is now using python=$current_python_version"
+    return 0
+  fi
+
+  log "Warning: conda env '$ENV_NAME' still reports python=${current_python_version:-unknown} after reconciliation attempt"
+  return 1
+}
+
+ensure_hust_ascend_manager_bootstrap_in_env() {
+  local env_python_bin=""
+
+  env_python_bin="$(get_conda_env_python_bin "$ENV_NAME" 2>/dev/null || true)"
+  if [[ -z "$env_python_bin" || ! -x "$env_python_bin" ]]; then
+    log "Warning: could not locate Python interpreter for conda env '$ENV_NAME' while checking hust-ascend-manager bootstrap state"
+    return 1
+  fi
+
+  if "$env_python_bin" -c 'import hust_ascend_manager.cli' >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ ! -f "$MANAGER_REPO/pyproject.toml" ]]; then
+    log "Warning: hust-ascend-manager source repo is unavailable at '$MANAGER_REPO'; bootstrap repair skipped"
+    return 1
+  fi
+
+  log "Installing bootstrap Python packaging tools into '$ENV_NAME'"
+  run_with_heartbeat \
+    "installing bootstrap Python packaging tools into $ENV_NAME" \
+    run_pip_install_with_python_bin "$env_python_bin" -- --upgrade pip "setuptools==$QUICKSTART_SETUPTOOLS_VERSION" wheel
+
+  log "Repairing hust-ascend-manager bootstrap install in '$ENV_NAME'"
+  run_with_heartbeat \
+    "repairing hust-ascend-manager bootstrap install in $ENV_NAME" \
+    run_pip_install_with_python_bin "$env_python_bin" -- --no-build-isolation -e "$MANAGER_REPO"
+
+  if "$env_python_bin" -c 'import hust_ascend_manager.cli' >/dev/null 2>&1; then
+    log "Verified hust-ascend-manager bootstrap install in '$ENV_NAME'"
+    return 0
+  fi
+
+  log "Warning: hust-ascend-manager is still unavailable in '$ENV_NAME' after bootstrap repair"
+  return 1
+}
+
 accept_conda_tos_if_needed() {
   if ! run_conda_cmd tos --help >/dev/null 2>&1; then
     return 0
@@ -805,6 +1023,8 @@ create_or_update_conda_env() {
 
   if conda_env_exists; then
     log "Conda env '$ENV_NAME' already exists. Updating core tools..."
+    reconcile_conda_env_python_version
+    ensure_hust_ascend_manager_bootstrap_in_env
   else
     accept_conda_tos_if_needed
     log "Creating conda env '$ENV_NAME' (python=$PYTHON_VERSION)..."
@@ -983,6 +1203,10 @@ repo_requires_ascend_runtime() {
   [[ "$repo_path" == "$WORKSPACE_ROOT/vllm-ascend-hust" ]]
 }
 
+has_local_ascend_plugin_checkout() {
+  [[ -f "$WORKSPACE_ROOT/vllm-ascend-hust/pyproject.toml" ]]
+}
+
 repo_prefers_no_build_isolation() {
   local repo_path="$1"
 
@@ -1106,6 +1330,69 @@ reconcile_ascend_runtime_with_manager() {
     run_conda_env_cmd "$ENV_NAME" python -m hust_ascend_manager.cli "${manager_args[@]}"
 }
 
+install_ascend_plugin_pypi_fallback_with_manager() {
+  local env_python_bin
+  local command_args=(
+    env
+    "HOME=$CURRENT_USER_HOME"
+    "XDG_CACHE_HOME=$CURRENT_USER_CACHE_HOME"
+    "XDG_CONFIG_HOME=$CURRENT_USER_CONFIG_HOME"
+    "PIP_CACHE_DIR=$CURRENT_USER_CACHE_HOME/pip"
+    LD_LIBRARY_PATH=
+  )
+
+  if ! should_reconcile_ascend_runtime; then
+    return 0
+  fi
+
+  if has_local_ascend_plugin_checkout; then
+    return 0
+  fi
+
+  if [[ ! -f "$WORKSPACE_ROOT/vllm-hust/pyproject.toml" ]]; then
+    log "Warning: vllm-hust repo is unavailable, skipped PyPI fallback install for $ASCEND_PLUGIN_PYPI_PACKAGE"
+    return 1
+  fi
+
+  env_python_bin="$(get_conda_env_python_bin "$ENV_NAME" 2>/dev/null || true)"
+  if [[ -z "$env_python_bin" || ! -x "$env_python_bin" ]]; then
+    log "Warning: could not resolve Python interpreter for '$ENV_NAME'; skipped PyPI fallback install for $ASCEND_PLUGIN_PYPI_PACKAGE"
+    return 1
+  fi
+
+  mkdir -p "$CURRENT_USER_CACHE_HOME/pip" "$CURRENT_USER_CONFIG_HOME"
+  ensure_pip_install_defaults
+  if [[ -n "$PIP_SELECTED_INDEX_URL" && -z "${PIP_INDEX_URL:-}" ]]; then
+    command_args+=("PIP_INDEX_URL=$PIP_SELECTED_INDEX_URL")
+  fi
+  if [[ -n "$PIP_SELECTED_EXTRA_INDEX_URL" && -z "${PIP_EXTRA_INDEX_URL:-}" ]]; then
+    command_args+=("PIP_EXTRA_INDEX_URL=$PIP_SELECTED_EXTRA_INDEX_URL")
+  fi
+
+  log "Local vllm-ascend-hust checkout is unavailable; installing $ASCEND_PLUGIN_PYPI_PACKAGE from PyPI fallback via hust-ascend-manager"
+  command_args+=(
+    "$env_python_bin"
+    -m
+    hust_ascend_manager.cli
+    runtime
+    repair
+    --repo
+    "$WORKSPACE_ROOT/vllm-hust"
+    --python
+    "$env_python_bin"
+    --skip-torch-install
+    --skip-build-deps
+    --skip-rebuild
+    --install-plugin
+    --plugin-package
+    "$ASCEND_PLUGIN_PYPI_PACKAGE"
+  )
+
+  run_with_heartbeat \
+    "installing $ASCEND_PLUGIN_PYPI_PACKAGE from PyPI fallback" \
+    "${command_args[@]}"
+}
+
 install_workspace_repos_into_env() {
   local install_mode="${1:-$INSTALL_MODE}"
   local install_scope="${2:-$INSTALL_SCOPE}"
@@ -1197,6 +1484,15 @@ install_workspace_repos_into_env() {
     installed_list+=("$repo_path ($project_name)")
   done
 
+  if install_ascend_plugin_pypi_fallback_with_manager; then
+    if ! has_local_ascend_plugin_checkout && should_reconcile_ascend_runtime; then
+      installed_any=1
+      installed_list+=("$ASCEND_PLUGIN_PYPI_PACKAGE (PyPI fallback)")
+    fi
+  elif ! has_local_ascend_plugin_checkout && should_reconcile_ascend_runtime; then
+    skipped_list+=("$ASCEND_PLUGIN_PYPI_PACKAGE (PyPI fallback failed)")
+  fi
+
   if (( installed_any == 0 )); then
     if [[ "$install_mode" == "install" && ${#skipped_list[@]} -gt 0 ]]; then
       log "All selected repositories are already installed in '$ENV_NAME' (scope=$install_scope)."
@@ -1220,7 +1516,7 @@ install_workspace_repos_into_env() {
   fi
 
   if [[ -d "$WORKSPACE_ROOT/vllm-ascend-hust" && ! -f "$WORKSPACE_ROOT/vllm-ascend-hust/pyproject.toml" ]]; then
-    log "Warning: vllm-ascend-hust exists but has no pyproject.toml, skipped install"
+    log "Warning: vllm-ascend-hust exists but has no pyproject.toml; quickstart used or will use the PyPI fallback when Ascend plugin install is required"
   fi
 
   report_vllm_cli_status "$ENV_NAME" || true
