@@ -190,6 +190,15 @@ run_pytest_step() {
     "$conda_bin" run -n "$ENV_NAME" python -m pytest -q --junitxml "$junit_file" "$@"
 }
 
+install_smoke_test_dependencies() {
+  local conda_bin="$1"
+
+  run_step \
+    "install smoke test deps" \
+    env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
+    "$conda_bin" run -n "$ENV_NAME" python -m pip install -e "$WORKSPACE_ROOT/vllm-hust[ci-smoke]" --no-build-isolation
+}
+
 plugin_installed() {
   local conda_bin="$1"
   env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
@@ -241,7 +250,7 @@ main() {
   if ! run_step \
     "vllm help" \
     env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
-    "$conda_bin" run -n "$ENV_NAME" env TORCH_DEVICE_BACKEND_AUTOLOAD=0 python -m vllm --help; then
+    "$conda_bin" run -n "$ENV_NAME" bash -lc 'if command -v vllm-hust >/dev/null 2>&1; then TORCH_DEVICE_BACKEND_AUTOLOAD=0 vllm-hust --help; else TORCH_DEVICE_BACKEND_AUTOLOAD=0 vllm --help; fi'; then
     SCRIPT_EXIT_CODE=1
   fi
 
@@ -258,6 +267,10 @@ main() {
     "ascend-runtime-manager.xml" \
     "$conda_bin" \
     "$WORKSPACE_ROOT/ascend-runtime-manager/tests"; then
+    SCRIPT_EXIT_CODE=1
+  fi
+
+  if ! install_smoke_test_dependencies "$conda_bin"; then
     SCRIPT_EXIT_CODE=1
   fi
 
