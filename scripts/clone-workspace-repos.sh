@@ -62,6 +62,28 @@ run_git() {
   env -u LD_LIBRARY_PATH git "$@"
 }
 
+run_git_with_retry() {
+  local max_attempts="$1"
+  shift
+  local attempt=1
+  local backoff_seconds=5
+
+  while true; do
+    if run_git "$@"; then
+      return 0
+    fi
+
+    if (( attempt >= max_attempts )); then
+      return 1
+    fi
+
+    echo "[retry] git $* failed on attempt $attempt/$max_attempts; retrying in ${backoff_seconds}s" >&2
+    sleep "$backoff_seconds"
+    attempt=$((attempt + 1))
+    backoff_seconds=$((backoff_seconds * 2))
+  done
+}
+
 is_git_work_tree() {
   local repo_path="$1"
 
@@ -245,13 +267,13 @@ queue_clone() {
     mkdir -p "$(dirname -- "$destination")"
   fi
   echo "[clone] $relative_path <- $repo_url"
-  if run_git clone "$repo_url" "$destination"; then
+  if run_git_with_retry 3 clone "$repo_url" "$destination"; then
     return 0
   fi
 
   if https_url="$(https_url_from_ssh_url "$repo_url")"; then
     echo "[clone] $relative_path SSH clone failed; retrying via $https_url"
-    run_git clone "$https_url" "$destination"
+    run_git_with_retry 3 clone "$https_url" "$destination"
   fi
 }
 
@@ -292,7 +314,7 @@ maybe_pull_updates() {
   upstream_remote="${upstream_ref%%/*}"
   upstream_branch="${upstream_ref#*/}"
 
-  if ! run_git -C "$destination" fetch --quiet --prune; then
+  if ! run_git_with_retry 3 -C "$destination" fetch --quiet --prune; then
     current_repo_url="$(run_git -C "$destination" remote get-url origin 2>/dev/null || true)"
     https_url="$(https_url_from_ssh_url "$current_repo_url" 2>/dev/null || true)"
     if [[ -z "$https_url" ]]; then
@@ -302,7 +324,7 @@ maybe_pull_updates() {
     if [[ -n "$https_url" ]]; then
       echo "[fetch] $relative_path SSH fetch failed; retrying via $https_url"
       run_git -C "$destination" remote set-url origin "$https_url"
-      if ! run_git -C "$destination" fetch --quiet --prune; then
+      if ! run_git_with_retry 3 -C "$destination" fetch --quiet --prune; then
         echo "[skip] $relative_path fetch failed after HTTPS fallback"
         return 0
       fi
@@ -323,7 +345,7 @@ maybe_pull_updates() {
 
   if ask_yes_no "Remote updates found for $relative_path (behind=$behind_count, ahead=$ahead_count). Pull with --ff-only?"; then
     echo "[pull] $relative_path"
-    if ! run_git -C "$destination" pull --ff-only "$upstream_remote" "$upstream_branch"; then
+    if ! run_git_with_retry 3 -C "$destination" pull --ff-only "$upstream_remote" "$upstream_branch"; then
       echo "[skip] $relative_path pull failed; leaving local branch unchanged"
     fi
   else
