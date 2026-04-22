@@ -860,9 +860,15 @@ clone_repositories() {
   log "Cloning workspace repositories..."
   if (( AUTO_YES == 1 )); then
     bash "$CLONE_SCRIPT" --yes
+    if [[ -d "$WORKSPACE_ROOT/vllm-hust-org-profile" ]]; then
+      log "Organization profile repo is available at $WORKSPACE_ROOT/vllm-hust-org-profile (special repo: vLLM-HUST/.github)."
+    fi
     return 0
   fi
   bash "$CLONE_SCRIPT"
+  if [[ -d "$WORKSPACE_ROOT/vllm-hust-org-profile" ]]; then
+    log "Organization profile repo is available at $WORKSPACE_ROOT/vllm-hust-org-profile (special repo: vLLM-HUST/.github)."
+  fi
 }
 
 conda_env_exists() {
