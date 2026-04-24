@@ -40,6 +40,10 @@ fi
 CURRENT_USER_CACHE_HOME="$CURRENT_USER_HOME/.cache"
 CURRENT_USER_CONFIG_HOME="$CURRENT_USER_HOME/.config"
 TOS_MARKER_ROOT="$CURRENT_USER_CONFIG_HOME/vllm-hust-dev-hub"
+QUICKSTART_LOG_DIR_DEFAULT="$CURRENT_USER_CACHE_HOME/vllm-hust-dev-hub/logs"
+QUICKSTART_LOG_DIR="${HUST_DEV_HUB_QUICKSTART_LOG_DIR:-$QUICKSTART_LOG_DIR_DEFAULT}"
+QUICKSTART_LOG_FILE="${HUST_DEV_HUB_QUICKSTART_LOG_FILE:-}"
+QUICKSTART_LOGGING_INITIALIZED=0
 CONDA_RUN_STREAM_FLAG=""
 CONTAINER_EXTRA_AUTH_KEYS_FILE="$WORKSPACE_ROOT/.ssh/vllm-ascend-extra-authorized_keys"
 PIP_DEFAULTS_INITIALIZED=0
@@ -81,6 +85,25 @@ EOF
 
 log() {
   printf '[quickstart] %s\n' "$1"
+}
+
+init_quickstart_logging() {
+  local timestamp
+
+  if (( QUICKSTART_LOGGING_INITIALIZED == 1 )); then
+    return 0
+  fi
+
+  mkdir -p "$QUICKSTART_LOG_DIR"
+
+  if [[ -z "$QUICKSTART_LOG_FILE" ]]; then
+    timestamp="$(date +%Y%m%d-%H%M%S)"
+    QUICKSTART_LOG_FILE="$QUICKSTART_LOG_DIR/quickstart-${timestamp}.log"
+  fi
+
+  exec > >(tee -a "$QUICKSTART_LOG_FILE") 2>&1
+  QUICKSTART_LOGGING_INITIALIZED=1
+  log "Writing console output to log file: $QUICKSTART_LOG_FILE"
 }
 
 is_valid_ssh_public_key() {
@@ -1565,6 +1588,35 @@ _hust_dev_hub_save_var() {
   export "$saved_name"
 }
 
+_hust_dev_hub_needs_user_cache_reset() {
+  local value="$1"
+
+  if [[ -z "$value" ]]; then
+    return 0
+  fi
+
+  if [[ "$value" == /root || "$value" == /root/* ]]; then
+    [[ "$(id -u)" != "0" ]]
+    return $?
+  fi
+
+  return 1
+}
+
+_hust_dev_hub_resolve_user_home() {
+  local user_name
+  local user_home
+
+  user_name="$(id -un 2>/dev/null || printf '%s' "${USER:-}")"
+  user_home="$(getent passwd "$user_name" 2>/dev/null | cut -d: -f6 || true)"
+  if [[ -n "$user_home" ]]; then
+    printf '%s\n' "$user_home"
+    return 0
+  fi
+
+  printf '%s\n' "${HOME:-$PWD}"
+}
+
 if [[ -z "${HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH+x}" ]]; then
   if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
     export HUST_DEV_HUB_SAVED_LD_LIBRARY_PATH="$LD_LIBRARY_PATH"
@@ -1582,6 +1634,12 @@ if [[ -z "${HUST_DEV_HUB_SAVED_PATH+x}" ]]; then
 fi
 
 for _hust_dev_hub_var in \
+  HOME \
+  XDG_CACHE_HOME \
+  XDG_CONFIG_HOME \
+  HF_HOME \
+  HF_HUB_CACHE \
+  HF_TOKEN_PATH \
   ASCEND_HOME_PATH \
   ASCEND_OPP_PATH \
   ASCEND_AICPU_PATH \
@@ -1592,6 +1650,37 @@ for _hust_dev_hub_var in \
   HUST_ATB_SET_ENV; do
   _hust_dev_hub_save_var "$_hust_dev_hub_var"
 done
+
+_hust_dev_hub_runtime_home="$(_hust_dev_hub_resolve_user_home)"
+if _hust_dev_hub_needs_user_cache_reset "${HOME:-}"; then
+  export HOME="$_hust_dev_hub_runtime_home"
+fi
+
+if _hust_dev_hub_needs_user_cache_reset "${XDG_CACHE_HOME:-}"; then
+  export XDG_CACHE_HOME="$HOME/.cache"
+fi
+
+if _hust_dev_hub_needs_user_cache_reset "${XDG_CONFIG_HOME:-}"; then
+  export XDG_CONFIG_HOME="$HOME/.config"
+fi
+
+if _hust_dev_hub_needs_user_cache_reset "${HF_HOME:-}"; then
+  export HF_HOME="${XDG_CACHE_HOME:-$HOME/.cache}/huggingface"
+fi
+
+if _hust_dev_hub_needs_user_cache_reset "${HF_HUB_CACHE:-}"; then
+  export HF_HUB_CACHE="${HF_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/huggingface}/hub"
+fi
+
+if _hust_dev_hub_needs_user_cache_reset "${HF_TOKEN_PATH:-}"; then
+  export HF_TOKEN_PATH="${HF_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/huggingface}/token"
+fi
+
+mkdir -p \
+  "${XDG_CACHE_HOME:-$HOME/.cache}" \
+  "${XDG_CONFIG_HOME:-$HOME/.config}" \
+  "${HF_HUB_CACHE:-${HF_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/huggingface}/hub}" \
+  "$(dirname -- "${HF_TOKEN_PATH:-${HF_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/huggingface}/token}")"
 
 if [[ "${HUST_DEV_HUB_ENABLE_MANAGER_ENV_HOOK:-0}" == "1" ]] \
   && command -v hust-ascend-manager >/dev/null 2>&1; then
@@ -1666,8 +1755,10 @@ if [[ -n "$_ascend_pyacl_path" ]]; then
     *) export PYTHONPATH="${_ascend_pyacl_path}${PYTHONPATH:+:$PYTHONPATH}" ;;
   esac
 fi
-unset _ascend_pyacl_path _candidate
+unset _ascend_pyacl_path _candidate _hust_dev_hub_runtime_home
 unset _hust_dev_hub_var
+unset -f _hust_dev_hub_needs_user_cache_reset
+unset -f _hust_dev_hub_resolve_user_home
 unset -f _hust_dev_hub_save_var
 
 if [[ -z "${HUST_DEV_HUB_SAVED_HF_ENDPOINT+x}" ]]; then
@@ -1735,6 +1826,12 @@ if [[ -n "${HUST_DEV_HUB_SAVED_HF_ENDPOINT+x}" ]]; then
 fi
 
 for _hust_dev_hub_var in \
+  HOME \
+  XDG_CACHE_HOME \
+  XDG_CONFIG_HOME \
+  HF_HOME \
+  HF_HUB_CACHE \
+  HF_TOKEN_PATH \
   ASCEND_HOME_PATH \
   ASCEND_OPP_PATH \
   ASCEND_AICPU_PATH \
@@ -2035,6 +2132,7 @@ parse_args() {
 }
 
 main() {
+  init_quickstart_logging
   parse_args "$@"
 
   if (( DO_CLONE == 0 && DO_CONDA == 0 && DO_INSTALL == 0 )); then

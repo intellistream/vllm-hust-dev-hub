@@ -129,6 +129,8 @@ When conda supports channel Terms of Service checks, `quickstart.sh` only asks f
 
 After ToS is accepted, quickstart records a local marker under `~/.config/vllm-hust-dev-hub/` so install-only runs do not keep asking for the same acceptance.
 
+Quickstart now writes a timestamped install log to `~/.cache/vllm-hust-dev-hub/logs/` while still streaming the same output to the console. Override the destination with `HUST_DEV_HUB_QUICKSTART_LOG_DIR=/path/to/logs` or pin a specific file via `HUST_DEV_HUB_QUICKSTART_LOG_FILE=/path/to/quickstart.log` before running the script.
+
 During environment setup, `quickstart.sh` installs both sibling repositories in editable mode when available:
 
 - `ascend-runtime-manager`
