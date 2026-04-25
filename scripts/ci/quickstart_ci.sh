@@ -192,10 +192,21 @@ run_pytest_step() {
 
 install_smoke_test_dependencies() {
   local conda_bin="$1"
+  local extra_env_args=()
+
+  # vllm-hust's build system invokes nvcc during metadata resolution.
+  # On runners without a CUDA toolkit (e.g., ubuntu-latest), this causes the
+  # editable re-install to fail and can unregister the existing editable
+  # install, making vllm unimportable for subsequent test steps.
+  # Mirror the same guard used in quickstart.sh install_editable_repo_into_env.
+  if [[ -z "${CUDA_HOME:-}" ]] && ! command -v nvcc >/dev/null 2>&1; then
+    extra_env_args+=("VLLM_USE_PRECOMPILED=1")
+  fi
 
   run_step \
     "install smoke test deps" \
     env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
+    "${extra_env_args[@]}" \
     "$conda_bin" run -n "$ENV_NAME" python -m pip install -e "$WORKSPACE_ROOT/vllm-hust[ci-smoke]" --no-build-isolation
 }
 
