@@ -131,6 +131,8 @@ NPU 与 NUMA / CPU 亲和关系：
 
 使用 toolkit 自带 `hccl_test` 源码本地构建，OpenMPI 单机 8 rank 执行。标准测量参数为：8 NPU、64 MiB、fp32、5 iter、2 warmup。`broadcast` / `reduce` 按 README 示例使用 `root=1`，并关闭结果校验 `-c 0` 以避开当前栈的校验路径问题。
 
+2026-04-25 复测更新：针对 2026-04-07 首次测量中失败的 `alltoall` / `reduce_scatter`，本次在当前机器实际可用的官方路径上重新测量：直接使用 toolkit 自带官方 `hccl_test` 源码、当前 `libhccl.so` 接口，以及 `/usr/lib64/mpich/bin/mpiexec.hydra`。以下表格中 `alltoall` / `reduce_scatter` 结果已按这次复测更新。
+
 | 操作 | 状态 | 结果 |
 | --- | --- | --- |
 | All Gather | 成功 | 136.53 GB/s |
@@ -138,14 +140,16 @@ NPU 与 NUMA / CPU 亲和关系：
 | Scatter | 成功 | 110.76 GB/s |
 | Broadcast | 成功 | 66.41 GB/s |
 | Reduce | 成功 | 58.89 GB/s |
-| All To All | 失败 | HCCL retcode 7 |
-| Reduce Scatter | 失败 | HCCL retcode 7 |
+| All To All | 成功 | 约 107.8 GB/s（2026-04-25 复测） |
+| Reduce Scatter | 成功 | 约 123.3 GB/s（2026-04-25 复测） |
 
 补充说明：
 
 - `broadcast` / `reduce` 在默认校验开启时会返回 `retcode 7`，但按 README 推荐 root 配置并关闭校验后可稳定得到带宽结果，因此这两个问题被归类为“校验路径/调用参数问题已绕开”，而不是通信本身失败。
-- `alltoall` / `reduce_scatter` 在关闭校验后，以及更保守的参数组合（8 MiB, fp16）下仍然复现 `retcode 7`，因此当前记录为“当前软件栈/参数组合下不可用”。
-- 成功项应视为本机当前 CANN/HCCL 栈下可稳定复现的单机 8 卡集合通信带宽。
+- 2026-04-07 的 `alltoall` / `reduce_scatter` 失败结论来自旧测试链路：`OpenMPI + libhccl_v2 + *V2 API`。该链路已经不再匹配当前机器上的实际可用软件栈，因此不能再视为最新结论。
+- 2026-04-25 复测中，`all_gather` 对照组仍稳定在约 136.5 GB/s，与旧结果一致；在同一运行路径下，`alltoall` / `reduce_scatter` 已经能够连续输出有效带宽样本，分别约为 107.8 GB/s 和 123.3 GB/s。
+- 由于本次复测使用外层 `timeout` 包裹单项命令，输出尾部会出现 `mpiexec.hydra` 的中断清理日志；这些日志发生在已经产生有效带宽样本之后，不应解读为 HCCL collective 再次回到 `retcode 7` 失败状态。
+- 成功项应视为本机当前 CANN/HCCL 栈下可稳定复现的单机 8 卡集合通信带宽；但 collective 可用性结论应绑定到具体测试路径，而不能脱离运行时和工具链版本单独引用。
 
 ## 3. 方法与环境说明
 
@@ -167,6 +171,7 @@ NPU 与 NUMA / CPU 亲和关系：
 - `npu-smi` 位于用户本地路径 `/home/shuhao/.local/bin/npu-smi`，不能只依赖系统 PATH。
 - `/data` 写入需要 `sudo /usr/bin/fio`。
 - `broadcast` / `reduce` 需要使用 README 推荐的 `root=1`；在当前软件栈上开启结果校验会触发 `retcode 7`，因此脚本默认对 HCCL 用例使用 `-c 0`。
+- 2026-04-25 HCCL 复测使用的是当前机器实际可用路径：`/usr/lib64/mpich/bin/mpiexec.hydra` + toolkit 当前 `libhccl.so` + 官方 `hccl_test` 源码；旧的 `OpenMPI + libhccl_v2 + *V2` 假设已不再成立。
 
 ### 3.3 结果文件定位
 
@@ -191,6 +196,12 @@ NPU 与 NUMA / CPU 亲和关系：
 - `results/20260407_full/hccl-alltoall.txt`
 - `results/20260407_full/hccl-reduce-scatter.txt`
 
+2026-04-25 复测结果：
+
+- `results/hccl_retest_official_control_20260425_023409.txt`
+- `results/hccl_retest_official_alltoall_20260425.txt`
+- `results/hccl_retest_official_reduce_scatter_20260425.txt`
+
 ## 4. 结论
 
 这台机器可以归纳为：
@@ -200,4 +211,5 @@ NPU 与 NUMA / CPU 亲和关系：
 - 单卡 Host<->NPU 带宽约 25-29 GB/s，符合 PCIe 4 x16 的经验范围。
 - CPU 本地内存带宽显著高于跨 socket 访问，跨 socket 远端内存仅约本地的 1/3。
 - 单机 8 卡 HCCL 下，All Gather / Scatter / All Reduce / Broadcast / Reduce 可正常测得稳定带宽。
-- All To All 与 Reduce Scatter 在当前软件栈上仍返回 `retcode 7`，需要后续单独排查 HCCL 能力或参数约束。
+- 2026-04-25 复测表明，在当前官方 `hccl_test + libhccl.so + MPICH` 路径上，All To All 与 Reduce Scatter 也已恢复可用，带宽分别约为 107.8 GB/s 与 123.3 GB/s。
+- 因此，旧的 `retcode 7` 结论应被视为历史测试链路结论，而不是当前机器状态的最新描述。
