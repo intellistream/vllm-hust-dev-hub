@@ -82,7 +82,7 @@ bash scripts/ascend-official-container.sh shell
 说明：
 
 - 默认容器名是 `vllm-ascend-dev`
-- 默认会按交互提示选择合适的官方镜像，当前推荐基线是 `quay.io/ascend/vllm-ascend:v0.9.1-dev` 家族（A3 / openEuler 会自动切换对应后缀）
+- 默认会按交互提示选择合适的官方镜像，当前默认是 `quay.io/ascend/vllm-ascend:v0.17.0rc1` 家族（A3 / openEuler 会自动切换对应后缀）。只有在你需要固定 openEuler、A3 或回归验证其他版本时，才需要额外设置 `export IMAGE=...`。
 - 宿主机工作区根目录会挂载到容器内的 `/workspace`
 - 容器内的默认工作目录是 `/workspace/vllm-hust-dev-hub`
 
