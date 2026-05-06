@@ -1,0 +1,145 @@
+/home/shuhao/miniconda3/envs/vllm-hust-dev/lib/python3.11/site-packages/torch_npu/utils/collect_env.py:58: UserWarning: Warning: The /usr/local/Ascend/cann-8.5.1 owner does not match the current owner.
+  warnings.warn(f"Warning: The {path} owner does not match the current owner.")
+/home/shuhao/miniconda3/envs/vllm-hust-dev/lib/python3.11/site-packages/torch_npu/utils/collect_env.py:58: UserWarning: Warning: The /usr/local/Ascend/cann-8.5.1/aarch64-linux/ascend_ops_install.info owner does not match the current owner.
+  warnings.warn(f"Warning: The {path} owner does not match the current owner.")
+/home/shuhao/miniconda3/envs/vllm-hust-dev/lib/python3.11/site-packages/torch_npu/utils/collect_env.py:58: UserWarning: Warning: The /usr/local/Ascend/cann-8.5.1 owner does not match the current owner.
+  warnings.warn(f"Warning: The {path} owner does not match the current owner.")
+/home/shuhao/miniconda3/envs/vllm-hust-dev/lib/python3.11/site-packages/torch_npu/utils/collect_env.py:58: UserWarning: Warning: The /usr/local/Ascend/cann-8.5.1/aarch64-linux/ascend_ops_install.info owner does not match the current owner.
+  warnings.warn(f"Warning: The {path} owner does not match the current owner.")
+[WARN] Could not detect the exact CANN runtime version from hust-ascend-manager output.
+[WARN] Current ASCEND_HOME_PATH resolves to /usr/local/Ascend/cann-8.5.1.
+[OK] Single Ascend runtime is configured
+  ASCEND_HOME_PATH=/usr/local/Ascend/cann-8.5.1
+  CANN_VERSION=<unknown>
+  HAS_aclrtSetStreamAttribute=1
+[ERROR] ATRACE(167465,python):2026-05-05-12:18:30.247.713 [trace_driver_api.c:56](tid:167465) get platform info failed, drvErr=87.
+[INFO] RUNTIME(167465,python):2026-05-05-12:18:30.249.371 [task_fail_callback_data_manager.cc:88] 167465 TaskFailCallBackManager: Constructor.
+[INFO] HCCL(167465,python):2026-05-05-12:18:30.342.377 [adapter_rts.cc:2486] [167465][adapter_rts.cc][CallBackInitRts] g_deviceType [7] g_deviceLogicId [-1] g_devicePhyId [-1]
+[EVENT] PROFILING(167465,python):2026-05-05-12:18:30.403.462 [msprof_callback_impl.cpp:383] >>> (tid:167465) Started to register profiling ctrl callback.
+[EVENT] PROFILING(167465,python):2026-05-05-12:18:30.403.746 [msprof_callback_impl.cpp:390] >>> (tid:167465) Started to register profiling hash id callback.
+[INFO] PROFILING(167465,python):2026-05-05-12:18:30.403.828 [prof_atls_plugin.cpp:117] (tid:167465) RegisterProfileCallback, callback type is 7
+[EVENT] PROFILING(167465,python):2026-05-05-12:18:30.403.897 [msprof_callback_impl.cpp:397] >>> (tid:167465) Started to register profiling enable host freq callback.
+[INFO] PROFILING(167465,python):2026-05-05-12:18:30.403.955 [prof_atls_plugin.cpp:117] (tid:167465) RegisterProfileCallback, callback type is 8
+[EVENT] PROFILING(167465,python):2026-05-05-12:18:30.404.017 [msprof_callback_impl.cpp:404] >>> (tid:167465) Started to register profiling typeId callback.
+[INFO] PROFILING(167465,python):2026-05-05-12:18:30.404.073 [prof_atls_plugin.cpp:117] (tid:167465) RegisterProfileCallback, callback type is 6
+[INFO] PROFILING(167465,python):2026-05-05-12:18:30.413.857 [prof_atls_plugin.cpp:230] (tid:167465) Module[48] register callback of ctrl handle.
+/home/shuhao/miniconda3/envs/vllm-hust-dev/lib/python3.11/site-packages/torch_npu/utils/collect_env.py:58: UserWarning: Warning: The /usr/local/Ascend/cann-8.5.1 owner does not match the current owner.
+  warnings.warn(f"Warning: The {path} owner does not match the current owner.")
+/home/shuhao/miniconda3/envs/vllm-hust-dev/lib/python3.11/site-packages/torch_npu/utils/collect_env.py:58: UserWarning: Warning: The /usr/local/Ascend/cann-8.5.1/aarch64-linux/ascend_ops_install.info owner does not match the current owner.
+  warnings.warn(f"Warning: The {path} owner does not match the current owner.")
+[INFO] PROFILING(167465,python):2026-05-05-12:18:34.902.653 [prof_atls_plugin.cpp:230] (tid:167465) Module[61] register callback of ctrl handle.
+[INFO] PROFILING(167465,python):2026-05-05-12:18:34.906.251 [prof_atls_plugin.cpp:230] (tid:167465) Module[0] register callback of ctrl handle.
+/home/shuhao/miniconda3/envs/vllm-hust-dev/lib/python3.11/site-packages/torch_npu/utils/collect_env.py:58: UserWarning: Warning: The /usr/local/Ascend/cann-8.5.1 owner does not match the current owner.
+  warnings.warn(f"Warning: The {path} owner does not match the current owner.")
+/home/shuhao/miniconda3/envs/vllm-hust-dev/lib/python3.11/site-packages/torch_npu/utils/collect_env.py:58: UserWarning: Warning: The /usr/local/Ascend/cann-8.5.1/aarch64-linux/ascend_ops_install.info owner does not match the current owner.
+  warnings.warn(f"Warning: The {path} owner does not match the current owner.")
+INFO 05-05 12:18:35 [__init__.py:44] Available plugins for group vllm.platform_plugins:
+INFO 05-05 12:18:35 [__init__.py:46] - ascend -> vllm_ascend:register
+INFO 05-05 12:18:35 [__init__.py:49] All plugins in this group will be loaded. Set `VLLM_PLUGINS` to control which plugins to load.
+INFO 05-05 12:18:35 [__init__.py:229] Platform plugin ascend is activated
+/home/shuhao/miniconda3/envs/vllm-hust-dev/lib/python3.11/site-packages/torch_npu/npu/__init__.py:384: UserWarning: Can't get ascend_hal device count
+  warnings.warn("Can't get ascend_hal device count")
+[ERROR] RUNTIME(167465,python):2026-05-05-12:18:38.185.064 [runtime_keeper.cc:66]167465 GetDeviceType:Call halGetDeviceInfo failed: drvRet=87, module type=0, info type=1.
+[INFO] RUNTIME(167465,python):2026-05-05-12:18:38.190.333 [runtime_keeper.cc:158] 167465 CreateRuntimeImpl: Open libruntime_v100.so successfully
+[ERROR] RUNTIME(167465,python):2026-05-05-12:18:38.222.316 [runtime.cc:1422]167465 CheckHaveDevice:Call halGetDeviceInfo failed: drvRet=87, module type=0, info type=1.
+[INFO] PROFILING(167465,python):2026-05-05-12:18:38.223.121 [prof_atls_plugin.cpp:230] (tid:167465) Module[7] register callback of ctrl handle.
+[ERROR] RUNTIME(167465,python):2026-05-05-12:18:38.223.292 [driver.cc:64]167465 GetDeviceCount:Call drvGetDevNum, drvRetCode=87.
+[ERROR] RUNTIME(167465,python):2026-05-05-12:18:38.223.428 [api_c_device.cc:51]167465 rtGetDeviceCount:ErrCode=507899, desc=[driver error:internal error], InnerCode=0x7020010
+[ERROR] RUNTIME(167465,python):2026-05-05-12:18:38.223.515 [error_message_manage.cc:61]167465 FuncErrorReason:rtGetDeviceCount execution failed, reason=driver error:internal error
+[ERROR] ASCENDCL(167465,python):2026-05-05-12:18:38.223.611 [device.cpp:248]167465 aclrtGetDeviceCountImpl:get device count failed, runtime result = 507899.
+[INFO] RUNTIME(167465,python):2026-05-05-12:18:38.223.763 [api_impl.cc:7824] 167465 PeekLastErr: level=0 err=507899.
+[ERROR] APP(167465,python):2026-05-05-12:18:38.223.883 [log_inner.cpp:78]167465 build/CMakeFiles/torch_npu.dir/compiler_depend.ts:device_count:41: "[PTA]:"get device count of NPU failed""
+WARNING 05-05 12:18:40 [config.py:70] Support for Transformers v4 is deprecated. The Transformers v4 codepath will become unmaintained in vLLM v0.22.0 and will be removed in vLLM v0.24.0. Please upgrade to Transformers v5: pip install --upgrade transformers
+INFO 05-05 12:18:42 [import_utils.py:435] Disabling triton_kernels because `triton.language.target_info` is unavailable in this Triton build.
+INFO 05-05 12:18:42 [nixl_utils.py:20] Setting UCX_RCACHE_MAX_UNRELEASED to '1024' to avoid a rare memory leak in UCX when using NIXL.
+WARNING 05-05 12:18:42 [nixl_utils.py:34] NIXL is not available
+WARNING 05-05 12:18:42 [nixl_utils.py:44] NIXL agent config is not available
+INFO 05-05 12:18:42 [__init__.py:110] Registered model loader `<class 'vllm_ascend.model_loader.netloader.netloader.ModelNetLoaderElastic'>` with load format `netloader`
+INFO 05-05 12:18:43 [__init__.py:110] Registered model loader `<class 'vllm_ascend.model_loader.rfork.rfork_loader.RForkModelLoader'>` with load format `rfork`
+INFO 05-05 12:18:44 [utils.py:352] non-default args: {'trust_remote_code': True, 'load_format': 'dummy', 'dtype': 'float16', 'enable_prefix_caching': False, 'gpu_memory_utilization': 0.1, 'enforce_eager': True, 'enable_lora': None, 'reasoning_parser_plugin': '', 'compilation_config': {'mode': None, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'vllm_ascend.compilation.compiler_interface.AscendCompiler', 'custom_ops': [], 'ir_enable_torch_wrap': None, 'splitting_ops': None, 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'compile_sizes': None, 'compile_ranges_endpoints': None, 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'size_asserts': False, 'alignment_asserts': False, 'scalar_asserts': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.NONE: 0>, 'cudagraph_num_of_warmups': 0, 'cudagraph_capture_sizes': None, 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': None, 'pass_config': {}, 'max_cudagraph_capture_size': None, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': None, 'static_all_moe_layers': []}, 'model': 'sshleifer/tiny-gpt2'}
+WARNING 05-05 12:18:44 [__init__.py:28] Skipping Ascend fused MoE op registration because an optional upstream dependency is unavailable: No module named 'vllm.model_executor.layers.fused_moe.runner.default_moe_runner'
+INFO 05-05 12:18:52 [model.py:563] Resolved architecture: GPT2LMHeadModel
+ERROR 05-05 12:18:53 [repo_utils.py:47] Error retrieving safetensors: 'sshleifer/tiny-gpt2' is not a safetensors repo. Couldn't find 'model.safetensors.index.json' or 'model.safetensors' files., retrying 1 of 2
+ERROR 05-05 12:18:56 [repo_utils.py:45] Error retrieving safetensors: 'sshleifer/tiny-gpt2' is not a safetensors repo. Couldn't find 'model.safetensors.index.json' or 'model.safetensors' files.
+INFO 05-05 12:18:56 [model.py:2027] Downcasting torch.float32 to torch.float16.
+INFO 05-05 12:18:56 [model.py:1692] Using max model len 1024
+INFO 05-05 12:18:56 [scheduler.py:239] Chunked prefill is enabled with max_num_batched_tokens=8192.
+INFO 05-05 12:18:56 [vllm.py:840] Asynchronous scheduling is enabled.
+WARNING 05-05 12:18:56 [vllm.py:896] Enforce eager set, disabling torch.compile and CUDAGraphs. This is equivalent to setting -cc.mode=none -cc.cudagraph_mode=none
+WARNING 05-05 12:18:56 [vllm.py:914] Inductor compilation was disabled by user settings, optimizations settings that are only active during inductor compilation will be ignored.
+INFO 05-05 12:18:56 [kernel.py:208] Final IR op priority after setting platform defaults: IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native'])
+INFO 05-05 12:18:56 [vllm.py:1089] Cudagraph is disabled under eager mode
+WARNING 05-05 12:18:57 [platform.py:761] Parameter '--disable-cascade-attn' is a GPU-specific feature. Resetting to False for Ascend.
+INFO 05-05 12:18:57 [ascend_config.py:422] Dynamic EPLB is False
+INFO 05-05 12:18:57 [ascend_config.py:423] The number of redundant experts is 0
+INFO 05-05 12:18:57 [platform.py:319] Compilation disabled, using eager mode by default
+INFO 05-05 12:18:57 [utils.py:1122] Block size is set to 128 if prefix cache or chunked prefill is enabled.
+INFO 05-05 12:18:57 [platform.py:520] Set PYTORCH_NPU_ALLOC_CONF=expandable_segments:True
+INFO 05-05 12:18:57 [compilation.py:303] Enabled custom fusions: norm_quant, act_quant
+(EngineCore pid=167810) INFO 05-05 12:19:03 [core.py:109] Initializing a V1 LLM engine (v0.20.1rc1.dev314+g64ff561c7.d20260505) with config: model='sshleifer/tiny-gpt2', speculative_config=None, tokenizer='sshleifer/tiny-gpt2', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, tokenizer_revision=None, trust_remote_code=True, dtype=torch.float16, max_seq_len=1024, download_dir=None, load_format=dummy, tensor_parallel_size=1, pipeline_parallel_size=1, data_parallel_size=1, decode_context_parallel_size=1, dcp_comm_backend=ag_rs, disable_custom_all_reduce=True, quantization=None, quantization_config=None, enforce_eager=True, enable_return_routed_experts=False, kv_cache_dtype=auto, device_config=npu, structured_outputs_config=StructuredOutputsConfig(backend='auto', disable_any_whitespace=False, disable_additional_properties=False, reasoning_parser='', reasoning_parser_plugin='', enable_in_reasoning=False), observability_config=ObservabilityConfig(show_hidden_metrics_for_version=None, otlp_traces_endpoint=None, collect_detailed_traces=None, kv_cache_metrics=False, kv_cache_metrics_sample=0.01, cudagraph_metrics=False, enable_layerwise_nvtx_tracing=False, enable_mfu_metrics=False, enable_mm_processor_stats=False, enable_logging_iteration_details=False), seed=0, served_model_name=sshleifer/tiny-gpt2, enable_prefix_caching=False, enable_chunked_prefill=True, pooler_config=None, compilation_config={'mode': <CompilationMode.NONE: 0>, 'debug_dump_path': None, 'cache_dir': '', 'compile_cache_save_format': 'binary', 'backend': 'vllm_ascend.compilation.compiler_interface.AscendCompiler', 'custom_ops': ['all'], 'ir_enable_torch_wrap': False, 'splitting_ops': [], 'compile_mm_encoder': False, 'cudagraph_mm_encoder': False, 'encoder_cudagraph_token_budgets': [], 'encoder_cudagraph_max_vision_items_per_batch': 0, 'encoder_cudagraph_max_frames_per_batch': None, 'compile_sizes': [], 'compile_ranges_endpoints': [8192], 'inductor_compile_config': {'enable_auto_functionalized_v2': False, 'size_asserts': False, 'alignment_asserts': False, 'scalar_asserts': False, 'combo_kernels': True, 'benchmark_combo_kernel': True}, 'inductor_passes': {}, 'cudagraph_mode': <CUDAGraphMode.NONE: 0>, 'cudagraph_num_of_warmups': 1, 'cudagraph_capture_sizes': [], 'cudagraph_copy_inputs': False, 'cudagraph_specialize_lora': True, 'use_inductor_graph_partition': False, 'pass_config': {'fuse_norm_quant': True, 'fuse_act_quant': True, 'fuse_attn_quant': False, 'enable_sp': False, 'fuse_gemm_comms': False, 'fuse_allreduce_rms': False, 'fuse_act_padding': False}, 'max_cudagraph_capture_size': 0, 'dynamic_shapes_config': {'type': <DynamicShapesType.BACKED: 'backed'>, 'evaluate_guards': False, 'assume_32_bit_indexing': False}, 'local_cache_dir': None, 'fast_moe_cold_start': True, 'static_all_moe_layers': []}, kernel_config=KernelConfig(ir_op_priority=IrOpPriorityConfig(rms_norm=['native'], fused_add_rms_norm=['native']), enable_flashinfer_autotune=True, moe_backend='auto')
+[INFO] PROFILING(167465,VLLM::EngineCore):2026-05-05-12:19:04.242.442 [prof_atls_plugin.cpp:230] (tid:167810) Module[6] register callback of ctrl handle.
+[ERROR] RUNTIME(167810,VLLM::EngineCore):2026-05-05-12:19:04.244.604 [driver.cc:64]167810 GetDeviceCount:Call drvGetDevNum, drvRetCode=87.
+[ERROR] RUNTIME(167810,VLLM::EngineCore):2026-05-05-12:19:04.244.752 [api_c_device.cc:51]167810 rtGetDeviceCount:ErrCode=507899, desc=[driver error:internal error], InnerCode=0x7020010
+[ERROR] RUNTIME(167810,VLLM::EngineCore):2026-05-05-12:19:04.244.841 [error_message_manage.cc:61]167810 FuncErrorReason:rtGetDeviceCount execution failed, reason=driver error:internal error
+[ERROR] ASCENDCL(167810,VLLM::EngineCore):2026-05-05-12:19:04.244.973 [device.cpp:248]167465 aclrtGetDeviceCountImpl:get device count failed, runtime result = 507899.
+[ERROR] DVPP(167810,VLLM::EngineCore):2026-05-05-12:19:04.245.075 [PlatformInfo.cpp:44][DVPP] [GetHardwareVersion:44] [T2] get device num fail. ret = 507899
+[ERROR] RUNTIME(167810,VLLM::EngineCore):2026-05-05-12:19:04.245.795 [driver.cc:64]167810 GetDeviceCount:Call drvGetDevNum, drvRetCode=87.
+[ERROR] RUNTIME(167810,VLLM::EngineCore):2026-05-05-12:19:04.245.897 [api_c_device.cc:51]167810 rtGetDeviceCount:ErrCode=507899, desc=[driver error:internal error], InnerCode=0x7020010
+[ERROR] RUNTIME(167810,VLLM::EngineCore):2026-05-05-12:19:04.245.980 [error_message_manage.cc:61]167810 FuncErrorReason:rtGetDeviceCount execution failed, reason=driver error:internal error
+[ERROR] ASCENDCL(167810,VLLM::EngineCore):2026-05-05-12:19:04.246.060 [device.cpp:248]167465 aclrtGetDeviceCountImpl:get device count failed, runtime result = 507899.
+[ERROR] DVPP(167810,VLLM::EngineCore):2026-05-05-12:19:04.246.140 [PlatformInfo.cpp:44][DVPP] [GetHardwareVersion:44] [T2] get device num fail. ret = 507899
+[ERROR] RUNTIME(167810,VLLM::EngineCore):2026-05-05-12:19:04.246.774 [driver.cc:64]167810 GetDeviceCount:Call drvGetDevNum, drvRetCode=87.
+[ERROR] RUNTIME(167810,VLLM::EngineCore):2026-05-05-12:19:04.246.891 [api_c_device.cc:51]167810 rtGetDeviceCount:ErrCode=507899, desc=[driver error:internal error], InnerCode=0x7020010
+[ERROR] RUNTIME(167810,VLLM::EngineCore):2026-05-05-12:19:04.246.973 [error_message_manage.cc:61]167810 FuncErrorReason:rtGetDeviceCount execution failed, reason=driver error:internal error
+[ERROR] ASCENDCL(167810,VLLM::EngineCore):2026-05-05-12:19:04.247.048 [device.cpp:248]167465 aclrtGetDeviceCountImpl:get device count failed, runtime result = 507899.
+[ERROR] DVPP(167810,VLLM::EngineCore):2026-05-05-12:19:04.247.125 [PlatformInfo.cpp:44][DVPP] [GetHardwareVersion:44] [T2] get device num fail. ret = 507899
+[ERROR] RUNTIME(167810,VLLM::EngineCore):2026-05-05-12:19:04.247.773 [driver.cc:64]167810 GetDeviceCount:Call drvGetDevNum, drvRetCode=87.
+[ERROR] RUNTIME(167810,VLLM::EngineCore):2026-05-05-12:19:04.247.868 [api_c_device.cc:51]167810 rtGetDeviceCount:ErrCode=507899, desc=[driver error:internal error], InnerCode=0x7020010
+[ERROR] RUNTIME(167810,VLLM::EngineCore):2026-05-05-12:19:04.247.947 [error_message_manage.cc:61]167810 FuncErrorReason:rtGetDeviceCount execution failed, reason=driver error:internal error
+[ERROR] ASCENDCL(167810,VLLM::EngineCore):2026-05-05-12:19:04.248.028 [device.cpp:248]167465 aclrtGetDeviceCountImpl:get device count failed, runtime result = 507899.
+[ERROR] DVPP(167810,VLLM::EngineCore):2026-05-05-12:19:04.248.108 [PlatformInfo.cpp:44][DVPP] [GetHardwareVersion:44] [T2] get device num fail. ret = 507899
+[INFO] PROFILING(167810,VLLM::EngineCore):2026-05-05-12:19:04.248.231 [prof_atls_plugin.cpp:230] (tid:167810) Module[48] register callback of ctrl handle.
+[INFO] PROFILING(167810,VLLM::EngineCore):2026-05-05-12:19:04.248.562 [prof_atls_plugin.cpp:230] (tid:167810) Module[48] register callback of ctrl handle.
+terminate called after throwing an instance of 'std::logic_error'
+  what():  basic_string::_S_construct null not valid
+DrvMngGetConsoleLogLevel failed. (ret=4)
+Traceback (most recent call last):
+  File "<stdin>", line 22, in <module>
+  File "/workspace/vllm-hust/vllm/benchmarks/latency.py", line 87, in main
+    llm = LLM.from_engine_args(engine_args)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-hust/vllm/entrypoints/llm.py", line 413, in from_engine_args
+    return cls(**vars(engine_args))
+           ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-hust/vllm/entrypoints/llm.py", line 381, in __init__
+    self.llm_engine = LLMEngine.from_engine_args(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-hust/vllm/v1/engine/llm_engine.py", line 172, in from_engine_args
+    return cls(
+           ^^^^
+  File "/workspace/vllm-hust/vllm/v1/engine/llm_engine.py", line 106, in __init__
+    self.engine_core = EngineCoreClient.make_client(
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-hust/vllm/v1/engine/core_client.py", line 101, in make_client
+    return SyncMPClient(vllm_config, executor_class, log_stats)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-hust/vllm/tracing/otel.py", line 178, in sync_wrapper
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/vllm-hust/vllm/v1/engine/core_client.py", line 716, in __init__
+    super().__init__(
+  File "/workspace/vllm-hust/vllm/v1/engine/core_client.py", line 535, in __init__
+    with launch_core_engines(
+  File "/home/shuhao/miniconda3/envs/vllm-hust-dev/lib/python3.11/contextlib.py", line 144, in __exit__
+    next(self.gen)
+  File "/workspace/vllm-hust/vllm/v1/engine/utils.py", line 1119, in launch_core_engines
+    wait_for_engine_startup(
+  File "/workspace/vllm-hust/vllm/v1/engine/utils.py", line 1178, in wait_for_engine_startup
+    raise RuntimeError(
+RuntimeError: Engine core initialization failed. See root cause above. Failed core proc(s): {'EngineCore': -6}
+[ERROR] 2026-05-05-12:19:08 (PID:167465, Device:-1, RankID:-1) ERR99999 UNKNOWN applicaiton exception
+sys:1: DeprecationWarning: builtin type swigvarlink has no __module__ attribute
+[INFO] RUNTIME(167465,python):2026-05-05-12:19:10.796.927 [runtime.cc:1645] 167465 ~Runtime: runtime destructor.
+[INFO] RUNTIME(167465,python):2026-05-05-12:19:10.799.125 [runtime.cc:1730] 167465 WaitMonitorExit: wait monitor success, used count=0.
+[INFO] RUNTIME(167465,python):2026-05-05-12:19:10.802.477 [task_fail_callback_data_manager.cc:93] 167465 ~TaskFailCallBackManager: Destructor.
+RC=1

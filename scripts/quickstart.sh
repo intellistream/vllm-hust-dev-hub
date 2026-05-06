@@ -1282,10 +1282,18 @@ install_editable_repo_into_env() {
     pip_args=(--no-build-isolation "${pip_args[@]}")
   fi
 
+  local pip_env=()
+  if [[ "$(basename "$repo_path")" == "vllm-hust" ]]; then
+    pip_env=(
+      "VLLM_TARGET_DEVICE=empty"
+      "VLLM_USE_PRECOMPILED=0"
+    )
+  fi
+
   log "Installing editable package from: $repo_path"
   run_with_heartbeat \
     "installing editable package from $repo_path" \
-    run_pip_install_in_env "$ENV_NAME" -- "${pip_args[@]}"
+    run_pip_install_in_env "$ENV_NAME" "${pip_env[@]}" -- "${pip_args[@]}"
 }
 
 should_reconcile_ascend_runtime() {

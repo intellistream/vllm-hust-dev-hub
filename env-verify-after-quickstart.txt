@@ -1,0 +1,36 @@
+[ERROR] ATRACE(166833,python):2026-05-05-12:17:59.243.410 [trace_driver_api.c:56](tid:166833) get platform info failed, drvErr=87.
+[INFO] RUNTIME(166833,python):2026-05-05-12:17:59.245.108 [task_fail_callback_data_manager.cc:88] 166833 TaskFailCallBackManager: Constructor.
+[INFO] HCCL(166833,python):2026-05-05-12:17:59.338.162 [adapter_rts.cc:2486] [166833][adapter_rts.cc][CallBackInitRts] g_deviceType [7] g_deviceLogicId [-1] g_devicePhyId [-1]
+[EVENT] PROFILING(166833,python):2026-05-05-12:17:59.399.431 [msprof_callback_impl.cpp:383] >>> (tid:166833) Started to register profiling ctrl callback.
+[EVENT] PROFILING(166833,python):2026-05-05-12:17:59.399.707 [msprof_callback_impl.cpp:390] >>> (tid:166833) Started to register profiling hash id callback.
+[INFO] PROFILING(166833,python):2026-05-05-12:17:59.399.792 [prof_atls_plugin.cpp:117] (tid:166833) RegisterProfileCallback, callback type is 7
+[EVENT] PROFILING(166833,python):2026-05-05-12:17:59.399.863 [msprof_callback_impl.cpp:397] >>> (tid:166833) Started to register profiling enable host freq callback.
+[INFO] PROFILING(166833,python):2026-05-05-12:17:59.399.925 [prof_atls_plugin.cpp:117] (tid:166833) RegisterProfileCallback, callback type is 8
+[EVENT] PROFILING(166833,python):2026-05-05-12:17:59.399.989 [msprof_callback_impl.cpp:404] >>> (tid:166833) Started to register profiling typeId callback.
+[INFO] PROFILING(166833,python):2026-05-05-12:17:59.400.056 [prof_atls_plugin.cpp:117] (tid:166833) RegisterProfileCallback, callback type is 6
+[INFO] PROFILING(166833,python):2026-05-05-12:17:59.409.926 [prof_atls_plugin.cpp:230] (tid:166833) Module[48] register callback of ctrl handle.
+/home/shuhao/miniconda3/envs/vllm-hust-dev/lib/python3.11/site-packages/torch_npu/utils/collect_env.py:58: UserWarning: Warning: The /usr/local/Ascend/cann-8.5.1 owner does not match the current owner.
+  warnings.warn(f"Warning: The {path} owner does not match the current owner.")
+/home/shuhao/miniconda3/envs/vllm-hust-dev/lib/python3.11/site-packages/torch_npu/utils/collect_env.py:58: UserWarning: Warning: The /usr/local/Ascend/cann-8.5.1/aarch64-linux/ascend_ops_install.info owner does not match the current owner.
+  warnings.warn(f"Warning: The {path} owner does not match the current owner.")
+[INFO] PROFILING(166833,python):2026-05-05-12:18:04.012.956 [prof_atls_plugin.cpp:230] (tid:166833) Module[61] register callback of ctrl handle.
+[INFO] PROFILING(166833,python):2026-05-05-12:18:04.017.001 [prof_atls_plugin.cpp:230] (tid:166833) Module[0] register callback of ctrl handle.
+/home/shuhao/miniconda3/envs/vllm-hust-dev/lib/python3.11/site-packages/torch_npu/utils/collect_env.py:58: UserWarning: Warning: The /usr/local/Ascend/cann-8.5.1 owner does not match the current owner.
+  warnings.warn(f"Warning: The {path} owner does not match the current owner.")
+/home/shuhao/miniconda3/envs/vllm-hust-dev/lib/python3.11/site-packages/torch_npu/utils/collect_env.py:58: UserWarning: Warning: The /usr/local/Ascend/cann-8.5.1/aarch64-linux/ascend_ops_install.info owner does not match the current owner.
+  warnings.warn(f"Warning: The {path} owner does not match the current owner.")
+PYTHON /home/shuhao/miniconda3/envs/vllm-hust-dev/bin/python
+PREFIX /home/shuhao/miniconda3/envs/vllm-hust-dev
+DIST_ERR vllm PackageNotFoundError('vllm')
+DIST_ERR vllm-ascend PackageNotFoundError('vllm-ascend')
+DIST vllm-hust-benchmark 0.1.0
+DIRECT_URL vllm-hust-benchmark {"dir_info": {"editable": true}, "url": "file:///workspace/vllm-hust-benchmark"}
+DIST hust-ascend-manager 0.1.0
+DIRECT_URL hust-ascend-manager {"dir_info": {"editable": true}, "url": "file:///workspace/ascend-runtime-manager"}
+MODULE vllm /workspace/vllm-hust/vllm/__init__.py
+MODULE vllm_ascend /workspace/vllm-ascend-hust/vllm_ascend/__init__.py
+MODULE vllm_hust_benchmark /workspace/vllm-hust-benchmark/src/vllm_hust_benchmark/__init__.py
+MODULE hust_ascend_manager /workspace/ascend-runtime-manager/src/hust_ascend_manager/__init__.py
+DrvMngGetConsoleLogLevel failed. (ret=4)
+[INFO] RUNTIME(166833,python):2026-05-05-12:18:05.822.641 [task_fail_callback_data_manager.cc:93] 166833 ~TaskFailCallBackManager: Destructor.
+RC=0
