@@ -402,15 +402,17 @@ official baseline 现成参考值：
 
 这部分不需要另一个 team 再返工，除非产品重新改 UI 要求。
 
-### 3.4 reference baseline 的 spec 和 runner 已落地
+### 3.4 reference baseline 已迁移到 `vllm-hust-benchmark`
 
-已经在 `reference-repos/vllm-ascend` 中增加以下文件：
+最初这组文件曾经错误地放在本地 `reference-repos/vllm-ascend` 分支里，但那不是正确的长期落点，因为 `reference-repos/*` 只用于 upstream 对照。
 
-- `benchmarks/tests/vllm-hust-goal-baseline.json`
-- `benchmarks/tests/vllm-hust-goal-constraints.stub.json`
-- `benchmarks/scripts/run-vllm-hust-goal-baseline.sh`
+现在这组 baseline 文件的 canonical home 已迁移到 `vllm-hust-benchmark`：
 
-并在 `benchmarks/README.md` 中加入了使用说明。
+- `scripts/run-official-ascend-goal-baseline.sh`
+- `docs/official-baselines/official-ascend-jan-2026-v0110-random-online-qwen25-14b-910b3.json`
+- `docs/official-baselines/official-ascend-constraints.stub.json`
+
+并且 `vllm-hust-benchmark/README.md` 已加入使用说明。
 
 这意味着 baseline 运行入口已经具备，不需要从零设计脚本。
 
@@ -516,24 +518,25 @@ conda run -p /home/shuhao/miniconda3/envs/vllm-hust-dev \
 - 不应该直接跑官方 baseline benchmark
 - 不应该管理官方 baseline 环境安装
 
-### 5.2 `reference-repos/vllm-ascend`
+### 5.2 `vllm-hust-benchmark`
 
 职责：
 
-- 存放官方 baseline spec
 - 存放官方 baseline runner
-- 作为官方 baseline 逻辑的参考与执行入口
+- 存放官方 baseline spec 和 constraints stub
+- 负责调用 benchmark 与 artifact export
+- 作为 website 目标对比的标准执行入口
 
-这是符合“基线代码应该放在 reference-repos 里面”的要求的。
+这是当前最合适的长期落点，因为它本来就负责跨仓 benchmark 编排与 artifact 导出。
 
-### 5.3 `vllm-hust-benchmark`
+### 5.3 `reference-repos/vllm-ascend`
 
 职责：
 
-- 提供 website artifact 的导出 CLI
-- 负责把 benchmark 输出封装成 website 消费的数据格式
+- 仅作为官方 `v0.11.0` Ascend 代码来源
+- 供 baseline runner 拉 worktree 和安装官方环境使用
 
-当前无需修改即可被 baseline runner 复用。
+不应继续作为我们自定义 benchmark runner/spec 的提交落点。
 
 ### 5.4 `reference-repos/vllm` 与 `reference-repos/vllm-ascend`
 
@@ -595,8 +598,8 @@ PY
 
 ```bash
 export GOAL_BASELINE_ENV_PREFIX=/root/miniconda3/envs/vllm-ascend-official-v0110
-bash /root/workspace/reference-repos/vllm-ascend/benchmarks/scripts/run-vllm-hust-goal-baseline.sh \
-  /root/workspace/reference-repos/vllm-ascend/benchmarks/tests/vllm-hust-goal-baseline.json
+bash /root/workspace/vllm-hust-benchmark/scripts/run-official-ascend-goal-baseline.sh \
+  /root/workspace/vllm-hust-benchmark/docs/official-baselines/official-ascend-jan-2026-v0110-random-online-qwen25-14b-910b3.json
 ```
 
 该命令应完成：
@@ -613,7 +616,7 @@ bash /root/workspace/reference-repos/vllm-ascend/benchmarks/scripts/run-vllm-hus
 
 预期结果目录：
 
-- `/root/workspace/reference-repos/vllm-ascend/benchmarks/results/vllm-hust-goal-baseline/`
+- `/root/workspace/vllm-hust-benchmark/.benchmarks/official-ascend-goal-baseline/`
 
 至少应该能看到：
 
@@ -800,12 +803,12 @@ stub 只为打通导出链路，不代表 hard constraints 已完成基线评估
 - `/root/workspace/vllm-hust-website/assets/leaderboard.css`
 - `/root/workspace/vllm-hust-website/tests/test_aggregate_results.py`
 
-### 已新增或修改的 reference baseline 文件
+### 已新增或修改的 baseline 文件
 
-- `/root/workspace/reference-repos/vllm-ascend/benchmarks/scripts/run-vllm-hust-goal-baseline.sh`
-- `/root/workspace/reference-repos/vllm-ascend/benchmarks/tests/vllm-hust-goal-baseline.json`
-- `/root/workspace/reference-repos/vllm-ascend/benchmarks/tests/vllm-hust-goal-constraints.stub.json`
-- `/root/workspace/reference-repos/vllm-ascend/benchmarks/README.md`
+- `/root/workspace/vllm-hust-benchmark/scripts/run-official-ascend-goal-baseline.sh`
+- `/root/workspace/vllm-hust-benchmark/docs/official-baselines/official-ascend-jan-2026-v0110-random-online-qwen25-14b-910b3.json`
+- `/root/workspace/vllm-hust-benchmark/docs/official-baselines/official-ascend-constraints.stub.json`
+- `/root/workspace/vllm-hust-benchmark/README.md`
 
 ## 12. 推荐给接手 team 的第一天执行清单
 
@@ -821,4 +824,4 @@ stub 只为打通导出链路，不代表 hard constraints 已完成基线评估
 
 ## 13. 一句话交接摘要
 
-代码通路已经打通，另一个 team 不需要重新设计方案；他们需要做的是把 `reference-repos/vllm-ascend` 里的官方 `v0.11.0` baseline runner 真正跑出 artifact，并把该 artifact 聚合进 `vllm-hust-website`，完成顶部目标差距展示的数据闭环。
+代码通路已经打通，另一个 team 不需要重新设计方案；他们需要做的是用 `vllm-hust-benchmark` 中的官方 `v0.11.0` baseline runner 真正跑出 artifact，并把该 artifact 聚合进 `vllm-hust-website`，完成顶部目标差距展示的数据闭环。
