@@ -11,25 +11,10 @@ permissions:
   contents: read
 
 jobs:
-  quickstart-bootstrap-and-test:
-    name: quickstart (${{ matrix.runner_name }})
-    if: ${{ github.event_name != 'pull_request' || matrix.runner_flavor != 'self-hosted' }}
-    runs-on: ${{ fromJson(matrix.runs_on) }}
-    timeout-minutes: ${{ matrix.timeout_minutes }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner_name: ubuntu
-            runner_flavor: ubuntu
-            runs_on: '["ubuntu-latest"]'
-            timeout_minutes: 90
-            install_scope: core
-          - runner_name: self-hosted
-            runner_flavor: self-hosted
-            runs_on: '["self-hosted","linux"]'
-            timeout_minutes: 150
-            install_scope: full
+  quickstart-ubuntu:
+    name: quickstart (ubuntu)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
 
     defaults:
       run:
@@ -64,9 +49,9 @@ jobs:
           XDG_CACHE_HOME: ${{ github.workspace }}/.ci-home/.cache
           XDG_CONFIG_HOME: ${{ github.workspace }}/.ci-home/.config
           CONDA_SOLVER: classic
-          RUNNER_FLAVOR: ${{ matrix.runner_flavor }}
+          RUNNER_FLAVOR: ubuntu
           PYTHON_VERSION: '3.11'
-          INSTALL_SCOPE: ${{ matrix.install_scope }}
+          INSTALL_SCOPE: core
           RESULTS_ROOT: ${{ github.workspace }}/ci-results
           GITHUB_TOKEN: ${{ github.token }}
           CI_GITHUB_TOKEN: ${{ secrets.VLLM_HUST_CLONE_TOKEN }}
@@ -76,7 +61,66 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: quickstart-ci-${{ matrix.runner_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: quickstart-ci-ubuntu-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ci-results
+          if-no-files-found: warn
+          retention-days: 14
+
+  quickstart-self-hosted:
+    if: ${{ github.event_name != 'pull_request' }}
+    name: quickstart (self-hosted)
+    runs-on:
+      - self-hosted
+      - linux
+    timeout-minutes: 150
+
+    defaults:
+      run:
+        shell: bash
+        working-directory: vllm-hust-dev-hub
+
+    steps:
+      - name: Checkout vllm-hust-dev-hub
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          path: vllm-hust-dev-hub
+
+      - name: Ensure conda is available
+        env:
+          HOME: ${{ github.workspace }}/.ci-home
+          XDG_CACHE_HOME: ${{ github.workspace }}/.ci-home/.cache
+          XDG_CONFIG_HOME: ${{ github.workspace }}/.ci-home/.config
+          CONDA_SOLVER: classic
+        run: |
+          mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME"
+          if command -v conda >/dev/null 2>&1 || [[ -x "$HOME/miniconda3/bin/conda" ]]; then
+            exit 0
+          fi
+
+          bash scripts/install-miniconda.sh --yes --prefix "$HOME/miniconda3"
+          echo "$HOME/miniconda3/bin" >> "$GITHUB_PATH"
+
+      - name: Run quickstart CI bootstrap and tests
+        env:
+          HOME: ${{ github.workspace }}/.ci-home
+          XDG_CACHE_HOME: ${{ github.workspace }}/.ci-home/.cache
+          XDG_CONFIG_HOME: ${{ github.workspace }}/.ci-home/.config
+          CONDA_SOLVER: classic
+          RUNNER_FLAVOR: self-hosted
+          PYTHON_VERSION: '3.11'
+          INSTALL_SCOPE: full
+          RESULTS_ROOT: ${{ github.workspace }}/ci-results
+          GITHUB_TOKEN: ${{ github.token }}
+          CI_GITHUB_TOKEN: ${{ secrets.VLLM_HUST_CLONE_TOKEN }}
+        run: bash scripts/ci/quickstart_ci.sh
+
+      - name: Upload quickstart CI artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quickstart-ci-self-hosted-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ci-results
           if-no-files-found: warn
