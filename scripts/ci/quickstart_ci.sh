@@ -196,7 +196,7 @@ install_smoke_test_dependencies() {
   run_step \
     "install smoke test deps" \
     env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
-    "$conda_bin" run -n "$ENV_NAME" python -m pip install -e "$WORKSPACE_ROOT/vllm-hust[ci-smoke]" --no-build-isolation
+    "$conda_bin" run -n "$ENV_NAME" bash -lc "python -m pip install 'setuptools-scm>=8.0' && python -m pip install -e '$WORKSPACE_ROOT/vllm-hust[ci-smoke]' --no-build-isolation"
 }
 
 plugin_installed() {
@@ -253,7 +253,7 @@ main() {
 
   if ! run_step \
     "vllm help" \
-    env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
+    env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" VLLM_TARGET_DEVICE=cpu \
     "$conda_bin" run -n "$ENV_NAME" bash -lc 'if command -v vllm-hust >/dev/null 2>&1; then TORCH_DEVICE_BACKEND_AUTOLOAD=0 vllm-hust --help; else TORCH_DEVICE_BACKEND_AUTOLOAD=0 vllm --help; fi'; then
     SCRIPT_EXIT_CODE=1
   fi
