@@ -187,7 +187,7 @@ run_pytest_step() {
 
   local junit_file="$JUNIT_DIR/$junit_name"
   run_step "$name" env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
-    "$conda_bin" run -n "$ENV_NAME" python -m pytest -q --junitxml "$junit_file" "$@"
+    "$conda_bin" run -n "$ENV_NAME" bash -lc "cd \"$repo_dir\" && python -m pytest -q --junitxml \"$junit_file\" \"\$@\"" -- "$@"
 }
 
 install_smoke_test_dependencies() {
@@ -196,7 +196,7 @@ install_smoke_test_dependencies() {
   run_step \
     "install smoke test deps" \
     env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
-    "$conda_bin" run -n "$ENV_NAME" python -m pip install -e "$WORKSPACE_ROOT/vllm-hust[ci-smoke]" --no-build-isolation
+    "$conda_bin" run -n "$ENV_NAME" bash -lc "python -m pip install 'setuptools-scm>=8.0' && python -m pip install -e '$WORKSPACE_ROOT/vllm-hust[ci-smoke]' --no-build-isolation"
 }
 
 plugin_installed() {
@@ -211,6 +211,10 @@ except PackageNotFoundError:
     raise SystemExit(1)
 raise SystemExit(0)
 PY
+}
+
+runner_requires_plugin_check() {
+  [[ "$RUNNER_FLAVOR" == "self-hosted" ]]
 }
 
 main() {
@@ -229,7 +233,7 @@ main() {
 
   if (( bootstrap_ok == 0 )); then
     skip_step "python smoke" "quickstart bootstrap failed"
-    skip_step "vllm help" "quickstart bootstrap failed"
+    skip_step "vllm cli smoke" "quickstart bootstrap failed"
     skip_step "runtime check" "quickstart bootstrap failed"
     skip_step "ascend-runtime-manager tests" "quickstart bootstrap failed"
     skip_step "vllm-hust-benchmark tests" "quickstart bootstrap failed"
@@ -248,9 +252,9 @@ main() {
   fi
 
   if ! run_step \
-    "vllm help" \
+    "vllm cli smoke" \
     env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
-    "$conda_bin" run -n "$ENV_NAME" bash -lc 'if command -v vllm-hust >/dev/null 2>&1; then TORCH_DEVICE_BACKEND_AUTOLOAD=0 vllm-hust --help; else TORCH_DEVICE_BACKEND_AUTOLOAD=0 vllm --help; fi'; then
+    "$conda_bin" run -n "$ENV_NAME" python -c 'from shutil import which; assert which("vllm-hust") or which("vllm"); from vllm.entrypoints.cli.main import _resolve_cli_version; print(_resolve_cli_version())'; then
     SCRIPT_EXIT_CODE=1
   fi
 
@@ -286,11 +290,13 @@ main() {
   if ! run_step \
     "vllm-hust smoke tests" \
     env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
-    "$conda_bin" run -n "$ENV_NAME" python -m pytest -q --junitxml "$JUNIT_DIR/vllm-hust-smoke.xml" "$WORKSPACE_ROOT/vllm-hust/tests/test_vllm_port.py"; then
+    "$conda_bin" run -n "$ENV_NAME" bash -lc "cd \"$WORKSPACE_ROOT/vllm-hust\" && python -m pytest -q --noconftest --junitxml \"$JUNIT_DIR/vllm-hust-smoke.xml\" tests/test_vllm_port.py"; then
     SCRIPT_EXIT_CODE=1
   fi
 
-  if plugin_installed "$conda_bin"; then
+  if ! runner_requires_plugin_check; then
+    skip_step "runtime check require plugin" "runner flavor does not require Ascend plugin validation"
+  elif plugin_installed "$conda_bin"; then
     if ! run_step \
       "runtime check require plugin" \
       env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
