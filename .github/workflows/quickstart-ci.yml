@@ -13,6 +13,7 @@ permissions:
 jobs:
   quickstart-bootstrap-and-test:
     name: quickstart (${{ matrix.runner_name }})
+    if: ${{ github.event_name != 'pull_request' || matrix.runner_flavor != 'self-hosted' }}
     runs-on: ${{ fromJson(matrix.runs_on) }}
     timeout-minutes: ${{ matrix.timeout_minutes }}
     strategy:
@@ -23,10 +24,12 @@ jobs:
             runner_flavor: ubuntu
             runs_on: '["ubuntu-latest"]'
             timeout_minutes: 90
+            install_scope: core
           - runner_name: self-hosted
             runner_flavor: self-hosted
             runs_on: '["self-hosted","linux"]'
             timeout_minutes: 150
+            install_scope: full
 
     defaults:
       run:
@@ -63,7 +66,7 @@ jobs:
           CONDA_SOLVER: classic
           RUNNER_FLAVOR: ${{ matrix.runner_flavor }}
           PYTHON_VERSION: '3.11'
-          INSTALL_SCOPE: full
+          INSTALL_SCOPE: ${{ matrix.install_scope }}
           RESULTS_ROOT: ${{ github.workspace }}/ci-results
           GITHUB_TOKEN: ${{ github.token }}
           CI_GITHUB_TOKEN: ${{ secrets.VLLM_HUST_CLONE_TOKEN }}

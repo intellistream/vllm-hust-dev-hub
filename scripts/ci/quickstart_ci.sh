@@ -213,6 +213,10 @@ raise SystemExit(0)
 PY
 }
 
+runner_requires_plugin_check() {
+  [[ "$RUNNER_FLAVOR" == "self-hosted" ]]
+}
+
 main() {
   local conda_bin=""
   local bootstrap_ok=0
@@ -290,7 +294,9 @@ main() {
     SCRIPT_EXIT_CODE=1
   fi
 
-  if plugin_installed "$conda_bin"; then
+  if ! runner_requires_plugin_check; then
+    skip_step "runtime check require plugin" "runner flavor does not require Ascend plugin validation"
+  elif plugin_installed "$conda_bin"; then
     if ! run_step \
       "runtime check require plugin" \
       env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
