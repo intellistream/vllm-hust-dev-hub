@@ -21,18 +21,6 @@
       "path": "../reference-repos"
     },
     {
-      "name": "vllm",
-      "path": "../reference-repos/vllm"
-    },
-    {
-      "name": "sglang",
-      "path": "../reference-repos/sglang"
-    },
-    {
-      "name": "vllm-ascend",
-      "path": "../reference-repos/vllm-ascend"
-    },
-    {
       "name": "vllm-ascend-hust",
       "path": "../vllm-ascend-hust"
     },
