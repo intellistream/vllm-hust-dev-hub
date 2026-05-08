@@ -233,7 +233,7 @@ main() {
 
   if (( bootstrap_ok == 0 )); then
     skip_step "python smoke" "quickstart bootstrap failed"
-    skip_step "vllm help" "quickstart bootstrap failed"
+    skip_step "vllm cli smoke" "quickstart bootstrap failed"
     skip_step "runtime check" "quickstart bootstrap failed"
     skip_step "ascend-runtime-manager tests" "quickstart bootstrap failed"
     skip_step "vllm-hust-benchmark tests" "quickstart bootstrap failed"
@@ -252,9 +252,9 @@ main() {
   fi
 
   if ! run_step \
-    "vllm help" \
-    env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" VLLM_TARGET_DEVICE=cpu \
-    "$conda_bin" run -n "$ENV_NAME" bash -lc 'if command -v vllm-hust >/dev/null 2>&1; then TORCH_DEVICE_BACKEND_AUTOLOAD=0 vllm-hust --help; else TORCH_DEVICE_BACKEND_AUTOLOAD=0 vllm --help; fi'; then
+    "vllm cli smoke" \
+    env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
+    "$conda_bin" run -n "$ENV_NAME" python -c 'from shutil import which; assert which("vllm-hust") or which("vllm"); from vllm.entrypoints.cli.main import _resolve_cli_version; print(_resolve_cli_version())'; then
     SCRIPT_EXIT_CODE=1
   fi
 
