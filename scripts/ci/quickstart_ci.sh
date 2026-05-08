@@ -187,7 +187,7 @@ run_pytest_step() {
 
   local junit_file="$JUNIT_DIR/$junit_name"
   run_step "$name" env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
-    "$conda_bin" run -n "$ENV_NAME" python -m pytest -q --junitxml "$junit_file" "$@"
+    "$conda_bin" run -n "$ENV_NAME" bash -lc "cd \"$repo_dir\" && python -m pytest -q --junitxml \"$junit_file\" \"\$@\"" -- "$@"
 }
 
 install_smoke_test_dependencies() {
@@ -290,7 +290,7 @@ main() {
   if ! run_step \
     "vllm-hust smoke tests" \
     env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
-    "$conda_bin" run -n "$ENV_NAME" python -m pytest -q --junitxml "$JUNIT_DIR/vllm-hust-smoke.xml" "$WORKSPACE_ROOT/vllm-hust/tests/test_vllm_port.py"; then
+    "$conda_bin" run -n "$ENV_NAME" bash -lc "cd \"$WORKSPACE_ROOT/vllm-hust\" && python -m pytest -q --noconftest --junitxml \"$JUNIT_DIR/vllm-hust-smoke.xml\" tests/test_vllm_port.py"; then
     SCRIPT_EXIT_CODE=1
   fi
 
