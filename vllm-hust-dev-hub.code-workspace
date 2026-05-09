@@ -42,6 +42,12 @@
     {
       "name": "vllm-hust-benchmark",
       "path": "../vllm-hust-benchmark"
+    },
+    {
+      "path": "../cccf-domestic-inference-engine-survey"
+    },
+    {
+      "path": "../parallel-distributed-state-management-survey"
     }
   ],
   "settings": {
