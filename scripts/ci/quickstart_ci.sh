@@ -203,13 +203,9 @@ plugin_installed() {
   local conda_bin="$1"
   env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
     "$conda_bin" run -n "$ENV_NAME" python - <<'PY'
-from importlib.metadata import PackageNotFoundError, version
+from importlib.metadata import entry_points
 
-try:
-    version("vllm-ascend-hust")
-except PackageNotFoundError:
-    raise SystemExit(1)
-raise SystemExit(0)
+raise SystemExit(0 if any(ep.name == "ascend" for ep in entry_points(group="vllm.platform_plugins")) else 1)
 PY
 }
 
