@@ -465,6 +465,16 @@ raise SystemExit(0 if enable_custom_op() else 1)
 PY
 }
 
+validate_ascend_platform_plugin_in_env() {
+  local env_name="$1"
+
+  run_conda_env_cmd "$env_name" python - <<'PY'
+from importlib.metadata import entry_points
+
+raise SystemExit(0 if any(ep.name == "ascend" for ep in entry_points(group="vllm.platform_plugins")) else 1)
+PY
+}
+
 find_ascend_custom_op_extension_in_env() {
   local env_name="$1"
 
@@ -532,6 +542,13 @@ install_ascend_repo_into_env() {
       "TORCH_DEVICE_BACKEND_AUTOLOAD=0" \
       "LD_LIBRARY_PATH=$build_ld_library_path" \
       -- "${pip_args[@]}"
+
+  if ! validate_ascend_platform_plugin_in_env "$ENV_NAME"; then
+    log "Warning: Ascend platform plugin entry point validation failed in '$ENV_NAME'"
+    return 13
+  fi
+
+  log "Verified Ascend platform plugin entry point in '$ENV_NAME'"
 
   if [[ "$compile_custom_kernels" == "0" ]]; then
     return 0
