@@ -336,6 +336,70 @@ ascend_compile_custom_kernels_configured_explicitly() {
   [[ -n "${HUST_DEV_HUB_ASCEND_COMPILE_CUSTOM_KERNELS:-}" ]]
 }
 
+infer_ascend_soc_version_from_manifest() {
+  local manifest_path="$1"
+  local manifest_name
+
+  if [[ ! -f "$manifest_path" ]]; then
+    return 1
+  fi
+
+  manifest_name="$(basename "$manifest_path" | tr '[:upper:]' '[:lower:]')"
+  case "$manifest_name" in
+    *910b*)
+      printf 'ascend910b1\n'
+      return 0
+      ;;
+    *910c*|*a3*)
+      printf 'ascend910_9391\n'
+      return 0
+      ;;
+    *310p*)
+      printf 'ascend310p1\n'
+      return 0
+      ;;
+    *950*|*a5*)
+      printf 'ascend950\n'
+      return 0
+      ;;
+  esac
+
+  if grep -Eqi '910b|ascend-cann-910b-ops' "$manifest_path"; then
+    printf 'ascend910b1\n'
+    return 0
+  fi
+
+  if grep -Eqi '910c|9391|9381|9372|9392|9382|9362' "$manifest_path"; then
+    printf 'ascend910_9391\n'
+    return 0
+  fi
+
+  if grep -Eqi '310p' "$manifest_path"; then
+    printf 'ascend310p1\n'
+    return 0
+  fi
+
+  if grep -Eqi '950|a5' "$manifest_path"; then
+    printf 'ascend950\n'
+    return 0
+  fi
+
+  return 1
+}
+
+resolve_ascend_install_soc_version() {
+  if [[ -n "${SOC_VERSION:-}" ]]; then
+    printf '%s\n' "$SOC_VERSION"
+    return 0
+  fi
+
+  if ! should_reconcile_ascend_runtime; then
+    return 1
+  fi
+
+  infer_ascend_soc_version_from_manifest "$MANAGER_MANIFEST_DEFAULT"
+}
+
 sanitize_ld_library_path_for_system_tools() {
   local original_ld_library_path="$1"
   local path_entries=()
@@ -516,6 +580,8 @@ install_ascend_repo_into_env() {
   local compile_custom_kernels="$2"
   local pip_args=(-v --no-build-isolation --no-deps -e "$repo_path")
   local build_ld_library_path
+  local resolved_soc_version=""
+  local install_env_args
 
   ensure_ascend_build_python_packages "$repo_path" "$compile_custom_kernels"
 
@@ -535,12 +601,23 @@ install_ascend_repo_into_env() {
     log "Using Ascend custom-kernel mode: COMPILE_CUSTOM_KERNELS=$compile_custom_kernels"
   fi
 
+  install_env_args=(
+    "COMPILE_CUSTOM_KERNELS=$compile_custom_kernels"
+    "TORCH_DEVICE_BACKEND_AUTOLOAD=0"
+    "LD_LIBRARY_PATH=$build_ld_library_path"
+  )
+
+  if resolved_soc_version="$(resolve_ascend_install_soc_version)"; then
+    install_env_args+=("SOC_VERSION=$resolved_soc_version")
+    if [[ -z "${SOC_VERSION:-}" ]]; then
+      log "Using inferred SOC_VERSION=$resolved_soc_version for Ascend repo '$repo_path'"
+    fi
+  fi
+
   run_with_heartbeat \
     "installing editable package from $repo_path" \
     run_pip_install_in_env "$ENV_NAME" \
-      "COMPILE_CUSTOM_KERNELS=$compile_custom_kernels" \
-      "TORCH_DEVICE_BACKEND_AUTOLOAD=0" \
-      "LD_LIBRARY_PATH=$build_ld_library_path" \
+      "${install_env_args[@]}" \
       -- "${pip_args[@]}"
 
   if ! validate_ascend_platform_plugin_in_env "$ENV_NAME"; then
