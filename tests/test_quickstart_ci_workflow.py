@@ -5,6 +5,7 @@ import unittest
 
 WORKFLOW_PATH = Path(__file__).resolve().parents[1] / ".github/workflows/quickstart-ci.yml"
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts/ci/quickstart_ci.sh"
+SMOKE_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts/ci/vllm_envs_smoke.py"
 
 
 def _extract_block(text: str, anchor: str) -> str:
@@ -51,11 +52,13 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
 
     def test_quickstart_ci_script_uses_torch_free_vllm_smoke(self) -> None:
         script_text = SCRIPT_PATH.read_text()
+        smoke_script_text = SMOKE_SCRIPT_PATH.read_text()
 
         self.assertIn('run_vllm_hust_smoke_step()', script_text)
-        self.assertIn('spec_from_file_location("vllm_envs_smoke"', script_text)
-        self.assertIn('Path.cwd() / "vllm" / "envs.py"', script_text)
+        self.assertIn('python "$HUB_ROOT/scripts/ci/vllm_envs_smoke.py" "$repo_dir"', script_text)
         self.assertNotIn('tests/test_vllm_port.py', script_text)
+        self.assertIn('spec_from_file_location("vllm_envs_smoke"', smoke_script_text)
+        self.assertIn('repo_dir / "vllm" / "envs.py"', smoke_script_text)
 
 
 if __name__ == "__main__":
