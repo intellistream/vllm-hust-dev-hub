@@ -143,6 +143,11 @@ trap 'handle_signal TERM' TERM
 trap finalize EXIT
 
 prepare_clone_auth() {
+  if [[ "${HUST_DEV_HUB_GIT_AUTH_MODE:-https}" == "ssh" ]]; then
+    log "Using SSH clone/auth mode for workspace repositories"
+    return 0
+  fi
+
   if [[ -z "$GITHUB_TOKEN_FOR_CLONES" ]]; then
     return 0
   fi
