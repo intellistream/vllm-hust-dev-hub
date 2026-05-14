@@ -143,6 +143,11 @@ trap 'handle_signal TERM' TERM
 trap finalize EXIT
 
 prepare_clone_auth() {
+  if [[ "${HUST_DEV_HUB_GIT_AUTH_MODE:-https}" == "ssh" ]]; then
+    log "Using SSH clone/auth mode for workspace repositories"
+    return 0
+  fi
+
   if [[ -z "$GITHUB_TOKEN_FOR_CLONES" ]]; then
     return 0
   fi
@@ -198,6 +203,16 @@ install_smoke_test_dependencies() {
     env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
     "$conda_bin" run -n "$ENV_NAME" bash -lc "python -m pip install 'setuptools-scm>=8.0' && python -m pip install -e '$WORKSPACE_ROOT/vllm-hust[ci-smoke]' --no-build-isolation"
 }
+
+run_vllm_hust_smoke_step() {
+  local conda_bin="$1"
+  local repo_dir="$WORKSPACE_ROOT/vllm-hust"
+
+  run_step \
+    "vllm-hust smoke tests" \
+    env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
+    "$conda_bin" run -n "$ENV_NAME" python "$HUB_ROOT/scripts/ci/vllm_envs_smoke.py" "$repo_dir"
+  }
 
 plugin_installed() {
   local conda_bin="$1"
@@ -283,10 +298,7 @@ main() {
     SCRIPT_EXIT_CODE=1
   fi
 
-  if ! run_step \
-    "vllm-hust smoke tests" \
-    env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
-    "$conda_bin" run -n "$ENV_NAME" bash -lc "cd \"$WORKSPACE_ROOT/vllm-hust\" && python -m pytest -q --noconftest --junitxml \"$JUNIT_DIR/vllm-hust-smoke.xml\" tests/test_vllm_port.py"; then
+  if ! run_vllm_hust_smoke_step "$conda_bin"; then
     SCRIPT_EXIT_CODE=1
   fi
 

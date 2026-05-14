@@ -28,6 +28,9 @@ jobs:
           fetch-depth: 1
           path: vllm-hust-dev-hub
 
+      - name: Guard self-hosted SSH quickstart contract
+        run: python3 -m unittest discover -s tests -p 'test_quickstart_ci_workflow.py' -q
+
       - name: Ensure conda is available
         env:
           HOME: ${{ github.workspace }}/.ci-home
@@ -86,6 +89,23 @@ jobs:
         with:
           fetch-depth: 1
           path: vllm-hust-dev-hub
+          ssh-key: ${{ secrets.VLLM_HUST_CI_SSH_PRIVATE_KEY }}
+
+      - name: Prepare GitHub SSH key for downstream clones
+        env:
+          HOME: ${{ github.workspace }}/.ci-home
+          VLLM_HUST_CI_SSH_PRIVATE_KEY: ${{ secrets.VLLM_HUST_CI_SSH_PRIVATE_KEY }}
+        run: |
+          if [[ -z "${VLLM_HUST_CI_SSH_PRIVATE_KEY:-}" ]]; then
+            echo "Missing secrets.VLLM_HUST_CI_SSH_PRIVATE_KEY for self-hosted quickstart CI" >&2
+            exit 1
+          fi
+
+          install -d -m 700 "$HOME/.ssh"
+          printf '%s\n' "$VLLM_HUST_CI_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/id_ed25519"
+          ssh-keyscan github.com > "$HOME/.ssh/known_hosts"
+          chmod 644 "$HOME/.ssh/known_hosts"
 
       - name: Ensure conda is available
         env:
@@ -112,8 +132,9 @@ jobs:
           PYTHON_VERSION: '3.11'
           INSTALL_SCOPE: full
           RESULTS_ROOT: ${{ github.workspace }}/ci-results
-          GITHUB_TOKEN: ${{ github.token }}
-          CI_GITHUB_TOKEN: ${{ secrets.VLLM_HUST_CLONE_TOKEN }}
+          GITHUB_TOKEN: ''
+          CI_GITHUB_TOKEN: ''
+          HUST_DEV_HUB_GIT_AUTH_MODE: ssh
         run: bash scripts/ci/quickstart_ci.sh
 
       - name: Upload quickstart CI artifacts

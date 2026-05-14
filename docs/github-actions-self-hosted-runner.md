@@ -117,6 +117,21 @@ runs-on: [self-hosted, Linux, x64, train8, ascend]
 
 说明：GitHub 会自动给 runner 附加 `self-hosted`、操作系统和架构标签；你只需要额外补充业务标签。
 
+### Quickstart 自托管作业的 Git 认证约束
+
+如果 workflow 需要在 self-hosted runner 上执行本仓库的 quickstart bootstrap，请不要沿用 GitHub-hosted job 的 HTTPS clone 习惯，而是显式保持 SSH 模式。
+
+原因是 `scripts/clone-workspace-repos.sh` 默认克隆 `vLLM-HUST` 组织下的 workspace 仓库时使用 `git@github.com:` URL；而 `scripts/ci/quickstart_ci.sh` 在检测到 clone token 时，会把 `git@github.com:` 改写成 HTTPS。对无法稳定访问 `github.com:443`、但可以走 GitHub SSH 的机器，这会让 quickstart 在下游仓库克隆阶段直接失败。
+
+对 self-hosted quickstart job，建议同时满足下面几条：
+
+- `actions/checkout` 使用 `ssh-key: ${{ secrets.VLLM_HUST_CI_SSH_PRIVATE_KEY }}`
+- 在运行 quickstart 前，把同一把私钥写入 `HOME/.ssh/id_ed25519`，并准备好 `known_hosts`
+- 显式设置 `HUST_DEV_HUB_GIT_AUTH_MODE=ssh`
+- 显式清空 `GITHUB_TOKEN` 和 `CI_GITHUB_TOKEN`，避免脚本把 SSH URL 再改写回 HTTPS
+
+对应的最小写法可参考当前仓库里的 [quickstart-ci.yml](../.github/workflows/quickstart-ci.yml) 中 `quickstart-self-hosted` job。
+
 ## 卸载或注销 runner
 
 GitHub 删除 runner 需要一枚新的 remove token，不是最初 install 时那枚 token。
