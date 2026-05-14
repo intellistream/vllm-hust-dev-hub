@@ -28,6 +28,9 @@ jobs:
           fetch-depth: 1
           path: vllm-hust-dev-hub
 
+      - name: Guard self-hosted SSH quickstart contract
+        run: python3 -m unittest discover -s tests -p 'test_quickstart_ci_workflow.py' -q
+
       - name: Ensure conda is available
         env:
           HOME: ${{ github.workspace }}/.ci-home
