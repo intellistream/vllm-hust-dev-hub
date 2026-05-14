@@ -1262,7 +1262,8 @@ repo_prefers_no_build_isolation() {
 install_editable_repo_into_env() {
   local repo_path="$1"
   local reconcile_mode="${2:-without-runtime-reconcile}"
-  local pip_args=(-v -e "$repo_path")
+  local editable_target="$repo_path"
+  local pip_args=()
   local compile_custom_kernels
 
   compile_custom_kernels="$(default_ascend_compile_custom_kernels)"
@@ -1295,16 +1296,24 @@ install_editable_repo_into_env() {
     return 12
   fi
 
-  if repo_prefers_no_build_isolation "$repo_path"; then
-    pip_args=(--no-build-isolation "${pip_args[@]}")
-  fi
-
   local pip_env=()
   if [[ "$(basename "$repo_path")" == "vllm-hust" ]]; then
-    pip_env=(
-      "VLLM_TARGET_DEVICE=empty"
-      "VLLM_USE_PRECOMPILED=0"
-    )
+    editable_target="${repo_path}[ci-smoke]"
+    pip_env+=("VLLM_TARGET_DEVICE=empty")
+
+    if [[ -n "${VLLM_USE_PRECOMPILED:-}" ]]; then
+      pip_env+=("VLLM_USE_PRECOMPILED=$VLLM_USE_PRECOMPILED")
+    elif [[ -z "${CUDA_HOME:-}" ]] && ! command -v nvcc >/dev/null 2>&1; then
+      log "CUDA toolkit (nvcc/CUDA_HOME) not found; setting VLLM_USE_PRECOMPILED=1 for editable install of $repo_path"
+      pip_env+=("VLLM_USE_PRECOMPILED=1")
+    else
+      pip_env+=("VLLM_USE_PRECOMPILED=0")
+    fi
+  fi
+
+  pip_args=(-v -e "$editable_target")
+  if repo_prefers_no_build_isolation "$repo_path"; then
+    pip_args=(--no-build-isolation "${pip_args[@]}")
   fi
 
   log "Installing editable package from: $repo_path"
