@@ -204,6 +204,66 @@ install_smoke_test_dependencies() {
     "$conda_bin" run -n "$ENV_NAME" bash -lc "python -m pip install 'setuptools-scm>=8.0' && python -m pip install -e '$WORKSPACE_ROOT/vllm-hust[ci-smoke]' --no-build-isolation"
 }
 
+  run_vllm_hust_smoke_step() {
+    local conda_bin="$1"
+    local repo_dir="$WORKSPACE_ROOT/vllm-hust"
+
+    run_step \
+    "vllm-hust smoke tests" \
+    env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
+    "$conda_bin" run -n "$ENV_NAME" bash -lc '
+      set -euo pipefail
+      cd "$1"
+      python - <<'"'"'PY'"'"'
+  import importlib.util
+  import os
+    import sys
+  from pathlib import Path
+    from types import ModuleType
+  from unittest.mock import patch
+
+    try:
+      from urllib3.util import parse_url as _parse_url  # noqa: F401
+    except ModuleNotFoundError:
+      urllib3_module = ModuleType("urllib3")
+      urllib3_util_module = ModuleType("urllib3.util")
+
+      def parse_url(value: str):
+        scheme = value.split("://", 1)[0] if "://" in value else ""
+        return type("ParsedUrl", (), {"scheme": scheme})()
+
+      urllib3_util_module.parse_url = parse_url
+      urllib3_module.util = urllib3_util_module
+      sys.modules.setdefault("urllib3", urllib3_module)
+      sys.modules["urllib3.util"] = urllib3_util_module
+
+  module_path = Path.cwd() / "vllm" / "envs.py"
+  spec = importlib.util.spec_from_file_location("vllm_envs_smoke", module_path)
+  assert spec is not None and spec.loader is not None
+  module = importlib.util.module_from_spec(spec)
+  spec.loader.exec_module(module)
+  get_vllm_port = module.get_vllm_port
+
+  with patch.dict(os.environ, {}, clear=True):
+    assert get_vllm_port() is None
+
+  with patch.dict(os.environ, {"VLLM_PORT": "5678"}, clear=True):
+    assert get_vllm_port() == 5678
+
+  for raw_value, message in (
+    ("abc", "must be a valid integer"),
+    ("tcp://localhost:5678", "appears to be a URI"),
+  ):
+    with patch.dict(os.environ, {"VLLM_PORT": raw_value}, clear=True):
+      try:
+        get_vllm_port()
+      except ValueError as exc:
+        assert message in str(exc), str(exc)
+      else:
+        raise AssertionError(f"Expected ValueError for {raw_value!r}")
+  PY' bash "$repo_dir"
+  }
+
 plugin_installed() {
   local conda_bin="$1"
   env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
@@ -288,10 +348,7 @@ main() {
     SCRIPT_EXIT_CODE=1
   fi
 
-  if ! run_step \
-    "vllm-hust smoke tests" \
-    env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
-    "$conda_bin" run -n "$ENV_NAME" bash -lc "cd \"$WORKSPACE_ROOT/vllm-hust\" && python -m pytest -q --noconftest --junitxml \"$JUNIT_DIR/vllm-hust-smoke.xml\" tests/test_vllm_port.py"; then
+  if ! run_vllm_hust_smoke_step "$conda_bin"; then
     SCRIPT_EXIT_CODE=1
   fi
 

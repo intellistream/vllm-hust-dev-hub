@@ -49,6 +49,14 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
             script_text,
         )
 
+    def test_quickstart_ci_script_uses_torch_free_vllm_smoke(self) -> None:
+        script_text = SCRIPT_PATH.read_text()
+
+        self.assertIn('run_vllm_hust_smoke_step()', script_text)
+        self.assertIn('spec_from_file_location("vllm_envs_smoke"', script_text)
+        self.assertIn('Path.cwd() / "vllm" / "envs.py"', script_text)
+        self.assertNotIn('tests/test_vllm_port.py', script_text)
+
 
 if __name__ == "__main__":
     unittest.main()
