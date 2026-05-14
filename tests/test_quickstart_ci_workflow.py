@@ -33,6 +33,8 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
             "- name: Prepare GitHub SSH key for downstream clones",
             self_hosted_block,
         )
+        self.assertIn("GITHUB_TOKEN: ''", self_hosted_block)
+        self.assertIn("CI_GITHUB_TOKEN: ''", self_hosted_block)
         self.assertIn("HUST_DEV_HUB_GIT_AUTH_MODE: ssh", self_hosted_block)
 
     def test_quickstart_ci_script_still_supports_ssh_mode(self) -> None:
