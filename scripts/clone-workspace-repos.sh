@@ -357,6 +357,7 @@ maybe_pull_updates() {
 # Keep upstream comparison repos under reference-repos/ rather than as top-level siblings.
 REPOS=(
   "ascend-runtime-manager|git@github.com:vLLM-HUST/ascend-runtime-manager.git"
+  "vllm-hust-dev-hub|git@github.com:vLLM-HUST/vllm-hust-dev-hub.git"
   "vllm-hust|git@github.com:vLLM-HUST/vllm-hust.git"
   "vllm-hust-workstation|git@github.com:vLLM-HUST/vllm-hust-workstation.git"
   "vllm-hust-website|git@github.com:vLLM-HUST/vllm-hust-website.git"
