@@ -283,6 +283,9 @@ maybe_pull_updates() {
   local destination
   local branch_name
   local upstream_ref
+  local configured_remote
+  local configured_merge_ref
+  local configured_upstream_ref
   local upstream_remote
   local upstream_branch
   local current_repo_url
@@ -306,8 +309,15 @@ maybe_pull_updates() {
     return 0
   fi
 
-  upstream_ref="$(run_git -C "$destination" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || true)"
+  configured_remote="$(run_git -C "$destination" config --get "branch.$branch_name.remote" 2>/dev/null || true)"
+  configured_merge_ref="$(run_git -C "$destination" config --get "branch.$branch_name.merge" 2>/dev/null || true)"
+  upstream_ref="$(run_git -C "$destination" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null)" || upstream_ref=""
   if [[ -z "$upstream_ref" ]]; then
+    if [[ -n "$configured_remote" && -n "$configured_merge_ref" ]]; then
+      configured_upstream_ref="$configured_remote/${configured_merge_ref#refs/heads/}"
+      echo "[skip] $relative_path current branch $branch_name tracks $configured_upstream_ref, but that upstream branch is unavailable"
+      return 0
+    fi
     echo "[skip] $relative_path has no upstream tracking branch"
     return 0
   fi
@@ -332,6 +342,11 @@ maybe_pull_updates() {
       echo "[skip] $relative_path fetch failed and no HTTPS fallback is available"
       return 0
     fi
+  fi
+
+  if ! run_git -C "$destination" rev-parse --verify --quiet "$upstream_ref^{commit}" >/dev/null; then
+    echo "[skip] $relative_path current branch $branch_name tracks $upstream_ref, but that upstream branch disappeared after fetch --prune"
+    return 0
   fi
 
   counts="$(run_git -C "$destination" rev-list --left-right --count "$branch_name...$upstream_ref")"
