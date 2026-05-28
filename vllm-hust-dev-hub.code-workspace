@@ -25,6 +25,10 @@
       "path": "../vllm-ascend-hust"
     },
     {
+      "name": "vllm-ascend-quant-hust",
+      "path": "../vllm-ascend-quant-hust"
+    },
+    {
       "name": "vllm-hust-dev-hub",
       "path": "."
     },
@@ -42,6 +46,10 @@
     {
       "name": "vllm-hust-benchmark",
       "path": "../vllm-hust-benchmark"
+    },
+    {
+      "name": "vllm-hust-perf-analyzer",
+      "path": "../vllm-hust-perf-analyzer"
     }
   ],
   "settings": {

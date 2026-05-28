@@ -378,12 +378,14 @@ REPOS=(
   "vllm-hust-website|git@github.com:vLLM-HUST/vllm-hust-website.git"
   "vllm-hust-docs|git@github.com:vLLM-HUST/vllm-hust-docs.git"
   "vllm-ascend-hust|git@github.com:vLLM-HUST/vllm-ascend-hust.git"
+  "vllm-ascend-quant-hust|git@github.com:vLLM-HUST/vllm-ascend-quant-hust.git"
   "vllm-hust-org-profile|git@github.com:vLLM-HUST/.github.git"
   "reference-repos/vllm|git@github.com:vllm-project/vllm.git"
   "reference-repos/sglang|git@github.com:sgl-project/sglang.git"
   "reference-repos/vllm-ascend|git@github.com:vllm-project/vllm-ascend.git"
   "EvoScientist|git@github.com:vLLM-HUST/EvoScientist.git"
   "vllm-hust-benchmark|git@github.com:vLLM-HUST/vllm-hust-benchmark.git"
+  "vllm-hust-perf-analyzer|git@github.com:vLLM-HUST/vllm-hust-perf-analyzer.git"
 )
 
 parse_args "$@"

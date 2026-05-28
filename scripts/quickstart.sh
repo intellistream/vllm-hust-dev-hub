@@ -1175,6 +1175,7 @@ build_installable_repo_entries() {
     "$WORKSPACE_ROOT/vllm-hust-docs"
     "$WORKSPACE_ROOT/vllm-hust-website"
     "$WORKSPACE_ROOT/EvoScientist"
+    "$WORKSPACE_ROOT/vllm-hust-perf-analyzer"
   )
 
   local repo_candidates=()

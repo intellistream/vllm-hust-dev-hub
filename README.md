@@ -20,11 +20,13 @@ The default workspace includes these repositories when they exist under `/home/<
 - `vllm-hust-docs`
 - `vllm-hust-org-profile`
 - `vllm-ascend-hust`
+- `vllm-ascend-quant-hust`
 - `reference-repos/vllm`
 - `reference-repos/sglang`
 - `reference-repos/vllm-ascend`
 - `EvoScientist`
 - `vllm-hust-benchmark`
+- `vllm-hust-perf-analyzer`
 
 ## Files
 
@@ -89,7 +91,7 @@ The advanced install flows still support two install actions:
 Then they let you choose a scope:
 
 - `core`: `ascend-runtime-manager`, `vllm-hust`, `vllm-ascend-hust`, `vllm-hust-benchmark`
-- `full`: core repos plus extra local repos such as workstation, docs, website, and EvoScientist when they are installable
+- `full`: core repos plus extra local repos such as workstation, docs, website, EvoScientist, and TraceLoom when they are installable
 
 If `conda` is not available yet, `quickstart.sh` can automatically call the Miniconda installer script for flows that include conda setup (for example `--conda` / `--all`).
 
