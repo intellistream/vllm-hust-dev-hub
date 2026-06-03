@@ -53,6 +53,7 @@ PIP_INSTALL_RETRIES=""
 PIP_INSTALL_TIMEOUT=""
 PIP_INSTALL_RESUME_RETRIES=""
 PIP_SUPPORTS_RESUME_RETRIES="unknown"
+ASCEND_COMPILE_CUSTOM_KERNELS_OVERRIDE=""
 CONDA_BIN=""
 CONDA_BASE=""
 BROKEN_CONDA_PREFIX=""
@@ -71,6 +72,9 @@ print_help() {
   --install                在已有 conda 环境中安装本地仓库。
   --install-mode MODE      安装模式: install 或 refresh (默认: install)。
   --install-scope SCOPE    安装范围: core 或 full (默认: core)。
+  --ascend-lightweight     Ascend 插件使用轻量模式安装 (等价于 COMPILE_CUSTOM_KERNELS=0)。
+  --ascend-custom-kernels VALUE
+                           显式设置 Ascend 插件 COMPILE_CUSTOM_KERNELS 值。
   --all                    执行 clone + conda + install(core)。
   --env-name NAME          conda 环境名 (默认: vllm-hust-dev)。
   --python VERSION         conda 环境 Python 版本 (默认: 3.11)。
@@ -211,6 +215,34 @@ get_conda_env_python_bin() {
   printf '%s\n' "$env_prefix/bin/python"
 }
 
+conda_package_installed_in_env() {
+  local env_name="$1"
+  local package_name="$2"
+
+  run_conda_cmd list -n "$env_name" | awk -v package_name="$package_name" '$1 == package_name { found = 1 } END { exit(found ? 0 : 1) }'
+}
+
+remove_conflicting_conda_torch_packages_in_env() {
+  local env_name="$1"
+  local package_name
+  local packages_to_remove=()
+
+  for package_name in pytorch pytorch-cpu pytorch-mutex; do
+    if conda_package_installed_in_env "$env_name" "$package_name"; then
+      packages_to_remove+=("$package_name")
+    fi
+  done
+
+  if (( ${#packages_to_remove[@]} == 0 )); then
+    return 0
+  fi
+
+  log "Removing conflicting conda torch packages from '$env_name': ${packages_to_remove[*]}"
+  run_with_heartbeat \
+    "removing conflicting conda torch packages from $env_name" \
+    run_conda_cmd remove -n "$env_name" -y "${packages_to_remove[@]}"
+}
+
 detect_conda_run_stream_flag() {
   if [[ -n "$CONDA_RUN_STREAM_FLAG" ]]; then
     return 0
@@ -302,6 +334,11 @@ extra_env_args_include_var() {
 }
 
 default_ascend_compile_custom_kernels() {
+  if [[ -n "$ASCEND_COMPILE_CUSTOM_KERNELS_OVERRIDE" ]]; then
+    printf '%s\n' "$ASCEND_COMPILE_CUSTOM_KERNELS_OVERRIDE"
+    return 0
+  fi
+
   if [[ -n "${HUST_DEV_HUB_ASCEND_COMPILE_CUSTOM_KERNELS:-}" ]]; then
     printf '%s\n' "$HUST_DEV_HUB_ASCEND_COMPILE_CUSTOM_KERNELS"
     return 0
@@ -435,6 +472,73 @@ ensure_ascend_build_python_packages() {
   ensure_pip_package_in_env "$ENV_NAME" "${pybind11_spec:-pybind11}"
 }
 
+read_requirement_spec_from_requirements_file() {
+  local repo_path="$1"
+  local package_name="$2"
+  local requirements_file="$repo_path/requirements.txt"
+
+  if [[ ! -f "$requirements_file" ]]; then
+    return 1
+  fi
+
+  awk -v package_name="$package_name" '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    {
+      line = $0
+      sub(/[[:space:]]+#.*$/, "", line)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+      if (line ~ ("^" package_name "([<>=!~].*)?$")) {
+        print line
+        exit
+      }
+    }
+  ' "$requirements_file"
+}
+
+list_requirement_specs_from_requirements_file() {
+  local repo_path="$1"
+  local requirements_file="$repo_path/requirements.txt"
+
+  if [[ ! -f "$requirements_file" ]]; then
+    return 1
+  fi
+
+  awk '
+    /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
+    {
+      line = $0
+      sub(/[[:space:]]+#.*$/, "", line)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+      if (line == "" || line ~ /^-/) {
+        next
+      }
+      print line
+    }
+  ' "$requirements_file"
+}
+
+requirement_name_from_spec() {
+  local package_spec="$1"
+  local package_name="${package_spec%%[<>=!~; ]*}"
+
+  printf '%s\n' "${package_name,,}"
+}
+
+ascend_runtime_requirement_is_optional_for_quickstart() {
+  local package_spec="$1"
+  local package_name
+
+  package_name="$(requirement_name_from_spec "$package_spec")"
+  case "$package_name" in
+    arctic-inference|fastapi|memcache_hybrid|memfabric_hybrid|numba|pandas-stubs|quart|torch|torch-npu|torchaudio|torchvision|transformers)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 ensure_ascend_catlass_submodule_ready() {
   local repo_path="$1"
   local submodule_relative_path="csrc/third_party/catlass"
@@ -457,12 +561,88 @@ ensure_ascend_catlass_submodule_ready() {
 validate_ascend_custom_op_in_env() {
   local env_name="$1"
 
-  run_conda_env_cmd "$env_name" env TORCH_DEVICE_BACKEND_AUTOLOAD=0 python - <<'PY'
+  run_conda_env_cmd "$env_name" env TORCH_DEVICE_BACKEND_AUTOLOAD=0 python - >/dev/null 2>&1 <<'PY'
 import torch  # noqa: F401
 from vllm_ascend.utils import enable_custom_op
 
 raise SystemExit(0 if enable_custom_op() else 1)
 PY
+}
+
+validate_torch_npu_runtime_in_env() {
+  local env_name="$1"
+
+  run_conda_env_cmd "$env_name" env TORCH_DEVICE_BACKEND_AUTOLOAD=0 python - >/dev/null 2>&1 <<'PY'
+import torch  # noqa: F401
+import torch_npu  # noqa: F401
+PY
+}
+
+read_ascend_python_stack_specs_from_manifest() {
+  local env_name="$1"
+  local manifest_path="${2:-$MANAGER_MANIFEST_DEFAULT}"
+
+  if [[ ! -f "$manifest_path" ]]; then
+    return 1
+  fi
+
+  run_conda_env_cmd "$env_name" python - "$manifest_path" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as f:
+    manifest = json.load(f)
+
+stack = manifest.get("python_stack", {})
+torch_version = stack.get("torch")
+torch_npu_version = stack.get("torch_npu")
+
+if torch_version:
+    print(f"torch=={torch_version}")
+if torch_npu_version:
+    print(f"torch-npu=={torch_npu_version}")
+PY
+}
+
+force_reinstall_ascend_python_stack_in_env() {
+  local env_name="$1"
+  local stack_specs=()
+
+  remove_conflicting_conda_torch_packages_in_env "$env_name"
+
+  mapfile -t stack_specs < <(read_ascend_python_stack_specs_from_manifest "$env_name" || true)
+  if (( ${#stack_specs[@]} == 0 )); then
+    stack_specs=("torch" "torch-npu")
+  fi
+
+  log "Force reinstalling Ascend Python stack in '$env_name': ${stack_specs[*]}"
+  run_with_heartbeat \
+    "force reinstalling Ascend Python stack in $env_name" \
+    run_pip_install_in_env "$env_name" -- --upgrade --ignore-installed "${stack_specs[@]}"
+}
+
+ensure_ascend_torch_runtime_healthy() {
+  local env_name="$1"
+
+  if validate_torch_npu_runtime_in_env "$env_name"; then
+    return 0
+  fi
+
+  if should_reconcile_ascend_runtime; then
+    log "Torch/torch-npu runtime import validation failed in '$env_name'; re-running Ascend Python stack reconciliation"
+    reconcile_ascend_runtime_with_manager
+    if validate_torch_npu_runtime_in_env "$env_name"; then
+      return 0
+    fi
+  fi
+
+  force_reinstall_ascend_python_stack_in_env "$env_name"
+  if validate_torch_npu_runtime_in_env "$env_name"; then
+    return 0
+  fi
+
+  log "Warning: torch/torch-npu runtime import validation is still failing in '$env_name'"
+  return 1
 }
 
 validate_ascend_platform_plugin_in_env() {
@@ -518,6 +698,7 @@ install_ascend_repo_into_env() {
   local build_ld_library_path
 
   ensure_ascend_build_python_packages "$repo_path" "$compile_custom_kernels"
+  ensure_ascend_runtime_python_packages "$repo_path"
 
   if [[ "$compile_custom_kernels" != "0" ]]; then
     ensure_ascend_catlass_submodule_ready "$repo_path"
@@ -567,6 +748,37 @@ install_ascend_repo_into_env() {
 
   log "Warning: Ascend custom op validation is still failing in '$ENV_NAME'"
   return 12
+}
+
+ensure_ascend_runtime_python_packages() {
+  local repo_path="$1"
+  local requirement_specs=()
+  local missing_requirement_specs=()
+  local requirement_spec
+
+  mapfile -t requirement_specs < <(list_requirement_specs_from_requirements_file "$repo_path" || true)
+  if (( ${#requirement_specs[@]} == 0 )); then
+    return 0
+  fi
+
+  for requirement_spec in "${requirement_specs[@]}"; do
+    if ascend_runtime_requirement_is_optional_for_quickstart "$requirement_spec"; then
+      continue
+    fi
+
+    if ! pip_requirement_satisfied_in_env "$ENV_NAME" "$requirement_spec"; then
+      missing_requirement_specs+=("$requirement_spec")
+    fi
+  done
+
+  if (( ${#missing_requirement_specs[@]} == 0 )); then
+    return 0
+  fi
+
+  log "Installing missing or incompatible Ascend runtime Python dependencies into '$ENV_NAME'"
+  run_with_heartbeat \
+    "installing Ascend runtime Python dependencies into $ENV_NAME" \
+    run_pip_install_in_env "$ENV_NAME" -- "${missing_requirement_specs[@]}"
 }
 
 read_positive_int_env_with_fallback() {
@@ -1129,11 +1341,31 @@ read_project_name_from_setup_py() {
   local repo_path="$1"
 
   awk '
+    /^[[:space:]]*[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=[[:space:]]*["\047]/ {
+      line = $0
+      variable_name = line
+      sub(/[[:space:]]*=.*/, "", variable_name)
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", variable_name)
+      sub(/^[^=]*=[[:space:]]*["\047]/, "", line)
+      sub(/["\047][[:space:]]*$/, "", line)
+      setup_py_string_vars[variable_name] = line
+    }
     /setup[[:space:]]*\(/ { in_setup=1 }
     in_setup && /^[[:space:]]*name[[:space:]]*=/ {
       line = $0
-      sub(/^[[:space:]]*name[[:space:]]*=[[:space:]]*["\047]/, "", line)
-      sub(/["\047][[:space:]]*,?[[:space:]]*$/, "", line)
+      if (line ~ /^[[:space:]]*name[[:space:]]*=[[:space:]]*["\047]/) {
+        sub(/^[[:space:]]*name[[:space:]]*=[[:space:]]*["\047]/, "", line)
+        sub(/["\047][[:space:]]*,?[[:space:]]*$/, "", line)
+        print line
+        exit
+      }
+
+      sub(/^[[:space:]]*name[[:space:]]*=[[:space:]]*/, "", line)
+      sub(/[[:space:]]*,?[[:space:]]*$/, "", line)
+      if (line in setup_py_string_vars) {
+        print setup_py_string_vars[line]
+        exit
+      }
       print line
       exit
     }
@@ -1232,16 +1464,42 @@ report_vllm_cli_status() {
 ensure_pip_package_in_env() {
   local env_name="$1"
   local package_spec="$2"
-  local package_name="${package_spec%%[<>=!~; ]*}"
 
-  if is_package_installed_in_env "$env_name" "$package_name"; then
+  if pip_requirement_satisfied_in_env "$env_name" "$package_spec"; then
     return 0
   fi
 
-  log "Installing missing build dependency '$package_spec' into '$env_name'"
+  log "Installing missing Python dependency '$package_spec' into '$env_name'"
   run_with_heartbeat \
     "installing $package_spec into $env_name" \
     run_pip_install_in_env "$env_name" -- "$package_spec"
+}
+
+pip_requirement_satisfied_in_env() {
+  local env_name="$1"
+  local package_spec="$2"
+
+  run_conda_env_cmd "$env_name" python - "$package_spec" >/dev/null 2>&1 <<'PY'
+import sys
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    from packaging.requirements import Requirement
+except ImportError:
+    raise SystemExit(1)
+
+requirement = Requirement(sys.argv[1])
+
+try:
+    installed_version = version(requirement.name)
+except PackageNotFoundError:
+    raise SystemExit(1)
+
+if requirement.specifier and not requirement.specifier.contains(installed_version, prereleases=True):
+    raise SystemExit(1)
+
+raise SystemExit(0)
+PY
 }
 
 repo_requires_ascend_runtime() {
@@ -1281,6 +1539,11 @@ install_editable_repo_into_env() {
       else
         log "Skipping Ascend-only repo '$repo_path' because torch-npu is not installed in '$ENV_NAME'. Run quickstart with --conda to reconcile the Ascend Python stack first."
       fi
+      return 11
+    fi
+
+    if ! ensure_ascend_torch_runtime_healthy "$ENV_NAME"; then
+      log "Skipping Ascend-only repo '$repo_path' because torch/torch-npu runtime imports are unhealthy in '$ENV_NAME'."
       return 11
     fi
 
@@ -2046,6 +2309,7 @@ EOF
       DO_INSTALL=1
       INSTALL_MODE="refresh"
       INSTALL_SCOPE="core"
+      UPDATE_BASHRC=1
       MENU_CONFIRMED=1
       ;;
     2)
@@ -2122,6 +2386,13 @@ parse_args() {
         INSTALL_SCOPE="$2"
         shift
         ;;
+      --ascend-lightweight)
+        ASCEND_COMPILE_CUSTOM_KERNELS_OVERRIDE="0"
+        ;;
+      --ascend-custom-kernels)
+        ASCEND_COMPILE_CUSTOM_KERNELS_OVERRIDE="$2"
+        shift
+        ;;
       --all)
         DO_CLONE=1
         DO_CONDA=1
@@ -2162,6 +2433,11 @@ parse_args() {
 
   if [[ "$INSTALL_MODE" != "install" && "$INSTALL_MODE" != "refresh" ]]; then
     echo "无效 --install-mode: $INSTALL_MODE (应为 install 或 refresh)" >&2
+    exit 2
+  fi
+
+  if [[ -n "$ASCEND_COMPILE_CUSTOM_KERNELS_OVERRIDE" && ! "$ASCEND_COMPILE_CUSTOM_KERNELS_OVERRIDE" =~ ^[0-9]+$ ]]; then
+    echo "无效 Ascend COMPILE_CUSTOM_KERNELS: $ASCEND_COMPILE_CUSTOM_KERNELS_OVERRIDE (应为非负整数)" >&2
     exit 2
   fi
 }
