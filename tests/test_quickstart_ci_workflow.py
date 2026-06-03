@@ -2,6 +2,7 @@ from pathlib import Path
 import re
 import shlex
 import subprocess
+import tempfile
 import unittest
 
 
@@ -9,7 +10,6 @@ WORKFLOW_PATH = Path(__file__).resolve().parents[1] / ".github/workflows/quickst
 QUICKSTART_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts/quickstart.sh"
 SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts/ci/quickstart_ci.sh"
 SMOKE_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts/ci/vllm_envs_smoke.py"
-ASCEND_REPO_PATH = Path(__file__).resolve().parents[2] / "vllm-ascend-hust"
 
 
 def _extract_block(text: str, anchor: str) -> str:
@@ -95,19 +95,31 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         self.assertIn('if ! ensure_ascend_torch_runtime_healthy "$ENV_NAME"; then', script_text)
 
     def test_quickstart_reads_setup_py_variable_backed_project_name(self) -> None:
-        command = (
-            f"source <(sed '/^main() {{/,$d' {shlex.quote(str(QUICKSTART_SCRIPT_PATH))}); "
-            f"read_project_name {shlex.quote(str(ASCEND_REPO_PATH))}"
+        synthetic_setup_py = (
+            'PROJECT_NAME = "my-test-project"\n'
+            '\n'
+            'setup(\n'
+            '    name=PROJECT_NAME,\n'
+            '    version="0.1.0",\n'
+            ')\n'
         )
 
-        result = subprocess.run(
-            ["bash", "-lc", command],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
+        with tempfile.TemporaryDirectory() as tmpdir:
+            Path(tmpdir, "setup.py").write_text(synthetic_setup_py)
 
-        self.assertEqual(result.stdout.strip(), "vllm-ascend-hust")
+            command = (
+                f"source <(sed '/^main() {{/,$d' {shlex.quote(str(QUICKSTART_SCRIPT_PATH))}); "
+                f"read_project_name {shlex.quote(tmpdir)}"
+            )
+
+            result = subprocess.run(
+                ["bash", "-lc", command],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.stdout.strip(), "my-test-project")
 
     def test_quickstart_accepts_cli_override_for_ascend_lightweight_mode(self) -> None:
         command = (
