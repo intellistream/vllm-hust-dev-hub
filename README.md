@@ -10,6 +10,8 @@ Team onboarding reference: [docs/team-onboarding.md](docs/team-onboarding.md)
 
 GitHub Actions self-hosted runner reference: [docs/github-actions-self-hosted-runner.md](docs/github-actions-self-hosted-runner.md)
 
+Performance follow-up roadmap: [ROADMAP.md](ROADMAP.md)
+
 ## Included Repositories
 
 The default workspace includes these repositories when they exist under `/home/<your name>`:
