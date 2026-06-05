@@ -463,13 +463,20 @@ ensure_ascend_build_python_packages() {
   triton_ascend_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "triton-ascend" || true)"
   ensure_pip_package_in_env "$ENV_NAME" "${triton_ascend_spec:-triton-ascend}"
 
+  # pybind11 is a runtime dependency of triton-ascend's Ascend backend
+  # (triton.backends.ascend.utils imports pybind11 at module load time).
+  # Without it, `import triton.backends` fails and HAS_TRITON evaluates to
+  # False, which silently disables all triton-ascend kernels including
+  # the fused qkv_rmsnorm_rope op. Must be installed unconditionally
+  # regardless of whether we're compiling custom C++ kernels.
+  pybind11_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "pybind11" || true)"
+  ensure_pip_package_in_env "$ENV_NAME" "${pybind11_spec:-pybind11}"
+
   if [[ "$compile_custom_kernels" == "0" ]]; then
     return 0
   fi
 
   ensure_pip_package_in_env "$ENV_NAME" "cmake"
-  pybind11_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "pybind11" || true)"
-  ensure_pip_package_in_env "$ENV_NAME" "${pybind11_spec:-pybind11}"
 }
 
 read_requirement_spec_from_requirements_file() {
