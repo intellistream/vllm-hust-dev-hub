@@ -50,6 +50,13 @@
     {
       "name": "vllm-hust-perf-analyzer",
       "path": "../vllm-hust-perf-analyzer"
+    },
+    {
+      "path": "../private-materials"
+    },
+    {
+      "name": "state-management-survey",
+      "path": "../parallel-distributed-state-management-survey"
     }
   ],
   "settings": {

@@ -29,6 +29,7 @@ The default workspace includes these repositories when they exist under `/home/<
 - `EvoScientist`
 - `vllm-hust-benchmark`
 - `vllm-hust-perf-analyzer`
+- `parallel-distributed-state-management-survey`
 
 ## Files
 
