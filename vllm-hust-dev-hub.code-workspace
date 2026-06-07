@@ -52,11 +52,8 @@
       "path": "../vllm-hust-perf-analyzer"
     },
     {
-      "path": "../private-materials"
-    },
-    {
-      "name": "state-management-survey",
-      "path": "../parallel-distributed-state-management-survey"
+      "name": "cccf-inference-survey",
+      "path": "../cccf-domestic-inference-engine-survey"
     }
   ],
   "settings": {
