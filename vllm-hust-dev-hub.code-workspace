@@ -1,59 +1,72 @@
 {
   "folders": [
     {
-      "name": "vllm-hust",
-      "path": "../vllm-hust"
-    },
-    {
-      "name": "vllm-hust-workstation",
-      "path": "../vllm-hust-workstation"
-    },
-    {
-      "name": "vllm-hust-website",
-      "path": "../vllm-hust-website"
-    },
-    {
-      "name": "vllm-hust-docs",
-      "path": "../vllm-hust-docs"
-    },
-    {
-      "name": "reference-repos",
-      "path": "../reference-repos"
-    },
-    {
-      "name": "vllm-ascend-hust",
-      "path": "../vllm-ascend-hust"
-    },
-    {
-      "name": "vllm-ascend-quant-hust",
-      "path": "../vllm-ascend-quant-hust"
-    },
-    {
-      "name": "vllm-hust-dev-hub",
+      "name": "⚙️ dev-hub",
       "path": "."
     },
     {
-      "name": "vLLM-HUST-org-profile",
+      "name": "📖 docs",
+      "path": "../vllm-hust-docs"
+    },
+    {
+      "name": "🏛️ org-profile",
       "path": "../vllm-hust-org-profile"
     },
     {
-      "name": "ascend-runtime-manager",
+      "name": "[engine] vllm-hust",
+      "path": "../vllm-hust"
+    },
+    {
+      "name": "[engine] vllm-ascend-hust",
+      "path": "../vllm-ascend-hust"
+    },
+    {
+      "name": "[engine] vllm-ascend-quant-hust",
+      "path": "../vllm-ascend-quant-hust"
+    },
+    {
+      "name": "[engine] triton-ascend-hust",
+      "path": "../triton-ascend-hust"
+    },
+    {
+      "name": "[engine] ascend-runtime-manager",
       "path": "../ascend-runtime-manager"
     },
     {
-      "path": "../EvoScientist"
+      "name": "[web] workstation",
+      "path": "../vllm-hust-workstation"
     },
     {
-      "name": "vllm-hust-benchmark",
+      "name": "[web] website",
+      "path": "../vllm-hust-website"
+    },
+    {
+      "name": "[tool] claude-code-hust",
+      "path": "../claude-code-hust"
+    },
+    {
+      "name": "[perf] benchmark",
       "path": "../vllm-hust-benchmark"
     },
     {
-      "name": "vllm-hust-perf-analyzer",
+      "name": "[perf] perf-analyzer",
       "path": "../vllm-hust-perf-analyzer"
     },
     {
-      "name": "cccf-inference-survey",
+      "name": "[research] EvoScientist",
+      "path": "../EvoScientist"
+    },
+    {
+      "name": "[paper] cccf-inference-survey",
       "path": "../cccf-domestic-inference-engine-survey"
+    },
+    {
+      "name": "[paper] fcs-llm-recsys",
+      "path": "../fcs-domestic-chip-llm-recsys"
+    },
+    {
+      "name": "[ref] reference-repos",
+      "path": "../reference-repos"
     }
   ],
   "settings": {
