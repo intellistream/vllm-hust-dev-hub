@@ -365,3 +365,40 @@ bash scripts/ascend-official-container.sh start
 - 修改镜像 tag、SSH 端口、OS 变体时，记录到值班笔记或交接文档
 - 做多卡训练或 serving 前，先跑一次容器内 NPU/网络健康检查
 - 不要手工 `docker run` 一个同名替代容器，否则后续 manager 的状态判断会失真
+
+## 12. Docker 模式常见排障
+
+### 12.1 CANN 8.5.1 与 Custom Kernels
+
+当前所有官方镜像（v0.16.0rc1 / v0.17.0rc1）均使用 CANN 8.5.1。该版本在 ascend910b 的算子注册表中**不包含** `AddRmsNormBias`，因此 `_C_ascend` C++ 扩展的自定义算子无法使用。
+
+**解决方案**：在启动脚本中设置 `COMPILE_CUSTOM_KERNELS=0`，自动回退到 `torch_npu` 硬件加速算子（如 `npu_add_rms_norm`），与上游 vllm-ascend 行为一致，无性能损失。
+
+```bash
+# 已在 launch_ascend_model_service.sh Docker 模板中默认设置
+export COMPILE_CUSTOM_KERNELS=0
+```
+
+### 12.2 MoE 模型专家计数不匹配
+
+**现象**：Qwen3-235B-A22B-W8A8 等内部路由（internal router）MoE 模型启动时，`profile_run` 阶段报错：
+
+```
+AssertionError: Number of global experts mismatch (excluding redundancy):
+router_logits.shape[1]=4096, num_logical_experts=128
+```
+
+随后级联 SDMA memory copy 异常。
+
+**根因**：`vllm-ascend-hust` 的 `AscendMoERunner._forward_impl` 覆盖了上游 `MoERunner._forward_impl`，但未显式调用 gate 将 `hidden_states`（shape `[tokens, hidden_size=4096]`）转换为 `router_logits`（shape `[tokens, num_experts=128]`）。上游 runner 在 `_forward_impl` 入口处调用 `self.gate(hidden_states)`，但 Ascend 覆盖跳过了此步骤。
+
+**修复**（已应用）：在 `vllm_ascend/ops/fused_moe/fused_moe.py` 的 `AscendMoERunner._forward_impl` 中添加：
+
+```python
+if self.gate is not None:
+    router_logits, _ = self.gate(hidden_states)
+```
+
+### 12.3 Preflight 超时
+
+首次启动时 NPU 初始化较慢，可能超过 vllm-hust preflight 检查的 20 秒超时。启动脚本已默认设置 `VLLM_ASCEND_TORCH_PREFLIGHT=0` 跳过该检查。

@@ -380,6 +380,10 @@ export COMPILE_CUSTOM_KERNELS="${COMPILE_CUSTOM_KERNELS:-0}"
 # Ascend MoE performance optimizations (910B / A2)
 # FlashComm1: optimize TP all-reduce communication for high concurrency
 export VLLM_ASCEND_ENABLE_FLASHCOMM1="${VLLM_ASCEND_ENABLE_FLASHCOMM1:-1}"
+# Fused MC2 (dispatch_ffn_combine): fuse dispatch+FFN+combine for MoE.
+# Mode 1 = dispatch_ffn_combine (W8A8, EP<=32, non-MTP). Works on 910B & 910C.
+# Mode 2 = dispatch_gmm_combine_decode (910C only). Set 0 to disable.
+export VLLM_ASCEND_ENABLE_FUSED_MC2="${VLLM_ASCEND_ENABLE_FUSED_MC2:-1}"
 
 # Source ATB env if available
 if [[ -n "${HUST_ATB_SET_ENV:-}" && -f "${HUST_ATB_SET_ENV}" ]]; then

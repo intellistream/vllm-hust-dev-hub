@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""vllm_envs_smoke.py — Smoke test to verify vLLM environment imports work correctly."""
 
 import importlib.util
 import os

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# install_ascend_benchmark_root_helper.sh — Delegate to vllm-ascend-hust benchmark install script.
 
 set -euo pipefail
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# install-miniconda.sh — Download and install Miniconda into the current user's home directory.
 
 set -euo pipefail
 

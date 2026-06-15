@@ -39,9 +39,14 @@ The default workspace includes these repositories when they exist under `/home/<
 - `scripts/install-miniconda.sh`: download and install Miniconda into the current user's home directory.
 - `scripts/quickstart.sh`: interactive one-command bootstrap for clone + conda environment setup, plus menu option 6 for the official Ascend container and container SSH setup.
 - `scripts/ascend-official-container.sh`: start, reuse, and enter the official Ascend vLLM container from the host.
+- `scripts/ssh-into-ascend-container.sh`: SSH into a running Ascend dev container.
+- `scripts/ascend-container-runtime.sh`: SSH keepalive helper for Ascend dev containers.
 - `scripts/enable-existing-container-ssh.sh`: fallback helper for an already-running custom container when you need to turn on direct SSH access and surface mounted repos under the login home.
 - `scripts/offline-sync-instance.sh`: prepare offline wheels and model assets on the local machine, sync them through the bastion host into the docker instance, then install local repos inside the container without public network access.
 - `scripts/setup-github-actions-runner.sh`: install and manage a rootless GitHub Actions self-hosted runner as a user-level systemd service.
+- `scripts/launch_ascend_model_service.sh`: start an Ascend model service via `hust-ascend-manager launch`, with presets (`--preset w8a8`), ModelScope download (`--download-model`), health wait, and log capture.
+- `scripts/sync-env.sh`: propagate the canonical token `.env` from this repo to all sibling workspace repos.
+- `scripts/ci/`: CI-specific helpers (quickstart runner, smoke tests, benchmark install).
 
 ## Usage
 
@@ -203,6 +208,16 @@ bash scripts/ascend-official-container.sh exec -- python -c 'import torch; impor
 
 # helper for SSH RemoteCommand: open the container directly after SSH login
 bash scripts/ssh-into-ascend-container.sh
+
+# start Qwen3-235B on Ascend via dev-hub script (with health wait)
+bash scripts/launch_ascend_model_service.sh --env vllm-hust-dev --model Qwen/Qwen3-235B-A22B-Instruct-2507 --tp 8 --port 8000
+
+# W8A8 quantized: download from ModelScope + launch (one command)
+bash scripts/launch_ascend_model_service.sh --preset w8a8 --download-model
+
+# print launch command only
+bash scripts/launch_ascend_model_service.sh --dry-run
+bash scripts/launch_ascend_model_service.sh --preset w8a8 --dry-run
 
 # configure a Linux self-hosted GitHub Actions runner for an org or repo
 export GITHUB_RUNNER_URL=https://github.com/vLLM-HUST

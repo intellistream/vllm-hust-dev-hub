@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ascend-official-container.sh — Start, reuse, and enter the official Ascend vLLM container.
 
 set -euo pipefail
 

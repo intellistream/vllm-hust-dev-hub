@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# quickstart_ci.sh — CI-optimized quickstart for automated runner environments.
 
 set -uo pipefail
 

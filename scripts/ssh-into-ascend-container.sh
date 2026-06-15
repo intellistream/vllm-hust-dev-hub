@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# ssh-into-ascend-container.sh — SSH into a running Ascend dev container.
 
 set -euo pipefail
 

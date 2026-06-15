@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# offline-sync-instance.sh — Prepare offline wheels/assets and sync them into a container without public network.
 
 set -euo pipefail
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# enable-existing-container-ssh.sh — Enable SSH and mount repos for an already-running container.
 
 set -euo pipefail
 

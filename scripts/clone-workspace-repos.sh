@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# clone-workspace-repos.sh — Clone common workspace repositories in parallel.
 
 set -euo pipefail
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# quickstart.sh — Interactive one-command bootstrap: clone repos + conda env + container setup.
 
 set -euo pipefail
 

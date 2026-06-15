@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# setup-github-actions-runner.sh — Install and manage a rootless GitHub Actions self-hosted runner.
 
 set -euo pipefail
 
