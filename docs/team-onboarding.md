@@ -369,3 +369,15 @@ bash scripts/quickstart.sh
 - 连接容器看的是本地 `~/.ssh/config`
 - 连接 `vllm-hust` 服务实例看的是 `vllm-hust-workstation/.env`
 - `config.ini.example` 属于旧的 Python server 路径，不建议放进默认 onboarding 主流程
+
+### 7. 为什么 Ascend 环境不需要 `VLLM_USE_PRECOMPILED`？
+
+`VLLM_USE_PRECOMPILED` 是上游 vllm 的 CUDA 开发特性：当本地没有 CUDA 编译器时，它会尝试从 `wheels.vllm.ai` 下载预编译的 CUDA wheel。
+
+这些预编译 wheel 只存在于 x86_64 + CUDA 平台，在 aarch64/Ascend 上不可用（下载也会因 SSL 证书域名不匹配而失败）。
+
+`quickstart.sh` 已硬编码 `VLLM_USE_PRECOMPILED=0`，不需要手动设置。在 Ascend 环境下：
+
+- `VLLM_TARGET_DEVICE=empty`：跳过所有 CUDA/HIP C 扩展编译
+- `VLLM_USE_PRECOMPILED=0`：禁止下载预编译 wheel
+- Ascend 专用 C 扩展由 `vllm-ascend-hust` 单独编译（基于 torch_npu + CANN）

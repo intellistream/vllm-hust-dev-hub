@@ -30,9 +30,11 @@
 #
 # Supports preset configurations for common models:
 #   --preset w8a8        Qwen3-235B-A22B-W8A8 (quantized, auto-downloads from ModelScope)
+#   --preset coder       Qwen2.5-Coder-32B-Instruct (dense coding model, TP=4)
 #
 # Usage:
 #   # Docker mode (recommended for containerized environments)
+#   bash scripts/launch_ascend_model_service.sh --preset coder --docker vllm_hust_ws_16rc
 #   bash scripts/launch_ascend_model_service.sh --preset w8a8 --docker my_container
 #
 #   # Host mode (recommended for bare-metal)
@@ -69,14 +71,23 @@ PRESET=""
 DOWNLOAD_MODEL=0
 SKIP_SETUP=0
 DOCKER_CONTAINER=""
+EXPERT_PARALLEL="${EXPERT_PARALLEL:-1}"
+FLASHCOMM1="${FLASHCOMM1:-1}"  # FlashComm1/SP: good for MoE high-concurrency, bad for dense low-concurrency
+ENFORCE_EAGER="${ENFORCE_EAGER:-0}"  # Default: use compiled kernels for performance. Set to 1 to skip CUDA graph capture.
+ENABLE_PREFIX_CACHING="${ENABLE_PREFIX_CACHING:-1}"
+ENABLE_CHUNKED_PREFILL="${ENABLE_CHUNKED_PREFILL:-1}"
 
 # ── model presets ────────────────────────────────────────────────────────────
 # ModelScope model ID → local cache path mapping
 declare -A PRESET_MODELSCOPE_ID=(
   [w8a8]="vllm-ascend/Qwen3-235B-A22B-W8A8"
+  [coder]="Qwen/Qwen2.5-Coder-32B-Instruct"
+  [qwen3-32b]="Qwen/Qwen3-32B"
 )
 declare -A PRESET_LOCAL_PATH=(
   [w8a8]="/data/shared_models/modelscope_cache/vllm-ascend/Qwen3-235B-A22B-W8A8"
+  [coder]="/data/shared_models/modelscope_cache/Qwen/Qwen2.5-Coder-32B-Instruct"
+  [qwen3-32b]="/data/shared_models/modelscope_cache/Qwen/Qwen3-32B"
 )
 
 apply_preset() {
@@ -95,12 +106,40 @@ apply_preset() {
       fi
       [[ "$SERVED_MODEL_NAME" == "qwen3-235b-a22b-8npu" ]] && SERVED_MODEL_NAME="qwen3-235b-a22b-w8a8"
       ;;
+    qwen3-32b)
+      # Qwen3-32B: dense 32B with thinking mode, BF16, TP=4
+      [[ "$MODEL_ID" == "Qwen/Qwen3-235B-A22B-Instruct-2507" ]] && MODEL_ID="${PRESET_LOCAL_PATH[$preset]}"
+      [[ "$TP_SIZE" == "8" ]] && TP_SIZE="4"
+      [[ "$MAX_MODEL_LEN" == "40960" ]] && MAX_MODEL_LEN="16384"
+      if (( MAX_NUM_BATCHED_TOKENS < MAX_MODEL_LEN )); then
+        MAX_NUM_BATCHED_TOKENS="$MAX_MODEL_LEN"
+      fi
+      [[ "$SERVED_MODEL_NAME" == "qwen3-235b-a22b-8npu" ]] && SERVED_MODEL_NAME="qwen3-32b"
+      EXPERT_PARALLEL=0
+      FLASHCOMM1=0
+      ;;
+    coder)
+      # Qwen2.5-Coder-32B: dense 32B coding model, BF16, TP=4
+      [[ "$MODEL_ID" == "Qwen/Qwen3-235B-A22B-Instruct-2507" ]] && MODEL_ID="${PRESET_LOCAL_PATH[$preset]}"
+      [[ "$TP_SIZE" == "8" ]] && TP_SIZE="4"
+      [[ "$MAX_MODEL_LEN" == "40960" ]] && MAX_MODEL_LEN="32768"
+      if (( MAX_NUM_BATCHED_TOKENS < MAX_MODEL_LEN )); then
+        MAX_NUM_BATCHED_TOKENS="$MAX_MODEL_LEN"
+      fi
+      [[ "$SERVED_MODEL_NAME" == "qwen3-235b-a22b-8npu" ]] && SERVED_MODEL_NAME="qwen2.5-coder-32b"
+      # Dense model: no experts, disable expert parallelism
+      EXPERT_PARALLEL=0
+      # Dense model with low concurrency: FlashComm1/SP removes small batch sizes
+      # from ACL graph capture (only keeps multiples of TP=4), killing single-request
+      # throughput.  Disable for dense models.
+      FLASHCOMM1=0
+      ;;
     *)
       echo "Unknown preset: $preset" >&2
       echo "Available presets: ${!PRESET_MODELSCOPE_ID[*]}" >&2
       exit 1 ;;
   esac
-  echo "[preset] applied '$preset': model=$MODEL_ID quantization=$QUANTIZATION max-model-len=$MAX_MODEL_LEN max-num-seqs=$MAX_NUM_SEQS"
+  echo "[preset] applied '$preset': model=$MODEL_ID tp=$TP_SIZE max-model-len=$MAX_MODEL_LEN served-model-name=$SERVED_MODEL_NAME"
 }
 
 download_model_from_modelscope() {
@@ -152,6 +191,7 @@ Usage: bash scripts/launch_ascend_model_service.sh [options]
 
 Presets:
   --preset w8a8              Qwen3-235B-A22B-W8A8 (quantized, use with --download-model)
+  --preset coder             Qwen2.5-Coder-32B-Instruct (dense coding, TP=4)
 
 Options:
   Mode selection:
@@ -185,6 +225,10 @@ Options:
     --health-interval SEC  Health check interval seconds (default: 5)
     --no-health-check      Skip waiting for /health
     --foreground           Run command in foreground
+    --enforce-eager          Skip CUDA graph capture (default: on, avoids triton-ascend JIT issues)
+    --no-enforce-eager       Enable CUDA graph capture (requires compatible triton-ascend)
+    --no-prefix-caching      Disable prefix caching
+    --no-chunked-prefill     Disable chunked prefill
     --dry-run              Print command only
     -h, --help             Show this help
 
@@ -242,6 +286,14 @@ while [[ $# -gt 0 ]]; do
       NO_HEALTH_CHECK=1; shift ;;
     --foreground)
       FOREGROUND=1; shift ;;
+    --enforce-eager)
+      ENFORCE_EAGER=1; shift ;;
+    --no-enforce-eager)
+      ENFORCE_EAGER=0; shift ;;
+    --no-prefix-caching)
+      ENABLE_PREFIX_CACHING=0; shift ;;
+    --no-chunked-prefill)
+      ENABLE_CHUNKED_PREFILL=0; shift ;;
     --dry-run)
       DRY_RUN=1; shift ;;
     --preset)
@@ -329,7 +381,7 @@ exec hust-ascend-manager launch "__MODEL_ID__" \
   --gpu-memory-utilization "__GPU_MEM_UTIL__" \
   --dtype "__DTYPE__" \
   --load-format "__LOAD_FORMAT__" \
-  --enable-expert-parallel \
+  __EXPERT_PARALLEL_ARG__ \
   --max-num-seqs "__MAX_NUM_SEQS__" \
   --max-num-batched-tokens "__MAX_NUM_BATCHED_TOKENS__" \
   __QUANTIZATION_ARG__
@@ -349,6 +401,18 @@ EOF
 read -r -d '' DOCKER_INNER <<'EOF' || true
 set -euo pipefail
 
+# Activate conda env where vllm-hust / vllm-ascend-hust are installed.
+# The activate hook (installed by quickstart.sh) handles LD_LIBRARY_PATH for
+# torch/torch_npu lib dirs, so _C_ascend.so can find libtorch.so at import time.
+if [[ -f /root/miniconda3/etc/profile.d/conda.sh ]]; then
+  source /root/miniconda3/etc/profile.d/conda.sh
+  conda activate vllm-hust-dev
+elif [[ -n "${CONDA_PREFIX:-}" ]]; then
+  echo "[docker-inner] conda already active: $CONDA_PREFIX"
+else
+  echo "[docker-inner] WARNING: no conda found in container, relying on container-native python" >&2
+fi
+
 # NPU device selection
 NPU_DEVICES="__NPU_DEVICES__"
 export ASCEND_RT_VISIBLE_DEVICES="$NPU_DEVICES"
@@ -362,9 +426,12 @@ if [[ -f /usr/local/Ascend/ascend-toolkit/set_env.sh ]]; then
 fi
 
 # Add torch/torch_npu lib dirs so _C_ascend.so can find libtorch.so & libtorch_npu.so
+# (redundant with conda activate hook, but kept as fallback)
 _TORCH_LIB="$(python3 -c 'import torch, os; print(os.path.join(os.path.dirname(torch.__file__), "lib"))' 2>/dev/null || true)"
 _TORCH_NPU_LIB="$(python3 -c 'import torch_npu, os; print(os.path.join(os.path.dirname(torch_npu.__file__), "lib"))' 2>/dev/null || true)"
-export LD_LIBRARY_PATH="${_TORCH_LIB:-}:${_TORCH_NPU_LIB:-}:${LD_LIBRARY_PATH:-}"
+if [[ -n "$_TORCH_LIB" || -n "$_TORCH_NPU_LIB" ]]; then
+  export LD_LIBRARY_PATH="${_TORCH_LIB:-}:${_TORCH_NPU_LIB:-}:${LD_LIBRARY_PATH:-}"
+fi
 
 # vLLM plugin & offline flags
 export VLLM_PLUGINS="${VLLM_PLUGINS:-ascend}"
@@ -372,14 +439,16 @@ export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 # Disable preflight (NPU first-init is slow, causes 20s timeout)
 export VLLM_ASCEND_TORCH_PREFLIGHT="${VLLM_ASCEND_TORCH_PREFLIGHT:-0}"
-# Disable custom C++ ops: CANN 8.5.1 for 910B lacks AddRmsNormBias in its op registry,
-# causing SDMA crashes when _C_ascend custom ops are active.  Falls back to torch_npu
-# hardware-accelerated ops (npu_add_rms_norm etc.) which are fully supported.
-export COMPILE_CUSTOM_KERNELS="${COMPILE_CUSTOM_KERNELS:-0}"
+# Custom C++ ops (_C_ascend) are required for acceptable inference performance.
+# .so files must be pre-compiled (built inside Docker with matching CANN).
+# Only disable for UT scenarios without NPU.  Previously disabled due to
+# CANN 8.5.1 missing AddRmsNormBias — fixed in CANN 25.x / torch_npu 2.9+.
+export COMPILE_CUSTOM_KERNELS="${COMPILE_CUSTOM_KERNELS:-1}"
 
-# Ascend MoE performance optimizations (910B / A2)
-# FlashComm1: optimize TP all-reduce communication for high concurrency
-export VLLM_ASCEND_ENABLE_FLASHCOMM1="${VLLM_ASCEND_ENABLE_FLASHCOMM1:-1}"
+# FlashComm1: optimize TP all-reduce for high concurrency (MoE only).
+# For dense models with low concurrency, this enables sequence parallelism which
+# filters ACL graph capture sizes to multiples of TP, destroying single-request perf.
+export VLLM_ASCEND_ENABLE_FLASHCOMM1="${VLLM_ASCEND_ENABLE_FLASHCOMM1:-__FLASHCOMM1__}"
 # Fused MC2 (dispatch_ffn_combine): fuse dispatch+FFN+combine for MoE.
 # Mode 1 = dispatch_ffn_combine (W8A8, EP<=32, non-MTP). Works on 910B & 910C.
 # Mode 2 = dispatch_gmm_combine_decode (910C only). Set 0 to disable.
@@ -421,9 +490,12 @@ exec "$VLLM_BIN" serve \
   --gpu-memory-utilization "__GPU_MEM_UTIL__" \
   --dtype "__DTYPE__" \
   --load-format "__LOAD_FORMAT__" \
-  --enable-expert-parallel \
+  __EXPERT_PARALLEL_ARG__ \
   --trust-remote-code \
   --max-num-seqs "__MAX_NUM_SEQS__" \
+  __ENFORCE_EAGER_ARG__ \
+  __PREFIX_CACHING_ARG__ \
+  __CHUNKED_PREFILL_ARG__ \
   __QUANTIZATION_ARG__
 EOF
 
@@ -470,9 +542,40 @@ else
   ACTIVE_INNER="${ACTIVE_INNER//__SKIP_SETUP_ARG__/}"
 fi
 
+# Conditionally add --enable-expert-parallel (only for MoE models)
+if (( EXPERT_PARALLEL == 1 )); then
+  ACTIVE_INNER="${ACTIVE_INNER//__EXPERT_PARALLEL_ARG__/--enable-expert-parallel}"
+else
+  ACTIVE_INNER="${ACTIVE_INNER//__EXPERT_PARALLEL_ARG__/}"
+fi
+
+# FlashComm1 / sequence parallelism
+ACTIVE_INNER="${ACTIVE_INNER//__FLASHCOMM1__/$FLASHCOMM1}"
+
+# --enforce-eager: skip CUDA graph capture (avoids triton-ascend JIT issues)
+if (( ENFORCE_EAGER == 1 )); then
+  ACTIVE_INNER="${ACTIVE_INNER//__ENFORCE_EAGER_ARG__/--enforce-eager}"
+else
+  ACTIVE_INNER="${ACTIVE_INNER//__ENFORCE_EAGER_ARG__/}"
+fi
+
+# --enable-prefix-caching
+if (( ENABLE_PREFIX_CACHING == 1 )); then
+  ACTIVE_INNER="${ACTIVE_INNER//__PREFIX_CACHING_ARG__/--enable-prefix-caching}"
+else
+  ACTIVE_INNER="${ACTIVE_INNER//__PREFIX_CACHING_ARG__/}"
+fi
+
+# --enable-chunked-prefill
+if (( ENABLE_CHUNKED_PREFILL == 1 )); then
+  ACTIVE_INNER="${ACTIVE_INNER//__CHUNKED_PREFILL_ARG__/--enable-chunked-prefill}"
+else
+  ACTIVE_INNER="${ACTIVE_INNER//__CHUNKED_PREFILL_ARG__/}"
+fi
+
 # ── Build full command ──────────────────────────────────────────────────────
 if [[ -n "$DOCKER_CONTAINER" ]]; then
-  # Docker mode: conda is already activated inside container, just run inner
+  # Docker mode: conda env is activated inside the inner template
   FULL_CMD="$ACTIVE_INNER"
 else
   # Host mode: activate conda then run inner

@@ -9,7 +9,53 @@ WORKSPACE_ROOT="$(cd -- "$HUB_ROOT/.." && pwd)"
 CLONE_SCRIPT="$SCRIPT_DIR/clone-workspace-repos.sh"
 MINICONDA_INSTALL_SCRIPT="$SCRIPT_DIR/install-miniconda.sh"
 MANAGER_REPO="$WORKSPACE_ROOT/ascend-runtime-manager"
-MANAGER_MANIFEST_DEFAULT="$MANAGER_REPO/manifests/euleros-910b.json"
+
+# ── CANN version detection ────────────────────────────────────────────────────
+# Detects the installed CANN toolkit major version (8 or 9) by reading
+# version.info from well-known toolkit paths.  Used to select the matching
+# manifest (torch/torch_npu stack) and decide whether CANN-9-specific patches
+# (e.g. triton-ascend npu_utils.cpp) are required.
+detect_cann_major_version() {
+  local candidates=(
+    "${ASCEND_HOME_PATH:-}/version.info"
+    "${ASCEND_HOME_PATH:-}/runtime/version.info"
+    "/usr/local/Ascend/ascend-toolkit/latest/version.info"
+    "/usr/local/Ascend/ascend-toolkit/latest/runtime/version.info"
+    "${CONDA_PREFIX:-}/Ascend/cann/version.info"
+    "${CONDA_PREFIX:-}/Ascend/cann/runtime/version.info"
+  )
+  local f ver major
+  for f in "${candidates[@]}"; do
+    if [[ -f "$f" ]]; then
+      ver="$(grep -oP '[0-9]+\.[0-9]+(\.[0-9]+)?' "$f" 2>/dev/null | head -1)"
+      if [[ -n "$ver" ]]; then
+        major="${ver%%.*}"
+        printf '%s\n' "$major"
+        return 0
+      fi
+    fi
+  done
+  return 1
+}
+
+# Resolve the default manager manifest based on the detected CANN version.
+# CANN 9.x → euleros-910b-cann9.json (torch 2.10.0, torch_npu 2.10.0)
+# CANN 8.x or unknown → euleros-910b.json (torch 2.9.0, torch_npu 2.9.0)
+resolve_default_manifest() {
+  local cann_major
+  cann_major="$(detect_cann_major_version 2>/dev/null || true)"
+  case "$cann_major" in
+    9)
+      if [[ -f "$MANAGER_REPO/manifests/euleros-910b-cann9.json" ]]; then
+        printf '%s\n' "$MANAGER_REPO/manifests/euleros-910b-cann9.json"
+        return
+      fi
+      ;;
+  esac
+  printf '%s\n' "$MANAGER_REPO/manifests/euleros-910b.json"
+}
+
+MANAGER_MANIFEST_DEFAULT="$(resolve_default_manifest)"
 
 ENV_NAME="vllm-hust-dev"
 PYTHON_VERSION="3.11"
@@ -90,6 +136,56 @@ EOF
 
 log() {
   printf '[quickstart] %s\n' "$1"
+}
+
+# Install system-level build tools required for compiling C/C++ extensions
+# (psutil, triton-ascend JIT, _C_ascend, etc.).  Supports dnf/yum (openEuler,
+# RHEL, Fedora) and apt-get (Ubuntu, Debian).
+ensure_system_build_packages() {
+  local pkg_manager=""
+  local packages=()
+  local missing=()
+  local pkg
+
+  if command -v dnf >/dev/null 2>&1; then
+    pkg_manager="dnf"
+    packages=(gcc gcc-c++ python3-devel zlib-devel git make)
+  elif command -v yum >/dev/null 2>&1; then
+    pkg_manager="yum"
+    packages=(gcc gcc-c++ python3-devel zlib-devel git make)
+  elif command -v apt-get >/dev/null 2>&1; then
+    pkg_manager="apt-get"
+    packages=(gcc g++ python3-dev zlib1g-dev git make)
+  else
+    log "Warning: no supported package manager found (dnf/yum/apt-get); skipping system package install"
+    return 0
+  fi
+
+  # Check which packages are already installed
+  for pkg in "${packages[@]}"; do
+    if [[ "$pkg_manager" == "apt-get" ]]; then
+      if ! dpkg -s "$pkg" >/dev/null 2>&1; then
+        missing+=("$pkg")
+      fi
+    else
+      if ! rpm -q "$pkg" >/dev/null 2>&1; then
+        missing+=("$pkg")
+      fi
+    fi
+  done
+
+  if (( ${#missing[@]} == 0 )); then
+    log "System build packages already present ($pkg_manager): ${packages[*]}"
+    return 0
+  fi
+
+  log "Installing missing system build packages via $pkg_manager: ${missing[*]}"
+  if [[ "$pkg_manager" == "apt-get" ]]; then
+    apt-get update -qq && apt-get install -y --no-install-recommends "${missing[@]}"
+  else
+    $pkg_manager install -y "${missing[@]}"
+  fi
+  log "System build packages installed successfully"
 }
 
 init_quickstart_logging() {
@@ -478,6 +574,49 @@ ensure_ascend_build_python_packages() {
   fi
 
   ensure_pip_package_in_env "$ENV_NAME" "cmake"
+  # nanobind is required for building triton from source (triton-ascend-hust)
+  ensure_pip_package_in_env "$ENV_NAME" "nanobind>=2.4"
+}
+
+# Patch triton-ascend's JIT-compiled npu_utils.cpp for CANN 9.0.0+ compatibility.
+# triton-ascend 3.2.0 references RT_LIMIT_TYPE_SIMT_WARP_STACK_SIZE which was
+# renamed to RT_LIMIT_TYPE_SIMT_DVG_WARP_STACK_SIZE in CANN 9.0.0.  Without this
+# patch, the JIT compilation fails with "‘RT_LIMIT_TYPE_SIMT_WARP_STACK_SIZE’
+# was not declared in this scope".
+patch_triton_ascend_for_cann9() {
+  local env_prefix
+  local npu_utils=""
+  local triton_backends=""
+
+  env_prefix="$(get_conda_env_prefix "$ENV_NAME")"
+  if [[ -z "$env_prefix" || ! -d "$env_prefix" ]]; then
+    return 0
+  fi
+
+  triton_backends="$env_prefix/lib/python$(ls "$env_prefix/lib/" | grep -oP 'python\d+\.\d+' | head -1)/site-packages/triton/backends/ascend"
+  if [[ ! -d "$triton_backends" ]]; then
+    return 0
+  fi
+
+  npu_utils="$triton_backends/npu_utils.cpp"
+  if [[ ! -f "$npu_utils" ]]; then
+    return 0
+  fi
+
+  # Only patch for CANN >= 9.0.0; skip on CANN 8.x where the symbol still exists.
+  local _cann_major
+  _cann_major="$(detect_cann_major_version 2>/dev/null || echo "")"
+  if [[ "$_cann_major" != "9" ]]; then
+    return 0
+  fi
+
+  if grep -q 'RT_LIMIT_TYPE_SIMT_WARP_STACK_SIZE' "$npu_utils" 2>/dev/null; then
+    log "Patching triton-ascend npu_utils.cpp for CANN 9.0.0 compatibility"
+    sed -i '/RT_LIMIT_TYPE_SIMT_WARP_STACK_SIZE/d' "$npu_utils"
+    # Clear JIT cache so the patched source is recompiled on next import
+    find "$triton_backends" -name '*.so' -path '*npu_utils*' -delete 2>/dev/null || true
+    log "Patched: removed RT_LIMIT_TYPE_SIMT_WARP_STACK_SIZE from npu_utils.cpp"
+  fi
 }
 
 read_requirement_spec_from_requirements_file() {
@@ -706,6 +845,7 @@ install_ascend_repo_into_env() {
   local build_ld_library_path
 
   ensure_ascend_build_python_packages "$repo_path" "$compile_custom_kernels"
+  patch_triton_ascend_for_cann9
   ensure_ascend_runtime_python_packages "$repo_path"
 
   if [[ "$compile_custom_kernels" != "0" ]]; then
@@ -1286,6 +1426,7 @@ accept_conda_tos_if_needed() {
 
 create_or_update_conda_env() {
   ensure_conda_available
+  ensure_system_build_packages
 
   if conda_env_exists; then
     log "Conda env '$ENV_NAME' already exists. Updating core tools..."
@@ -1571,16 +1712,10 @@ install_editable_repo_into_env() {
   local pip_env=()
   if [[ "$(basename "$repo_path")" == "vllm-hust" ]]; then
     editable_target="${repo_path}[ci-smoke]"
-    pip_env+=("VLLM_TARGET_DEVICE=empty")
-
-    if [[ -n "${VLLM_USE_PRECOMPILED:-}" ]]; then
-      pip_env+=("VLLM_USE_PRECOMPILED=$VLLM_USE_PRECOMPILED")
-    elif [[ -z "${CUDA_HOME:-}" ]] && ! command -v nvcc >/dev/null 2>&1; then
-      log "CUDA toolkit (nvcc/CUDA_HOME) not found; setting VLLM_USE_PRECOMPILED=1 for editable install of $repo_path"
-      pip_env+=("VLLM_USE_PRECOMPILED=1")
-    else
-      pip_env+=("VLLM_USE_PRECOMPILED=0")
-    fi
+    # Build vllm-hust from source with no CUDA/HIP C extensions.
+    # VLLM_USE_PRECOMPILED=0 prevents setup.py from trying to download
+    # CUDA-only prebuilt wheels from wheels.vllm.ai (not available for Ascend/aarch64).
+    pip_env+=("VLLM_TARGET_DEVICE=empty" "VLLM_USE_PRECOMPILED=0")
   fi
 
   pip_args=(-v -e "$editable_target")
@@ -1631,6 +1766,11 @@ reconcile_ascend_runtime_with_manager() {
     log "Skipping Ascend Python stack reconciliation because no Ascend runtime was detected on this host."
     return 0
   fi
+
+  # Log detected CANN version and selected manifest for transparency
+  local _cann_ver
+  _cann_ver="$(detect_cann_major_version 2>/dev/null || echo "unknown")"
+  log "CANN detection: major_version=$_cann_ver, manifest=$(basename "$MANAGER_MANIFEST_DEFAULT")"
 
   if ! is_package_installed_in_env "$ENV_NAME" "hust-ascend-manager"; then
     if [[ -f "$MANAGER_REPO/pyproject.toml" ]]; then
@@ -1728,6 +1868,72 @@ install_ascend_plugin_pypi_fallback_with_manager() {
     "${command_args[@]}"
 }
 
+ensure_git_safe_directory_for_workspace() {
+  # When running inside a Docker container, host-mounted repos may be owned by a
+  # different UID than the current user (e.g. host UID 1002 vs container root).
+  # Git refuses to operate on such repos with "dubious ownership" errors.
+  # Auto-detect UID mismatches and mark affected repos as safe directories.
+  local current_uid
+  current_uid="$(id -u 2>/dev/null || echo -1)"
+
+  local repo_dir
+  local repo_owner_uid
+  local fixed_any=0
+  for repo_dir in "$WORKSPACE_ROOT"/*/; do
+    repo_dir="${repo_dir%/}"
+    if [[ ! -d "$repo_dir/.git" ]]; then
+      continue
+    fi
+    repo_owner_uid="$(stat -c '%u' "$repo_dir" 2>/dev/null || echo -1)"
+    if [[ "$repo_owner_uid" != "$current_uid" && "$repo_owner_uid" != "-1" ]]; then
+      if ! git config --global --get-all safe.directory 2>/dev/null | grep -qxF "$repo_dir"; then
+        git config --global --add safe.directory "$repo_dir"
+        fixed_any=1
+      fi
+    fi
+  done
+
+  if (( fixed_any )); then
+    log "Auto-configured git safe.directory for host-mounted repos with UID mismatch (host=$repo_owner_uid, container=$current_uid)"
+  fi
+}
+
+# Pin fastapi to a version compatible with both starlette >=1.0.0 (vllm-hust pin)
+# and prometheus-fastapi-instrumentator >=7.0.0.  fastapi >=0.135.0 introduces
+# _IncludedRouter which breaks instrumentator's route iteration.  fastapi <0.124.0
+# requires starlette <0.51.0 which conflicts with vllm-hust's starlette >=1.0.0 pin.
+# The compatible window is fastapi 0.130.x–0.134.x with starlette 1.0.x–1.2.x.
+ensure_fastapi_instrumentator_compat() {
+  local fastapi_version=""
+
+  fastapi_version="$(run_conda_env_cmd "$ENV_NAME" python -c 'import fastapi; print(fastapi.__version__)' 2>/dev/null || true)"
+
+  # Check if fastapi is missing or in the incompatible range
+  if [[ -z "$fastapi_version" ]]; then
+    log "Installing fastapi and prometheus-fastapi-instrumentator (compatible set)"
+    run_pip_install_in_env "$ENV_NAME" -- "fastapi>=0.130.0,<0.135.0" "prometheus-fastapi-instrumentator>=7.0.0"
+    return 0
+  fi
+
+  # If fastapi >= 0.135.0, downgrade to compatible version
+  local major minor patch
+  IFS='.' read -r major minor patch <<< "${fastapi_version%%+*}"
+  if (( minor >= 135 )); then
+    log "Pinning fastapi from $fastapi_version to <0.135.0 for instrumentator compatibility"
+    run_pip_install_in_env "$ENV_NAME" -- "fastapi>=0.130.0,<0.135.0" "prometheus-fastapi-instrumentator>=7.0.0"
+    return 0
+  fi
+
+  # If prometheus-fastapi-instrumentator is missing, install it
+  if ! is_package_installed_in_env "$ENV_NAME" "prometheus-fastapi-instrumentator"; then
+    log "Installing prometheus-fastapi-instrumentator (fastapi $fastapi_version is compatible)"
+    run_pip_install_in_env "$ENV_NAME" -- "prometheus-fastapi-instrumentator>=7.0.0"
+    return 0
+  fi
+
+  log "FastAPI/instrumentator compatibility: OK (fastapi=$fastapi_version)"
+}
+
 install_workspace_repos_into_env() {
   local install_mode="${1:-$INSTALL_MODE}"
   local install_scope="${2:-$INSTALL_SCOPE}"
@@ -1737,6 +1943,8 @@ install_workspace_repos_into_env() {
     log "Install-only flow requires an existing conda setup. Run quickstart with --conda (or --all) first."
     return 2
   fi
+
+  ensure_git_safe_directory_for_workspace
 
   if ! conda_env_exists; then
     log "Conda env '$ENV_NAME' does not exist yet. Create it first with --conda."
@@ -1853,6 +2061,8 @@ install_workspace_repos_into_env() {
   if [[ -d "$WORKSPACE_ROOT/vllm-ascend-hust" && ! -f "$WORKSPACE_ROOT/vllm-ascend-hust/pyproject.toml" ]]; then
     log "Warning: vllm-ascend-hust exists but has no pyproject.toml; quickstart used or will use the PyPI fallback when Ascend plugin install is required"
   fi
+
+  ensure_fastapi_instrumentator_compat
 
   report_vllm_cli_status "$ENV_NAME" || true
 }
@@ -2025,6 +2235,44 @@ if [[ -n "${CONDA_PREFIX:-}" && -n "${LD_LIBRARY_PATH:-}" ]]; then
 
   unset _hust_dev_hub_ld_entries _hust_dev_hub_ld_filtered _hust_dev_hub_ld_entry
 fi
+
+# Re-prepend $CONDA_PREFIX/lib to LD_LIBRARY_PATH so that conda's newer
+# libstdc++.so.6 (with CXXABI_1.3.15+) is found before the system's older
+# /lib64/libstdc++.so.6.  Without this, torch_npu import fails on systems
+# where the host libstdc++ is too old for ICU / torch_npu shared objects.
+if [[ -n "${CONDA_PREFIX:-}" && -d "${CONDA_PREFIX}/lib" ]]; then
+  if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
+    export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${LD_LIBRARY_PATH}"
+  else
+    export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib"
+  fi
+fi
+
+# Prepend torch / torch_npu lib directories to LD_LIBRARY_PATH so that
+# compiled C extensions (e.g. vllm_ascend_C.so) can find libtorch.so and
+# libtorch_npu.so at import time.
+_hust_dev_hub_torch_lib=""
+_hust_dev_hub_torch_npu_lib=""
+if command -v python3 >/dev/null 2>&1; then
+  _hust_dev_hub_torch_lib="$(python3 -c "import torch, os; print(os.path.join(os.path.dirname(torch.__file__), 'lib'))" 2>/dev/null || true)"
+  _hust_dev_hub_torch_npu_lib="$(python3 -c "import torch_npu, os; print(os.path.join(os.path.dirname(torch_npu.__file__), 'lib'))" 2>/dev/null || true)"
+fi
+_hust_dev_hub_torch_prepend=()
+if [[ -n "$_hust_dev_hub_torch_lib" && -d "$_hust_dev_hub_torch_lib" ]]; then
+  _hust_dev_hub_torch_prepend+=("$_hust_dev_hub_torch_lib")
+fi
+if [[ -n "$_hust_dev_hub_torch_npu_lib" && -d "$_hust_dev_hub_torch_npu_lib" ]]; then
+  _hust_dev_hub_torch_prepend+=("$_hust_dev_hub_torch_npu_lib")
+fi
+if (( ${#_hust_dev_hub_torch_prepend[@]} > 0 )); then
+  _hust_dev_hub_torch_ld="$(IFS=':'; printf '%s' "${_hust_dev_hub_torch_prepend[*]}")"
+  if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
+    export LD_LIBRARY_PATH="${_hust_dev_hub_torch_ld}:${LD_LIBRARY_PATH}"
+  else
+    export LD_LIBRARY_PATH="${_hust_dev_hub_torch_ld}"
+  fi
+fi
+unset _hust_dev_hub_torch_lib _hust_dev_hub_torch_npu_lib _hust_dev_hub_torch_prepend _hust_dev_hub_torch_ld
 
 if [[ -z "${HUST_DEV_HUB_SAVED_GIT_SSH_COMMAND+x}" ]]; then
   if [[ -n "${GIT_SSH_COMMAND:-}" ]]; then
