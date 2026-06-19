@@ -372,21 +372,32 @@ maybe_pull_updates() {
 # Prefer SSH URLs for fresh clones, with HTTPS fallback when SSH auth is unavailable.
 # Keep upstream comparison repos under reference-repos/ rather than as top-level siblings.
 REPOS=(
+  # ── core infrastructure ──────────────────────────────────────────────────
   "ascend-runtime-manager|git@github.com:vLLM-HUST/ascend-runtime-manager.git"
   "vllm-hust-dev-hub|git@github.com:vLLM-HUST/vllm-hust-dev-hub.git"
   "vllm-hust|git@github.com:vLLM-HUST/vllm-hust.git"
+  "vllm-ascend-hust|git@github.com:vLLM-HUST/vllm-ascend-hust.git"
+  "vllm-ascend-quant-hust|git@github.com:vLLM-HUST/vllm-ascend-quant-hust.git"
+  "triton-ascend-hust|git@github.com:vLLM-HUST/triton-ascend-hust.git"
+  # ── services & applications ──────────────────────────────────────────────
   "vllm-hust-workstation|git@github.com:vLLM-HUST/vllm-hust-workstation.git"
   "vllm-hust-website|git@github.com:vLLM-HUST/vllm-hust-website.git"
   "vllm-hust-docs|git@github.com:vLLM-HUST/vllm-hust-docs.git"
-  "vllm-ascend-hust|git@github.com:vLLM-HUST/vllm-ascend-hust.git"
-  "vllm-ascend-quant-hust|git@github.com:vLLM-HUST/vllm-ascend-quant-hust.git"
+  "sage-faculty-twin|git@github.com:intellistream/sage-faculty-twin.git"
+  # ── tooling & benchmarking ───────────────────────────────────────────────
+  "vllm-hust-benchmark|git@github.com:vLLM-HUST/vllm-hust-benchmark.git"
+  "vllm-hust-perf-analyzer|git@github.com:vLLM-HUST/vllm-hust-perf-analyzer.git"
+  "EvoScientist|git@github.com:vLLM-HUST/EvoScientist.git"
+  "claude-code-hust|git@github.com:vLLM-HUST/claude-code-hust.git"
+  # ── papers & surveys ─────────────────────────────────────────────────────
+  "cccf-domestic-inference-engine-survey|git@github.com:intellistream/cccf-domestic-inference-engine-survey.git"
+  "fcs-domestic-chip-llm-recsys|git@github.com:vLLM-HUST/fcs-domestic-chip-llm-recsys.git"
+  # ── org profile ──────────────────────────────────────────────────────────
   "vllm-hust-org-profile|git@github.com:vLLM-HUST/.github.git"
+  # ── upstream reference clones ────────────────────────────────────────────
   "reference-repos/vllm|git@github.com:vllm-project/vllm.git"
   "reference-repos/sglang|git@github.com:sgl-project/sglang.git"
   "reference-repos/vllm-ascend|git@github.com:vllm-project/vllm-ascend.git"
-  "EvoScientist|git@github.com:vLLM-HUST/EvoScientist.git"
-  "vllm-hust-benchmark|git@github.com:vLLM-HUST/vllm-hust-benchmark.git"
-  "vllm-hust-perf-analyzer|git@github.com:vLLM-HUST/vllm-hust-perf-analyzer.git"
 )
 
 parse_args "$@"
