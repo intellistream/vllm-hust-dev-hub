@@ -37,10 +37,6 @@
       "path": "../vllm-hust-workstation"
     },
     {
-      "name": "[web] mytwin",
-      "path": "../sage-faculty-twin"
-    },
-    {
       "name": "[web] website",
       "path": "../vllm-hust-website"
     },

@@ -44,7 +44,6 @@ FULL_COPY_TARGETS=(
 # Target repos that merge tokens into their own .env (patch token lines only)
 MERGE_TARGETS=(
     "$HOME_DIR/vllm-hust-workstation"
-    "$HOME_DIR/sage-faculty-twin"
 )
 
 if [[ ! -f "$SOURCE_ENV" ]]; then

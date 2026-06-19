@@ -383,7 +383,6 @@ REPOS=(
   "vllm-hust-workstation|git@github.com:vLLM-HUST/vllm-hust-workstation.git"
   "vllm-hust-website|git@github.com:vLLM-HUST/vllm-hust-website.git"
   "vllm-hust-docs|git@github.com:vLLM-HUST/vllm-hust-docs.git"
-  "sage-faculty-twin|git@github.com:intellistream/sage-faculty-twin.git"
   # ── tooling & benchmarking ───────────────────────────────────────────────
   "vllm-hust-benchmark|git@github.com:vLLM-HUST/vllm-hust-benchmark.git"
   "vllm-hust-perf-analyzer|git@github.com:vLLM-HUST/vllm-hust-perf-analyzer.git"
