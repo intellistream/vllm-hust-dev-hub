@@ -1,0 +1,1 @@
+Orchestrates a multi-repository development environment for vLLM on Ascend NPUs by unifying workspace configuration, automated bootstrapping, and CI validation.

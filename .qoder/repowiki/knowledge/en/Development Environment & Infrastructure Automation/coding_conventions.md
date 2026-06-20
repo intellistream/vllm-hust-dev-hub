@@ -1,0 +1,4 @@
+- Scripts consistently resolve their own directory and the workspace root using `SCRIPT_DIR` and `cd --` patterns to ensure portability regardless of the invocation path.
+- Interactive prompts are standardized via an `ask_yes_no` function that respects an `AUTO_YES` flag or `-y/--yes` argument for non-interactive CI/CD usage.
+- Environment variables are used as the primary configuration mechanism, with script-local defaults that can be overridden by exporting variables before execution.
+- Error handling follows a strict `set -euo pipefail` policy, with dedicated `fail` functions providing contextual error messages before exiting.

@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: ci_config
+title: CI Pipeline & Localization Agent Configuration
+scope:
+    - .github/
+source_files: []
+depends_on: []
+related_to:
+    - path: docs

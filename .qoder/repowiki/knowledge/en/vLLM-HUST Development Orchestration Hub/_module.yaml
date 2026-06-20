@@ -1,0 +1,18 @@
+schema_version: 1
+module_path: ""
+title: vLLM-HUST Development Orchestration Hub
+scope:
+    - README.md
+    - ROADMAP.md
+    - .gitignore
+    - vllm-hust-dev-hub.code-workspace
+    - ascend-bench-after-quickstart.txt
+    - env-verify-after-quickstart.txt
+    - tests/
+    - .env
+    - .env.template
+    - vllm_coder32.log
+    - vllm_coder32_main.log
+source_files: []
+depends_on: []
+related_to: []

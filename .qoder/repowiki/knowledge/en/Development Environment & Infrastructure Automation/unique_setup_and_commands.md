@@ -1,0 +1,4 @@
+- **Quickstart**: `bash scripts/quickstart.sh --all` initializes the entire workspace, including conda env, repo cloning, and dependency installation.
+- **Container SSH**: `bash scripts/ascend-official-container.sh start` launches the dev container and auto-configures SSH access using host keys.
+- **Offline Sync**: `bash scripts/offline-sync-instance.sh --model-id <id>` prepares and syncs artifacts to a container via a bastion host.
+- **Service Launch**: `bash scripts/launch_ascend_model_service.sh --preset w8a8 --docker <container>` starts a quantized model service inside a running container.

@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: ascend_benchmarks
+title: Ascend Hardware Bandwidth Benchmarking
+scope:
+    - Ascend-Machine/
+source_files: []
+depends_on: []
+related_to:
+    - path: scripts

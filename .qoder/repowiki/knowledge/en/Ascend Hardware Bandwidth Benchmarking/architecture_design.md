@@ -1,0 +1,5 @@
+- Entry point is the `run_bandwidth_benchmarks.sh` script, which orchestrates environment setup, binary compilation, and sequential execution of benchmark suites.
+- Custom C++ binaries (`acl_copy_bench.cpp`, `numa_memcpy_bench.cpp`) handle low-level ACL memory copy and NUMA-aware memcpy measurements using multi-threaded workers with CPU pinning.
+- HCCL collective benchmarks are built by patching and compiling the vendor-provided `hccl_test` suite, using `hccl_compat.h` to bridge API differences via macro redirection to V2 functions.
+- Results are captured as raw text/JSON logs in timestamped directories under `results/`, accompanied by static hardware inventory (e.g., `npu-smi`, `lscpu`, `ethtool`).
+- Execution relies on a 'clean environment' pattern (`env -i`) to isolate Ascend toolkit dependencies and prevent host pollution during MPI and NPU operations.

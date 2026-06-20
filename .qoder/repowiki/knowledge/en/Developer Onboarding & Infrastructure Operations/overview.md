@@ -1,0 +1,1 @@
+Provides standardized workflows for team onboarding, Git collaboration, CI runner deployment, and Ascend NPU container management.

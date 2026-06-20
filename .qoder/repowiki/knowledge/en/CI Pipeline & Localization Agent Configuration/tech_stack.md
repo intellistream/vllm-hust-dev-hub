@@ -1,0 +1,1 @@
+GitHub Actions with conda environment management, SSH key-based authentication for self-hosted runners, and artifact retention policies.

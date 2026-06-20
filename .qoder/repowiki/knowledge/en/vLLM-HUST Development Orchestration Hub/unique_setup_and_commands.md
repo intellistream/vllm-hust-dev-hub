@@ -1,0 +1,1 @@
+bash scripts/quickstart.sh --all -y (unified bootstrap for cloning and environment setup)

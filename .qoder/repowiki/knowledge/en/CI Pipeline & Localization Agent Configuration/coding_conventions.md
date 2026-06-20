@@ -1,0 +1,3 @@
+- Environment isolation using dedicated `.ci-home` directory for HOME, XDG_CACHE_HOME, and XDG_CONFIG_HOME variables.
+- Conditional conda availability check before attempting installation to avoid redundant setup steps.
+- Artifact naming convention includes runner type, run ID, and attempt number for traceability.

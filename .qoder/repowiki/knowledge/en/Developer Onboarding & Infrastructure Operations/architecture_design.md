@@ -1,0 +1,3 @@
+- Organized as a collection of standalone Markdown guides covering distinct operational domains: Git workflow, CI infrastructure, team onboarding, and hardware-specific container运维.
+- References external automation scripts (e.g., `scripts/quickstart.sh`, `scripts/setup-github-actions-runner.sh`) as the primary execution interface, positioning the docs as the semantic layer for these tools.
+- Establishes clear boundaries between user-space environment setup (conda, editable installs) and system-level infrastructure (Docker, systemd runners).

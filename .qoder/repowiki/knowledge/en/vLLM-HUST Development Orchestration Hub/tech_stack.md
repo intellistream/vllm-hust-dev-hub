@@ -1,0 +1,1 @@
+VS Code Multi-Root Workspaces, Bash Automation, Conda Environment Management, GitHub Actions Self-Hosted Runners

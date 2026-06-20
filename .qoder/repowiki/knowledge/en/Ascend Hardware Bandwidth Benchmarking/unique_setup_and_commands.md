@@ -1,0 +1,3 @@
+- Run the full suite: `bash Ascend-Machine/benchmarks/run_bandwidth_benchmarks.sh [RUN_ID]`
+- Requires `sudo` for certain I/O benchmarks (fio) and specific environment variables: `ASCEND_TOOLKIT_HOME`, `MPI_HOME`.
+- HCCL tests require manual resolution of MPI headers/libraries and patching of the vendor source tree during the build phase.

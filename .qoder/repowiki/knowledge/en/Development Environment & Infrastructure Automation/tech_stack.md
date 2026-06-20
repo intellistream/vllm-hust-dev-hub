@@ -1,0 +1,4 @@
+- **Containerization**: Docker with custom SSHD injection for remote development access.
+- **Package Management**: Conda/Mamba for Python environment isolation; pip for editable installs of local forks (vllm-hust, vllm-ascend-hust).
+- **Hardware Interface**: Huawei Ascend CANN toolkit integration via `torch-npu` and custom kernel compilation flags.
+- **Automation**: Bash for orchestration; Python for API interactions (Cloudflare, Hugging Face) and complex config generation.

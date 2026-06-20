@@ -1,0 +1,3 @@
+- Self-hosted runner requires `VLLM_HUST_CI_SSH_PRIVATE_KEY` secret for downstream clone access.
+- Conda installation is bootstrapped via `scripts/install-miniconda.sh` if not present.
+- CI results are uploaded as artifacts with 14-day retention from `ci-results/` directory.

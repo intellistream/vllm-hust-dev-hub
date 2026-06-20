@@ -1,0 +1,1 @@
+Uses Huawei Ascend CANN Toolkit (ACL/HCCL) for NPU interaction, OpenMPI for distributed collective communication, and standard Linux tools (numactl, fio, mbw) for system-level bandwidth measurement.

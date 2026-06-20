@@ -1,0 +1,4 @@
+- Acts as the central entry point via a VS Code multi-root workspace (`vllm-hust-dev-hub.code-workspace`) that aggregates engine, web, and benchmark repositories.
+- Provides a unified bootstrap contract through `scripts/quickstart.sh` and `scripts/clone-workspace-repos.sh`, which manage parallel cloning, conda environment provisioning, and editable package installation across all sibling modules.
+- Enforces cross-module consistency by propagating shared secrets (`.env`) and validating environment health (Ascend runtime, torch-npu) before enabling development or CI workflows.
+- Serves as the root for CI integration, where GitHub Actions workflows trigger the hub's scripts to ensure reproducible setup and smoke testing across the distributed codebase.

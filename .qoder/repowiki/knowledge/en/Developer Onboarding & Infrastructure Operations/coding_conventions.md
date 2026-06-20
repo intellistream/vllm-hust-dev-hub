@@ -1,0 +1,3 @@
+- Git branch names must follow the `<github-id>/<type>-<short-desc>-<YYYYMMDD>` format to ensure namespace isolation and temporal sorting.
+- Self-hosted GitHub Actions runners are deployed as user-space systemd services or nohup processes, avoiding root privileges.
+- Ascend NPU development environments are standardized using official Docker containers with host networking and SSH jump configurations.

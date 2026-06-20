@@ -1,0 +1,1 @@
+Executes comprehensive bandwidth benchmarks for Ascend NPU memory, NUMA topology, and HCCL collective communication performance.

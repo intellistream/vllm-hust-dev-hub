@@ -1,0 +1,65 @@
+# 知识卡导出索引文件
+schema_version: 1
+locale: en-US
+branch: main
+exported_at: "2026-06-20T01:24:32Z"
+modules:
+    "":
+        dir_name: vLLM-HUST Development Orchestration Hub
+        title: vLLM-HUST Development Orchestration Hub
+        scope:
+            - README.md
+            - ROADMAP.md
+            - .gitignore
+            - vllm-hust-dev-hub.code-workspace
+            - ascend-bench-after-quickstart.txt
+            - env-verify-after-quickstart.txt
+            - tests/
+            - .env
+            - .env.template
+            - vllm_coder32.log
+            - vllm_coder32_main.log
+        source_files: []
+        children: []
+        depends_on: []
+        related_to: []
+    ascend_benchmarks:
+        dir_name: Ascend Hardware Bandwidth Benchmarking
+        title: Ascend Hardware Bandwidth Benchmarking
+        scope:
+            - Ascend-Machine/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: scripts
+    ci_config:
+        dir_name: CI Pipeline & Localization Agent Configuration
+        title: CI Pipeline & Localization Agent Configuration
+        scope:
+            - .github/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: docs
+    docs:
+        dir_name: Developer Onboarding & Infrastructure Operations
+        title: Developer Onboarding & Infrastructure Operations
+        scope:
+            - docs/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: ci_config
+    scripts:
+        dir_name: Development Environment & Infrastructure Automation
+        title: Development Environment & Infrastructure Automation
+        scope:
+            - scripts/
+        source_files: []
+        children: []
+        depends_on: []
+        related_to:
+            - path: ascend_benchmarks

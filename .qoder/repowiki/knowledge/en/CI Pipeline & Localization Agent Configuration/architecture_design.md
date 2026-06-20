@@ -1,0 +1,4 @@
+- Entry point: `.github/workflows/quickstart-ci.yml` orchestrates CI jobs on Ubuntu and self-hosted runners.
+- Agent configuration: `.github/agents/vllm-hust-localization.agent.md` defines a specialized agent for fork-specific localization work.
+- Instruction set: `.github/instructions/vllm-hust-localization.instructions.md` provides guidelines for maintaining upstream compatibility while implementing domestic hardware optimizations.
+- Dependency direction: Workflows depend on external scripts (`scripts/ci/quickstart_ci.sh`, `scripts/install-miniconda.sh`) and test suites (`tests/test_quickstart_ci_workflow.py`).

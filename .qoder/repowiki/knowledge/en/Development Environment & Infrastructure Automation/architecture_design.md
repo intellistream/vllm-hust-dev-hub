@@ -1,0 +1,5 @@
+- **Entry Points**: `quickstart.sh` serves as the primary orchestrator for host-side setup (conda env creation, repo cloning, package installation), while `ascend-official-container.sh` manages the Docker-based development container lifecycle.
+- **Container Management**: Uses a Python-based manager (`hust_ascend_manager`) invoked by shell wrappers to handle complex container configurations, including SSH key injection (`enable-existing-container-ssh.sh`) and runtime environment synchronization.
+- **Offline & Sync Workflows**: `offline-sync-instance.sh` implements a bastion-host-mediated pipeline to sync wheels and models into air-gapped containers, ensuring reproducibility in restricted networks.
+- **Service Launching**: `launch_ascend_model_service.sh` abstracts the differences between host-native and containerized vLLM execution, handling CANN toolkit sourcing and NPU device mapping.
+- **CI & Utilities**: Includes specialized scripts for GitHub Actions runner setup (`setup-github-actions-runner.sh`), Cloudflare token generation, and environment variable synchronization across workspace repositories.

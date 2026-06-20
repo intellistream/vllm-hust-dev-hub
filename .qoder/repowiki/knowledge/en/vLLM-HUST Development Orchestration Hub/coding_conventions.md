@@ -1,0 +1,3 @@
+- Shared secret management via a centralized .env file propagated to all sibling repositories.
+- Parallel repository cloning using configurable job concurrency (CLONE_JOBS).
+- Standardized conda environment hooks for automatic Hugging Face endpoint detection.
