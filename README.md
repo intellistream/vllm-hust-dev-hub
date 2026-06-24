@@ -45,6 +45,8 @@ The default workspace includes these repositories when they exist under `/home/<
 - `scripts/offline-sync-instance.sh`: prepare offline wheels and model assets on the local machine, sync them through the bastion host into the docker instance, then install local repos inside the container without public network access.
 - `scripts/setup-github-actions-runner.sh`: install and manage a rootless GitHub Actions self-hosted runner as a user-level systemd service.
 - `scripts/launch_ascend_model_service.sh`: start an Ascend model service via `hust-ascend-manager launch`, with presets (`--preset w8a8`), ModelScope download (`--download-model`), health wait, and log capture.
+- `manage.sh`: install/start/restart/stop/log/check a user-level vLLM-HUST engine service from the host.
+- `scripts/run_vllm_hust_engine.sh`: the host-side Docker launcher used by `manage.sh`; it validates the real API key, reserves NPU devices, enters the configured container, activates the container conda env, and starts `vllm-hust serve`.
 - `scripts/sync-env.sh`: propagate the canonical token `.env` from this repo to all sibling workspace repos.
 - `scripts/ci/`: CI-specific helpers (quickstart runner, smoke tests, benchmark install).
 
@@ -211,6 +213,15 @@ bash scripts/ssh-into-ascend-container.sh
 
 # start Qwen3-235B on Ascend via dev-hub script (with health wait)
 bash scripts/launch_ascend_model_service.sh --env vllm-hust-dev --model Qwen/Qwen3-235B-A22B-Instruct-2507 --tp 8 --port 8000
+
+# one-command host-managed Docker launch for vLLM-HUST
+cp .env.template .env
+# edit .env: set VLLM_ENGINE_CONTAINER and a real VLLM_HUST_API_KEY
+./manage.sh start
+./manage.sh status
+./manage.sh health
+./manage.sh logs
+./manage.sh restart
 
 # W8A8 quantized: download from ModelScope + launch (one command)
 bash scripts/launch_ascend_model_service.sh --preset w8a8 --download-model
