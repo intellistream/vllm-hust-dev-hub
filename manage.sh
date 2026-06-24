@@ -39,10 +39,12 @@ Flags:
   --json       JSON output for status/health
 
 Required .env:
-  VLLM_ENGINE_CONTAINER=<running docker container>
   VLLM_HUST_API_KEY=<real non-EMPTY key>
 
 Common .env knobs:
+  VLLM_ENGINE_CONTAINER=vllm-ascend-dev
+  VLLM_ENGINE_IMAGE=quay.io/ascend/vllm-ascend:v0.17.0rc1-openeuler
+  VLLM_ENGINE_AUTO_CREATE_CONTAINER=true
   VLLM_ENGINE_MODEL_PATH=/data/shared_models/modelscope_cache/Qwen/Qwen3-32B
   VLLM_ENGINE_SERVED_MODEL_NAME=qwen3-32b
   VLLM_ENGINE_PORT=8000

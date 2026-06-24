@@ -46,7 +46,7 @@ The default workspace includes these repositories when they exist under `/home/<
 - `scripts/setup-github-actions-runner.sh`: install and manage a rootless GitHub Actions self-hosted runner as a user-level systemd service.
 - `scripts/launch_ascend_model_service.sh`: start an Ascend model service via `hust-ascend-manager launch`, with presets (`--preset w8a8`), ModelScope download (`--download-model`), health wait, and log capture.
 - `manage.sh`: install/start/restart/stop/log/check a user-level vLLM-HUST engine service from the host.
-- `scripts/run_vllm_hust_engine.sh`: the host-side Docker launcher used by `manage.sh`; it validates the real API key, reserves NPU devices, enters the configured container, activates the container conda env, and starts `vllm-hust serve`.
+- `scripts/run_vllm_hust_engine.sh`: the host-side Docker launcher used by `manage.sh`; it validates the real API key, auto-creates/starts the Ascend Docker container when needed, reserves NPU devices, enters the configured container, activates the container conda env, and starts `vllm-hust serve`.
 - `scripts/sync-env.sh`: propagate the canonical token `.env` from this repo to all sibling workspace repos.
 - `scripts/ci/`: CI-specific helpers (quickstart runner, smoke tests, benchmark install).
 
@@ -216,7 +216,8 @@ bash scripts/launch_ascend_model_service.sh --env vllm-hust-dev --model Qwen/Qwe
 
 # one-command host-managed Docker launch for vLLM-HUST
 cp .env.template .env
-# edit .env: set VLLM_ENGINE_CONTAINER and a real VLLM_HUST_API_KEY
+# edit .env: set a real VLLM_HUST_API_KEY; optionally pin VLLM_ENGINE_IMAGE
+# if the container is missing, ./manage.sh start pulls/creates it automatically
 ./manage.sh start
 ./manage.sh status
 ./manage.sh health

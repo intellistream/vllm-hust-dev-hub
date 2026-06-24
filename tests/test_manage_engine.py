@@ -43,7 +43,9 @@ class ManageEngineGuardTests(unittest.TestCase):
     def test_env_template_exposes_host_managed_docker_knobs(self) -> None:
         template = ENV_TEMPLATE.read_text()
 
-        self.assertIn("VLLM_ENGINE_CONTAINER=", template)
+        self.assertIn("VLLM_ENGINE_CONTAINER=vllm-ascend-dev", template)
+        self.assertIn("VLLM_ENGINE_AUTO_CREATE_CONTAINER=true", template)
+        self.assertIn("VLLM_ENGINE_IMAGE=quay.io/ascend/vllm-ascend", template)
         self.assertIn("VLLM_ENGINE_NPU_DEVICES=0,1,2,3", template)
         self.assertIn("VLLM_ENGINE_CONDA_ENV=vllm-hust-dev", template)
 
@@ -53,6 +55,14 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("./manage.sh start", readme)
         self.assertIn("./manage.sh restart", readme)
         self.assertIn("scripts/run_vllm_hust_engine.sh", readme)
+        self.assertIn("pulls/creates it automatically", readme)
+
+    def test_engine_launcher_bootstraps_missing_container(self) -> None:
+        script = ENGINE_SCRIPT.read_text()
+
+        self.assertIn("VLLM_ENGINE_AUTO_CREATE_CONTAINER", script)
+        self.assertIn("scripts/ascend-official-container.sh", script)
+        self.assertIn("VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE", script)
 
 
 if __name__ == "__main__":

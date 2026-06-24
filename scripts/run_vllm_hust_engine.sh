@@ -24,7 +24,10 @@ load_dotenv() {
 
 load_dotenv "$repo_root/.env"
 
-container="${VLLM_ENGINE_CONTAINER:-${DOCKER_CONTAINER:-}}"
+container="${VLLM_ENGINE_CONTAINER:-${DOCKER_CONTAINER:-vllm-ascend-dev}}"
+container_image="${VLLM_ENGINE_IMAGE:-${IMAGE:-}}"
+auto_create_container="${VLLM_ENGINE_AUTO_CREATE_CONTAINER:-true}"
+container_non_interactive="${VLLM_ENGINE_CONTAINER_NON_INTERACTIVE:-1}"
 model_path="${VLLM_ENGINE_MODEL_PATH:-${MODEL_ID:-/data/shared_models/modelscope_cache/Qwen/Qwen3-32B}}"
 served_model_name="${VLLM_ENGINE_SERVED_MODEL_NAME:-${SERVED_MODEL_NAME:-qwen3-32b}}"
 host="${VLLM_ENGINE_HOST:-${HOST:-0.0.0.0}}"
@@ -50,12 +53,6 @@ fused_mc2="${VLLM_ASCEND_ENABLE_FUSED_MC2:-1}"
 plugins="${VLLM_PLUGINS:-ascend}"
 pythonpath="${VLLM_ENGINE_PYTHONPATH:-/workspace/vllm-hust:/workspace/vllm-ascend-hust:/workspace/segment-reuse/src}"
 target_device="${VLLM_TARGET_DEVICE:-npu}"
-
-if [[ -z "$container" ]]; then
-  echo "ERROR: VLLM_ENGINE_CONTAINER is not set." >&2
-  echo "Set it in .env to the running Ascend Docker container name/id." >&2
-  exit 1
-fi
 
 if [[ -z "$api_key" || "$api_key" == "EMPTY" ]]; then
   echo "ERROR: vLLM-HUST must be started with a real API key." >&2
@@ -90,17 +87,47 @@ if ! docker info >/dev/null 2>&1; then
   fi
 fi
 
-if ! "${docker_cmd[@]}" inspect "$container" >/dev/null 2>&1; then
-  echo "ERROR: Docker container '$container' not found." >&2
-  exit 1
-fi
+container_is_running() {
+  [[ "$("${docker_cmd[@]}" inspect -f '{{.State.Running}}' "$container" 2>/dev/null || true)" == "true" ]]
+}
 
-if [[ "$("${docker_cmd[@]}" inspect -f '{{.State.Running}}' "$container" 2>/dev/null)" != "true" ]]; then
-  echo "ERROR: Docker container '$container' is not running." >&2
-  exit 1
-fi
+ensure_container_ready() {
+  if container_is_running; then
+    return 0
+  fi
+
+  if [[ "$auto_create_container" != "true" && "$auto_create_container" != "1" ]]; then
+    if "${docker_cmd[@]}" inspect "$container" >/dev/null 2>&1; then
+      echo "ERROR: Docker container '$container' exists but is not running." >&2
+    else
+      echo "ERROR: Docker container '$container' not found." >&2
+    fi
+    echo "Set VLLM_ENGINE_AUTO_CREATE_CONTAINER=true or start the container first." >&2
+    exit 1
+  fi
+
+  if [[ ! -x "$repo_root/scripts/ascend-official-container.sh" ]]; then
+    echo "ERROR: container auto-bootstrap requires scripts/ascend-official-container.sh." >&2
+    exit 1
+  fi
+
+  echo "[vllm-hust] container '$container' is absent or stopped; bootstrapping via dev-hub container manager."
+  echo "[vllm-hust] image             = ${container_image:-auto-detect official Ascend image}"
+  CONTAINER_NAME="$container" \
+  IMAGE="$container_image" \
+  VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE="$container_non_interactive" \
+    "$repo_root/scripts/ascend-official-container.sh" start
+
+  if ! container_is_running; then
+    echo "ERROR: Docker container '$container' is still not running after bootstrap." >&2
+    exit 1
+  fi
+}
+
+ensure_container_ready
 
 echo "[vllm-hust] container        = $container"
+echo "[vllm-hust] image            = ${container_image:-auto-detect official Ascend image}"
 echo "[vllm-hust] model_path       = $model_path"
 echo "[vllm-hust] served_model_name = $served_model_name"
 echo "[vllm-hust] host:port         = $host:$port"
