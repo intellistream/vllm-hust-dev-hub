@@ -134,21 +134,6 @@ alice/refactor-scheduler-dispatch-20260604
 
 ## 4. 日常开发流程（Step by Step）
 
-### 长期性能探索分支约定
-
-对于 `vllm-hust` 和 `vllm-ascend-hust` 的性能优化探索，我们保留长期 feature branch 持续迭代，避免把实验性改动留在本地 `main` 上。
-
-- `vllm-hust`：使用 `codex/vllm-hust-next-perf`
-- `vllm-ascend-hust`：使用 `codex/ascend-next-perf`
-
-工作约定：
-
-- `main` 只用于同步 upstream/origin 的稳定状态，不在 `main` 上直接做实验提交。
-- 如果在 `main` 上临时产生了性能实验改动，应立即切出或迁移到上述 feature branch，再让 `main` 恢复干净。
-- 后续 vLLM-HUST / vLLM-Ascend-HUST 的性能探索、benchmark 修复和 engine 实验，优先在这两个分支上继续追加提交。
-- 当某一组优化收敛并验证通过后，再从对应 feature branch 发 PR；不要复用已经关闭或语义不匹配的旧分支。
-- 如果必须新建替代分支，应先记录原因，并确认旧分支没有未迁移的实验改动。
-
 ### Step 1: 同步 main 到最新
 
 **每次开始新任务前，务必先同步。**
