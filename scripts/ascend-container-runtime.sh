@@ -7,10 +7,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ -f "${SCRIPT_DIR}/../.env" ]] && set -a && source "${SCRIPT_DIR}/../.env" && set +a
 
-# --- Required configuration (no defaults) ---
-: "${CONTAINER_SSH_USER:?Error: CONTAINER_SSH_USER must be set}"
-
 # --- Optional configuration (with sensible defaults) ---
+: "${CONTAINER_SSH_USER:=shuhao}"
 : "${CONTAINER_SSH_PORT:=2237}"
 : "${CONTAINER_SSH_AUTHORIZED_KEYS:=/workspace/.ssh/authorized_keys}"
 : "${CONTAINER_SSH_PIDFILE:=/var/run/sshd_${CONTAINER_SSH_PORT}.pid}"
