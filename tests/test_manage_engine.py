@@ -45,9 +45,18 @@ class ManageEngineGuardTests(unittest.TestCase):
 
         self.assertIn("VLLM_ENGINE_CONTAINER=vllm-ascend-dev", template)
         self.assertIn("VLLM_ENGINE_AUTO_CREATE_CONTAINER=true", template)
-        self.assertIn("VLLM_ENGINE_IMAGE=quay.io/ascend/vllm-ascend", template)
+        self.assertIn("VLLM_ENGINE_IMAGE=quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler", template)
         self.assertIn("VLLM_ENGINE_NPU_DEVICES=0,1,2,3", template)
         self.assertIn("VLLM_ENGINE_CONDA_ENV=vllm-hust-dev", template)
+        self.assertIn("VLLM_ENGINE_COMPILATION_CONFIG", template)
+        self.assertIn("VLLM_PLUGINS=ascend", template)
+        self.assertIn("VLLM_ENGINE_BASE_PYTHONPATH", template)
+        self.assertIn("VLLM_OPTIMIZATION_REPO_CONTAINER", template)
+        self.assertIn("VLLM_OPTIMIZATION_PLUGIN", template)
+        self.assertIn("VLLM_OPTIMIZATION_ENV_PREFIX", template)
+        self.assertIn("VLLM_ENGINE_PYTHONPATH", template)
+        self.assertIn("VLLM_ENGINE_EXTRA_ENV_KEYS", template)
+        self.assertIn("VLLM_ENGINE_EXTRA_ENV_PREFIXES", template)
 
     def test_readme_documents_one_command_management(self) -> None:
         readme = README.read_text()
@@ -63,6 +72,55 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("VLLM_ENGINE_AUTO_CREATE_CONTAINER", script)
         self.assertIn("scripts/ascend-official-container.sh", script)
         self.assertIn("VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE", script)
+        self.assertIn("EnvironmentFile=-", MANAGE_SCRIPT.read_text())
+        self.assertIn("write_unit_environment", MANAGE_SCRIPT.read_text())
+        self.assertIn('"KEY"', MANAGE_SCRIPT.read_text())
+        self.assertIn("v0.21.0rc1-openeuler", script)
+        self.assertIn("VLLM_ENGINE_COMPILATION_CONFIG", script)
+        self.assertIn("VLLM_ENGINE_CONTAINER_LOG_FILE", script)
+        self.assertIn("tee -a", script)
+        self.assertIn("<redacted>", script)
+        self.assertIn("__EXTRA_ENV_EXPORTS__", script)
+        self.assertIn("TORCH_DEVICE_BACKEND_AUTOLOAD", script)
+        self.assertIn("torch_npu_preflight", script)
+        self.assertNotIn('HCCL_OP_EXPANSION_MODE="${HCCL_OP_EXPANSION_MODE:-AIV}"', script)
+        manage = MANAGE_SCRIPT.read_text()
+        self.assertIn("VLLM_ENGINE_EXTRA_ENV_KEYS", manage)
+        self.assertIn("VLLM_ENGINE_EXTRA_ENV_PREFIXES", manage)
+        self.assertIn("VLLM_OPTIMIZATION_", manage)
+        self.assertIn("TORCH_DEVICE_BACKEND_AUTOLOAD", manage)
+        self.assertLess(
+            manage.index('load_dotenv "$repo_root/.env"'),
+            manage.index('unit_name="${VLLM_ENGINE_SYSTEMD_UNIT'),
+        )
+
+    def test_container_runtime_can_keep_alive_without_ssh_env(self) -> None:
+        runtime = (REPO_ROOT / "scripts" / "ascend-container-runtime.sh").read_text()
+
+        self.assertIn("CONTAINER_SSH_USER:=shuhao", runtime)
+        self.assertNotIn("CONTAINER_SSH_USER:?Error", runtime)
+
+    def test_engine_launcher_stays_repo_agnostic(self) -> None:
+        script = ENGINE_SCRIPT.read_text()
+        manage = MANAGE_SCRIPT.read_text()
+        template = ENV_TEMPLATE.read_text()
+
+        self.assertIn("VLLM_PLUGINS", script)
+        self.assertIn("VLLM_ENGINE_PYTHONPATH", script)
+        self.assertIn("VLLM_OPTIMIZATION_REPO_CONTAINER", script)
+        self.assertIn("VLLM_OPTIMIZATION_PLUGIN", script)
+        self.assertIn("VLLM_OPTIMIZATION_ENV_PREFIX", script)
+        for text in (script, manage, template):
+            self.assertNotIn("segment_reuse", text)
+            self.assertNotIn("SEGMENT_REUSE", text)
+
+    def test_engine_launcher_has_generic_optimization_repo_overlay(self) -> None:
+        script = ENGINE_SCRIPT.read_text()
+
+        self.assertIn("optimization_repo_container", script)
+        self.assertIn("optimization_src_subdir", script)
+        self.assertIn("engine_base_pythonpath", script)
+        self.assertIn('plugins="${plugins},${optimization_plugin}"', script)
 
 
 if __name__ == "__main__":

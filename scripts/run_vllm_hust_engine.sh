@@ -25,9 +25,10 @@ load_dotenv() {
 load_dotenv "$repo_root/.env"
 
 container="${VLLM_ENGINE_CONTAINER:-${DOCKER_CONTAINER:-vllm-ascend-dev}}"
-container_image="${VLLM_ENGINE_IMAGE:-${IMAGE:-}}"
+container_image="${VLLM_ENGINE_IMAGE:-${IMAGE:-quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler}}"
 auto_create_container="${VLLM_ENGINE_AUTO_CREATE_CONTAINER:-true}"
 container_non_interactive="${VLLM_ENGINE_CONTAINER_NON_INTERACTIVE:-1}"
+recreate_container="${VLLM_ENGINE_RECREATE_CONTAINER:-false}"
 model_path="${VLLM_ENGINE_MODEL_PATH:-${MODEL_ID:-/data/shared_models/modelscope_cache/Qwen/Qwen3-32B}}"
 served_model_name="${VLLM_ENGINE_SERVED_MODEL_NAME:-${SERVED_MODEL_NAME:-qwen3-32b}}"
 host="${VLLM_ENGINE_HOST:-${HOST:-0.0.0.0}}"
@@ -40,7 +41,10 @@ max_num_seqs="${VLLM_ENGINE_MAX_NUM_SEQS:-${MAX_NUM_SEQS:-16}}"
 dtype="${VLLM_ENGINE_DTYPE:-${DTYPE:-bfloat16}}"
 load_format="${VLLM_ENGINE_LOAD_FORMAT:-${LOAD_FORMAT:-auto}}"
 quantization="${VLLM_ENGINE_QUANTIZATION:-${QUANTIZATION:-}}"
+compilation_config="${VLLM_ENGINE_COMPILATION_CONFIG:-}"
 vllm_bin="${VLLM_ENGINE_BIN:-vllm-hust}"
+vllm_script="${VLLM_ENGINE_SCRIPT:-}"
+conda_prefix="${VLLM_ENGINE_CONDA_PREFIX:-}"
 conda_env="${VLLM_ENGINE_CONDA_ENV:-${CONDA_ENV:-vllm-hust-dev}}"
 api_key="${VLLM_HUST_API_KEY:-${VLLM_ENGINE_API_KEY:-}}"
 replace_existing="${VLLM_ENGINE_REPLACE_EXISTING:-true}"
@@ -50,9 +54,85 @@ enforce_eager="${VLLM_ENGINE_ENFORCE_EAGER:-0}"
 expert_parallel="${VLLM_ENGINE_ENABLE_EXPERT_PARALLEL:-0}"
 flashcomm1="${VLLM_ASCEND_ENABLE_FLASHCOMM1:-0}"
 fused_mc2="${VLLM_ASCEND_ENABLE_FUSED_MC2:-1}"
-plugins="${VLLM_PLUGINS:-ascend}"
-pythonpath="${VLLM_ENGINE_PYTHONPATH:-/workspace/vllm-hust:/workspace/vllm-ascend-hust:/workspace/segment-reuse/src}"
+optimization_repo_container="${VLLM_OPTIMIZATION_REPO_CONTAINER:-}"
+optimization_src_subdir="${VLLM_OPTIMIZATION_SRC_SUBDIR:-src}"
+optimization_plugin="${VLLM_OPTIMIZATION_PLUGIN:-}"
+optimization_env_prefix="${VLLM_OPTIMIZATION_ENV_PREFIX:-}"
+plugins="${VLLM_PLUGINS:-}"
+if [[ -z "$plugins" ]]; then
+  plugins="ascend"
+  if [[ -n "$optimization_plugin" ]]; then
+    plugins="${plugins},${optimization_plugin}"
+  fi
+fi
+engine_base_pythonpath="${VLLM_ENGINE_BASE_PYTHONPATH-/workspace/vllm-hust:/workspace/vllm-ascend-hust}"
+pythonpath="${VLLM_ENGINE_PYTHONPATH:-}"
+if [[ -z "$pythonpath" ]]; then
+  pythonpath="$engine_base_pythonpath"
+  if [[ -n "$optimization_repo_container" ]]; then
+    opt_pythonpath="$optimization_repo_container"
+    if [[ -n "$optimization_src_subdir" ]]; then
+      opt_pythonpath="${optimization_repo_container%/}/${optimization_src_subdir}:$opt_pythonpath"
+    fi
+    if [[ -n "$pythonpath" ]]; then
+      pythonpath="$opt_pythonpath:$pythonpath"
+    else
+      pythonpath="$opt_pythonpath"
+    fi
+  fi
+fi
+if [[ -n "$optimization_env_prefix" && -z "${VLLM_ENGINE_EXTRA_ENV_PREFIXES:-}" ]]; then
+  export VLLM_ENGINE_EXTRA_ENV_PREFIXES="$optimization_env_prefix"
+fi
 target_device="${VLLM_TARGET_DEVICE:-npu}"
+container_log_file="${VLLM_ENGINE_CONTAINER_LOG_FILE:-}"
+
+container_extra_env_exports() {
+  python3 - <<'PY'
+import os
+import shlex
+
+explicit = {
+    "COMPILE_CUSTOM_KERNELS",
+    "HF_HUB_OFFLINE",
+    "HCCL_OP_EXPANSION_MODE",
+    "PYTORCH_NPU_ALLOC_CONF",
+    "TORCH_DEVICE_BACKEND_AUTOLOAD",
+    "TRANSFORMERS_OFFLINE",
+    "VLLM_ASCEND_TORCH_PREFLIGHT",
+    "VLLM_USE_V1",
+}
+prefixes = ()
+extra_keys = {
+    item.strip()
+    for item in os.environ.get("VLLM_ENGINE_EXTRA_ENV_KEYS", "").split(",")
+    if item.strip()
+}
+extra_prefixes = tuple(
+    item.strip()
+    for item in os.environ.get("VLLM_ENGINE_EXTRA_ENV_PREFIXES", "").split(",")
+    if item.strip()
+)
+
+keys = []
+for key in os.environ:
+    upper = key.upper()
+    if "KEY" in upper or "TOKEN" in upper or "SECRET" in upper:
+        continue
+    if (
+        key in explicit
+        or key in extra_keys
+        or key.startswith(prefixes)
+        or key.startswith(extra_prefixes)
+    ):
+        keys.append(key)
+
+for key in sorted(keys):
+    print(f"export {key}={shlex.quote(os.environ[key])}")
+PY
+}
+
+extra_env_exports="$(container_extra_env_exports)"
 
 if [[ -z "$api_key" || "$api_key" == "EMPTY" ]]; then
   echo "ERROR: vLLM-HUST must be started with a real API key." >&2
@@ -92,6 +172,13 @@ container_is_running() {
 }
 
 ensure_container_ready() {
+  if [[ "$recreate_container" == "true" || "$recreate_container" == "1" ]]; then
+    if "${docker_cmd[@]}" inspect "$container" >/dev/null 2>&1; then
+      echo "[vllm-hust] recreating container '$container' via dev-hub launcher policy."
+      "${docker_cmd[@]}" rm -f "$container" >/dev/null
+    fi
+  fi
+
   if container_is_running; then
     return 0
   fi
@@ -138,53 +225,50 @@ echo "[vllm-hust] max_num_seqs      = $max_num_seqs"
 echo "[vllm-hust] prefix_cache      = $enable_prefix_caching"
 echo "[vllm-hust] chunked_prefill   = $enable_chunked_prefill"
 echo "[vllm-hust] graph_mode        = $([[ "$enforce_eager" == "1" ]] && echo "OFF (--enforce-eager)" || echo "ON")"
+if [[ -n "$compilation_config" ]]; then
+  echo "[vllm-hust] compilation_config = set"
+fi
+echo "[vllm-hust] plugins          = $plugins"
 
 if [[ "$replace_existing" == "true" ]]; then
-  cleanup_script=$(cat <<'PY'
-import os
-import signal
-import subprocess
-import sys
-import time
-
-port = sys.argv[1]
-rows = subprocess.check_output(["ps", "-eo", "pid=,args="], text=True)
-matches = []
-for row in rows.splitlines():
-    parts = row.strip().split(None, 1)
-    if len(parts) != 2:
-        continue
-    pid_text, cmd = parts
-    try:
-        pid = int(pid_text)
-    except ValueError:
-        continue
-    haystack = f" {cmd} "
-    if "vllm" not in cmd or " serve " not in haystack:
-        continue
-    if f"--port {port}" not in cmd and f"--port={port}" not in cmd:
-        continue
-    if pid == os.getpid():
-        continue
-    matches.append(pid)
-
-if matches:
-    print(" ".join(str(pid) for pid in matches))
-    for pid in matches:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-    time.sleep(5)
-    for pid in matches:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            continue
-        os.kill(pid, signal.SIGKILL)
-PY
-)
-  cleaned_pids=$("${docker_cmd[@]}" exec "$container" python3 -c "$cleanup_script" "$port" 2>/dev/null || true)
+cleanup_script='
+port="$1"
+all=""
+for _ in 1 2 3; do
+  matches="$(ps -eo pid=,args= | awk -v port="$port" '"'"'
+    /vllm/ && / serve / {
+      if ($0 ~ ("--port " port) || $0 ~ ("--port=" port)) {
+        print $1
+      }
+    }
+  '"'"' | tr "\n" " ")"
+  launchers="$(ps -eo pid=,args= | awk '"'"'
+    /bash \/tmp\/vllm-hust-engine\.[A-Za-z0-9]+\.sh/ {
+      print $1
+    }
+  '"'"' | tr "\n" " ")"
+  matches="$matches $launchers"
+  if [ "${VLLM_ENGINE_AGGRESSIVE_CLEANUP:-0}" = "1" ] || [ "${VLLM_ENGINE_AGGRESSIVE_CLEANUP:-false}" = "true" ]; then
+    orphans="$(ps -eo pid=,args= | awk '"'"'
+      /VLLM::EngineCor|VLLM::Worker_TP|multiprocessing\.resource_tracker|multiprocessing\.spawn|\[python3\]/ {
+        print $1
+      }
+    '"'"' | tr "\n" " ")"
+    matches="$matches $orphans"
+  fi
+  if [ -z "$matches" ]; then
+    continue
+  fi
+  all="$all $matches"
+  kill $matches 2>/dev/null || true
+  sleep 2
+  kill -9 $matches 2>/dev/null || true
+done
+if [ -n "$all" ]; then
+  echo "$all"
+fi
+'
+  cleaned_pids=$("${docker_cmd[@]}" exec --env "VLLM_ENGINE_AGGRESSIVE_CLEANUP=${VLLM_ENGINE_AGGRESSIVE_CLEANUP:-0}" "$container" sh -c "$cleanup_script" sh "$port" 2>/dev/null || true)
   if [[ -n "$cleaned_pids" ]]; then
     echo "[vllm-hust] stopped existing vLLM process(es) on port $port: $cleaned_pids"
   fi
@@ -193,8 +277,21 @@ fi
 inner_script=$(cat <<'BASH'
 set -euo pipefail
 
+__EXTRA_ENV_EXPORTS__
+
+CONTAINER_LOG_FILE="__CONTAINER_LOG_FILE__"
+if [[ -n "$CONTAINER_LOG_FILE" ]]; then
+  mkdir -p "$(dirname "$CONTAINER_LOG_FILE")"
+  exec > >(sed -E 's/sk-[A-Za-z0-9._-]+/<redacted>/g; s/(api-key[ =])[^ ]+/\1<redacted>/Ig; s/(Bearer )[A-Za-z0-9._~+\/-]+/\1<redacted>/g; s/([A-Za-z_]*(KEY|TOKEN|SECRET)[A-Za-z_]*=)[^ ]+/\1<redacted>/g' | tee -a "$CONTAINER_LOG_FILE") 2>&1
+fi
+
 CONDA_ENV="__CONDA_ENV__"
-if [[ -f /root/miniconda3/etc/profile.d/conda.sh ]]; then
+CONDA_PREFIX_OVERRIDE="__CONDA_PREFIX__"
+if [[ -n "$CONDA_PREFIX_OVERRIDE" ]]; then
+  export CONDA_PREFIX="$CONDA_PREFIX_OVERRIDE"
+  export PATH="$CONDA_PREFIX/bin:$PATH"
+  export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
+elif [[ -f /root/miniconda3/etc/profile.d/conda.sh ]]; then
   source /root/miniconda3/etc/profile.d/conda.sh
   conda activate "$CONDA_ENV"
 elif [[ -f /opt/conda/etc/profile.d/conda.sh ]]; then
@@ -223,7 +320,10 @@ fi
 export VLLM_TARGET_DEVICE="__TARGET_DEVICE__"
 export ASCEND_RT_VISIBLE_DEVICES="__NPU_DEVICES__"
 export ASCEND_VISIBLE_DEVICES="__NPU_DEVICES__"
-export HCCL_OP_EXPANSION_MODE="${HCCL_OP_EXPANSION_MODE:-AIV}"
+export TORCH_DEVICE_BACKEND_AUTOLOAD="${TORCH_DEVICE_BACKEND_AUTOLOAD:-1}"
+if [[ -n "${HCCL_OP_EXPANSION_MODE:-}" ]]; then
+  export HCCL_OP_EXPANSION_MODE
+fi
 export PYTORCH_NPU_ALLOC_CONF="${PYTORCH_NPU_ALLOC_CONF:-expandable_segments:True}"
 export VLLM_PLUGINS="${VLLM_PLUGINS:-__PLUGINS__}"
 export VLLM_ASCEND_ENABLE_FLASHCOMM1="${VLLM_ASCEND_ENABLE_FLASHCOMM1:-__FLASHCOMM1__}"
@@ -234,10 +334,26 @@ export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
 export PYTHONPATH="__PYTHONPATH__:${PYTHONPATH:-}"
 
-torch_lib="$(python3 -c 'import os, torch; print(os.path.join(os.path.dirname(torch.__file__), "lib"))' 2>/dev/null || true)"
-torch_npu_lib="$(python3 -c 'import os, torch_npu; print(os.path.join(os.path.dirname(torch_npu.__file__), "lib"))' 2>/dev/null || true)"
-if [[ -n "$torch_lib" || -n "$torch_npu_lib" ]]; then
-  export LD_LIBRARY_PATH="${torch_lib:-}:${torch_npu_lib:-}:${LD_LIBRARY_PATH:-}"
+if [[ "${VLLM_ENGINE_DISCOVER_TORCH_LIBS:-0}" == "1" ]]; then
+  torch_lib="$(python3 -c 'import os, torch; print(os.path.join(os.path.dirname(torch.__file__), "lib"))' 2>/dev/null || true)"
+  torch_npu_lib="$(python3 -c 'import os, torch_npu; print(os.path.join(os.path.dirname(torch_npu.__file__), "lib"))' 2>/dev/null || true)"
+  if [[ -n "$torch_lib" || -n "$torch_npu_lib" ]]; then
+    export LD_LIBRARY_PATH="${torch_lib:-}:${torch_npu_lib:-}:${LD_LIBRARY_PATH:-}"
+  fi
+fi
+
+if [[ "${VLLM_ASCEND_TORCH_PREFLIGHT:-0}" == "1" ]]; then
+  python3 - <<'PY'
+import torch
+import torch_npu  # noqa: F401
+
+print("[container] torch:", torch.__file__)
+print("[container] torch_npu:", torch_npu.__file__)
+print("[container] torch.npu.is_available:", torch.npu.is_available())
+torch.npu.set_device("npu:0")
+probe = torch.zeros(1, device="npu:0")
+print("[container] torch_npu_preflight: ok shape=%s device=%s" % (tuple(probe.shape), probe.device))
+PY
 fi
 
 export HOME="${VLLM_ENGINE_CONTAINER_HOME:-/tmp/vllm-hust-home}"
@@ -248,6 +364,7 @@ export VLLM_CONFIG_ROOT="$HOME/.config/vllm"
 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$VLLM_CACHE_ROOT" "$VLLM_CONFIG_ROOT"
 
 VLLM_BIN="__VLLM_BIN__"
+VLLM_SCRIPT="__VLLM_SCRIPT__"
 if ! command -v "$VLLM_BIN" >/dev/null 2>&1; then
   VLLM_BIN="$(command -v vllm-hust 2>/dev/null || command -v vllm 2>/dev/null || true)"
 fi
@@ -262,7 +379,13 @@ echo "[container] vllm: $(python3 -c 'import vllm; print(vllm.__file__)' 2>/dev/
 echo "[container] vllm_ascend: $(python3 -c 'import vllm_ascend; print(vllm_ascend.__file__)' 2>/dev/null || echo 'N/A')"
 
 args=(
-  "$VLLM_BIN" serve "__MODEL_PATH__"
+  "$VLLM_BIN"
+)
+if [[ -n "$VLLM_SCRIPT" ]]; then
+  args+=("$VLLM_SCRIPT")
+fi
+args+=(
+  serve "__MODEL_PATH__"
   --served-model-name "__SERVED_MODEL_NAME__"
   --host "__HOST__"
   --port "__PORT__"
@@ -282,6 +405,7 @@ args=(
 [[ "__ENFORCE_EAGER__" == "1" ]] && args+=(--enforce-eager)
 [[ "__EXPERT_PARALLEL__" == "1" ]] && args+=(--enable-expert-parallel)
 [[ -n "__QUANTIZATION__" ]] && args+=(--quantization "__QUANTIZATION__")
+[[ -n "${VLLM_ENGINE_COMPILATION_CONFIG:-}" ]] && args+=(--compilation-config "$VLLM_ENGINE_COMPILATION_CONFIG")
 
 exec "${args[@]}"
 BASH
@@ -294,6 +418,9 @@ replace() {
 }
 
 replace "__CONDA_ENV__" "$conda_env"
+replace "__CONDA_PREFIX__" "$conda_prefix"
+replace "__EXTRA_ENV_EXPORTS__" "$extra_env_exports"
+replace "__CONTAINER_LOG_FILE__" "$container_log_file"
 replace "__TARGET_DEVICE__" "$target_device"
 replace "__NPU_DEVICES__" "$npu_devices"
 replace "__PLUGINS__" "$plugins"
@@ -301,6 +428,7 @@ replace "__FLASHCOMM1__" "$flashcomm1"
 replace "__FUSED_MC2__" "$fused_mc2"
 replace "__PYTHONPATH__" "$pythonpath"
 replace "__VLLM_BIN__" "$vllm_bin"
+replace "__VLLM_SCRIPT__" "$vllm_script"
 replace "__MODEL_PATH__" "$model_path"
 replace "__SERVED_MODEL_NAME__" "$served_model_name"
 replace "__HOST__" "$host"
@@ -335,4 +463,5 @@ exec "${docker_cmd[@]}" exec \
   --env "VLLM_TARGET_DEVICE=$target_device" \
   --env "ASCEND_RT_VISIBLE_DEVICES=$npu_devices" \
   --env "ASCEND_VISIBLE_DEVICES=$npu_devices" \
+  --env "VLLM_ENGINE_COMPILATION_CONFIG=$compilation_config" \
   "$container" bash "$container_script"

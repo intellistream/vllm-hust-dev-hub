@@ -50,6 +50,35 @@ The default workspace includes these repositories when they exist under `/home/<
 - `scripts/sync-env.sh`: propagate the canonical token `.env` from this repo to all sibling workspace repos.
 - `scripts/ci/`: CI-specific helpers (quickstart runner, smoke tests, benchmark install).
 
+### Managed Engine For Optimization Repos
+
+`manage.sh` is intentionally optimization-repo agnostic. Keep repo-specific
+plugin names, Python paths, and feature flags in the caller environment or in a
+local `.env`; do not hard-code them into dev-hub.
+
+For an optimization repository mounted at `/workspace/<repo-name>` inside the
+container, prefer the generic overlay knobs:
+
+```bash
+export VLLM_ENGINE_CONTAINER=<unique-container-name>
+export VLLM_ENGINE_SYSTEMD_UNIT=<unique-unit-name>.service
+export VLLM_ENGINE_PORT=<free-port>
+export VLLM_ENGINE_NPU_DEVICES=<dedicated-npus>
+export VLLM_OPTIMIZATION_REPO_CONTAINER=/workspace/<repo-name>
+export VLLM_OPTIMIZATION_SRC_SUBDIR=src
+export VLLM_OPTIMIZATION_PLUGIN=<plugin-entrypoint-name>
+export VLLM_OPTIMIZATION_ENV_PREFIX=<PLUGIN_PREFIX>_
+export <PLUGIN_PREFIX>_ENABLE=1
+
+./manage.sh restart
+```
+
+The launcher builds `PYTHONPATH` from
+`$VLLM_OPTIMIZATION_REPO_CONTAINER/src:$VLLM_OPTIMIZATION_REPO_CONTAINER` plus
+`VLLM_ENGINE_BASE_PYTHONPATH`, and sets `VLLM_PLUGINS=ascend,<plugin>` when
+`VLLM_PLUGINS` is not explicitly provided. Use `VLLM_ENGINE_PYTHONPATH` or
+`VLLM_PLUGINS` only when you need full manual control.
+
 ## Usage
 
 Open the workspace directly in VS Code:
@@ -240,7 +269,7 @@ bash scripts/setup-github-actions-runner.sh install --labels train8,ascend
 For direct host-to-container development on the official Huawei image, use `scripts/ascend-official-container.sh`.
 
 - It uses `docker` directly when available, otherwise falls back to `sudo -n docker`.
-- If `IMAGE` is unset, it asks for the Ascend device profile and chooses a matching official `quay.io/ascend/vllm-ascend:v0.17.0rc1` variant. Set `IMAGE` explicitly only when you need to pin a non-default OS flavor or validate another release line.
+- If `IMAGE` is unset, it uses the current dev-hub default `quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler`. Set `IMAGE` or `VLLM_ENGINE_IMAGE` explicitly only when you need to pin a non-default OS flavor or validate another release line.
 - It mounts the whole workspace parent directory into `/workspace`, so sibling repos like `/home/<your name>/vllm-hust` become available inside the container at `/workspace/vllm-hust`.
 - It also mounts resolved external symlink targets under the workspace root, so sibling repos symlinked into `/data/...` remain valid inside the container.
 - It reuses a persistent container named `vllm-ascend-dev` by default, so repeated `shell` and `exec` calls do not need to rebuild the mount/device list.

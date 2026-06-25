@@ -8,9 +8,25 @@
 set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+
+load_dotenv() {
+  local env_file="$1"
+  [[ -f "$env_file" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    local key="${line%%=*}"
+    key="${key// /}"
+    [[ -z "$key" || -n "${!key:-}" ]] && continue
+    export "$line"
+  done < "$env_file"
+}
+
+load_dotenv "$repo_root/.env"
+
 unit_name="${VLLM_ENGINE_SYSTEMD_UNIT:-vllm-hust-dev-hub-engine.service}"
 unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 unit_path="$unit_dir/$unit_name"
+unit_env_path="$unit_path.env"
 user_runtime_dir="/run/user/$(id -u)"
 user_bus_path="$user_runtime_dir/bus"
 
@@ -43,14 +59,23 @@ Required .env:
 
 Common .env knobs:
   VLLM_ENGINE_CONTAINER=vllm-ascend-dev
-  VLLM_ENGINE_IMAGE=quay.io/ascend/vllm-ascend:v0.17.0rc1-openeuler
+  VLLM_ENGINE_IMAGE=quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler
   VLLM_ENGINE_AUTO_CREATE_CONTAINER=true
+  VLLM_ENGINE_RECREATE_CONTAINER=false
   VLLM_ENGINE_MODEL_PATH=/data/shared_models/modelscope_cache/Qwen/Qwen3-32B
   VLLM_ENGINE_SERVED_MODEL_NAME=qwen3-32b
   VLLM_ENGINE_PORT=8000
   VLLM_ENGINE_TP_SIZE=4
   VLLM_ENGINE_NPU_DEVICES=0,1,2,3
   VLLM_ENGINE_CONDA_ENV=vllm-hust-dev
+	  VLLM_ENGINE_COMPILATION_CONFIG='{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[1,2,4,8,16],"max_cudagraph_capture_size":16}'
+	  VLLM_PLUGINS=ascend
+	  VLLM_ENGINE_BASE_PYTHONPATH=/workspace/vllm-hust:/workspace/vllm-ascend-hust
+	  VLLM_OPTIMIZATION_REPO_CONTAINER=/workspace/my-optimization-repo
+	  VLLM_OPTIMIZATION_PLUGIN=my_plugin
+	  VLLM_OPTIMIZATION_ENV_PREFIX=MY_PLUGIN_
+	  VLLM_ENGINE_EXTRA_ENV_KEYS=MY_PLUGIN_ENABLE,MY_PLUGIN_MODE
+	  VLLM_ENGINE_EXTRA_ENV_PREFIXES=MY_PLUGIN_
 EOF
 }
 
@@ -70,22 +95,62 @@ for arg in "$@"; do
   esac
 done
 
-load_dotenv() {
-  local env_file="$1"
-  [[ -f "$env_file" ]] || return 0
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
-    local key="${line%%=*}"
-    key="${key// /}"
-    [[ -z "$key" || -n "${!key:-}" ]] && continue
-    export "$line"
-  done < "$env_file"
-}
+write_unit_environment() {
+  python3 - "$unit_env_path" <<'PY'
+import os
+import shlex
+import sys
 
-load_dotenv "$repo_root/.env"
+path = sys.argv[1]
+explicit = {
+    "ASCEND_RT_VISIBLE_DEVICES",
+    "ASCEND_VISIBLE_DEVICES",
+    "HCCL_OP_EXPANSION_MODE",
+    "PYTORCH_NPU_ALLOC_CONF",
+    "TORCH_DEVICE_BACKEND_AUTOLOAD",
+    "COMPILE_CUSTOM_KERNELS",
+    "HF_HUB_OFFLINE",
+    "TRANSFORMERS_OFFLINE",
+    "IMAGE",
+    "DOCKER_CONTAINER",
+}
+prefixes = ("VLLM_ENGINE_", "VLLM_ASCEND_", "VLLM_OPTIMIZATION_")
+extra_keys = {
+    item.strip()
+    for item in os.environ.get("VLLM_ENGINE_EXTRA_ENV_KEYS", "").split(",")
+    if item.strip()
+}
+extra_prefixes = tuple(
+    item.strip()
+    for item in os.environ.get("VLLM_ENGINE_EXTRA_ENV_PREFIXES", "").split(",")
+    if item.strip()
+)
+
+keys = []
+for key in os.environ:
+    upper = key.upper()
+    if "KEY" in upper or "TOKEN" in upper or "SECRET" in upper:
+        continue
+    if (
+        key.startswith(prefixes)
+        or key.startswith(extra_prefixes)
+        or key in extra_keys
+        or key in explicit
+        or key == "VLLM_PLUGINS"
+        or key == "VLLM_TARGET_DEVICE"
+    ):
+        keys.append(key)
+
+with open(path, "w", encoding="utf-8") as f:
+    for key in sorted(keys):
+        f.write(f"{key}={shlex.quote(os.environ[key])}\n")
+PY
+  chmod 600 "$unit_env_path"
+}
 
 install_unit() {
   mkdir -p "$unit_dir"
+  write_unit_environment
   cat > "$unit_path" <<EOF
 [Unit]
 Description=vLLM-HUST dev-hub engine
@@ -94,6 +159,7 @@ After=default.target
 [Service]
 Type=simple
 WorkingDirectory=$repo_root
+EnvironmentFile=-$unit_env_path
 ExecStart=$repo_root/scripts/run_vllm_hust_engine.sh
 Restart=on-failure
 RestartSec=10
@@ -147,6 +213,7 @@ case "$action" in
   stop)
     require_unit
     systemctl --user stop "$unit_name"
+    "$repo_root/scripts/cleanup_vllm_hust_engine.sh" || true
     systemctl --user --no-pager --full status "$unit_name" || true
     ;;
   restart)
