@@ -95,11 +95,18 @@ import shlex
 explicit = {
     "COMPILE_CUSTOM_KERNELS",
     "HF_HUB_OFFLINE",
+    "HF_ENDPOINT",
+    "HF_HOME",
+    "HF_HUB_CACHE",
+    "HUGGINGFACE_HUB_CACHE",
+    "HF_DATASETS_CACHE",
     "HCCL_OP_EXPANSION_MODE",
     "PYTORCH_NPU_ALLOC_CONF",
     "TORCH_DEVICE_BACKEND_AUTOLOAD",
     "TRANSFORMERS_OFFLINE",
     "VLLM_ASCEND_TORCH_PREFLIGHT",
+    "VLLM_ENGINE_EXTRA_ARGS_JSON",
+    "VLLM_USE_SIMPLE_KV_OFFLOAD",
     "VLLM_USE_V1",
 }
 prefixes = ()
@@ -400,12 +407,39 @@ args+=(
   --api-key "__API_KEY__"
 )
 
-[[ "__ENABLE_PREFIX_CACHING__" == "1" ]] && args+=(--enable-prefix-caching)
-[[ "__ENABLE_CHUNKED_PREFILL__" == "1" ]] && args+=(--enable-chunked-prefill)
+if [[ "__ENABLE_PREFIX_CACHING__" == "1" ]]; then
+  args+=(--enable-prefix-caching)
+else
+  args+=(--no-enable-prefix-caching)
+fi
+if [[ "__ENABLE_CHUNKED_PREFILL__" == "1" ]]; then
+  args+=(--enable-chunked-prefill)
+else
+  args+=(--no-enable-chunked-prefill)
+fi
 [[ "__ENFORCE_EAGER__" == "1" ]] && args+=(--enforce-eager)
 [[ "__EXPERT_PARALLEL__" == "1" ]] && args+=(--enable-expert-parallel)
 [[ -n "__QUANTIZATION__" ]] && args+=(--quantization "__QUANTIZATION__")
 [[ -n "${VLLM_ENGINE_COMPILATION_CONFIG:-}" ]] && args+=(--compilation-config "$VLLM_ENGINE_COMPILATION_CONFIG")
+if [[ -n "${VLLM_ENGINE_EXTRA_ARGS_JSON:-}" ]]; then
+  mapfile -t extra_args < <(python3 -S - <<'PY'
+import json
+import os
+import sys
+
+raw = os.environ.get("VLLM_ENGINE_EXTRA_ARGS_JSON", "")
+try:
+    args = json.loads(raw)
+except json.JSONDecodeError as exc:
+    raise SystemExit(f"invalid VLLM_ENGINE_EXTRA_ARGS_JSON: {exc}") from exc
+if not isinstance(args, list) or not all(isinstance(item, str) for item in args):
+    raise SystemExit("VLLM_ENGINE_EXTRA_ARGS_JSON must be a JSON list of strings")
+for item in args:
+    print(item)
+PY
+  )
+  args+=("${extra_args[@]}")
+fi
 
 exec "${args[@]}"
 BASH
@@ -464,4 +498,6 @@ exec "${docker_cmd[@]}" exec \
   --env "ASCEND_RT_VISIBLE_DEVICES=$npu_devices" \
   --env "ASCEND_VISIBLE_DEVICES=$npu_devices" \
   --env "VLLM_ENGINE_COMPILATION_CONFIG=$compilation_config" \
+  --env "VLLM_ENGINE_EXTRA_ARGS_JSON=${VLLM_ENGINE_EXTRA_ARGS_JSON:-}" \
+  --env "VLLM_USE_SIMPLE_KV_OFFLOAD=${VLLM_USE_SIMPLE_KV_OFFLOAD:-}" \
   "$container" bash "$container_script"
