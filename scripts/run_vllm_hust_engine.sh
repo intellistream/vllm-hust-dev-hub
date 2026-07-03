@@ -46,6 +46,7 @@ vllm_bin="${VLLM_ENGINE_BIN:-vllm-hust}"
 vllm_script="${VLLM_ENGINE_SCRIPT:-}"
 conda_prefix="${VLLM_ENGINE_CONDA_PREFIX:-}"
 conda_env="${VLLM_ENGINE_CONDA_ENV:-${CONDA_ENV:-vllm-hust-dev}}"
+engine_python="${VLLM_ENGINE_PYTHON:-}"
 api_key="${VLLM_HUST_API_KEY:-${VLLM_ENGINE_API_KEY:-}}"
 replace_existing="${VLLM_ENGINE_REPLACE_EXISTING:-true}"
 enable_prefix_caching="${VLLM_ENGINE_ENABLE_PREFIX_CACHING:-1}"
@@ -294,6 +295,8 @@ fi
 
 CONDA_ENV="__CONDA_ENV__"
 CONDA_PREFIX_OVERRIDE="__CONDA_PREFIX__"
+ENGINE_PYTHON="__ENGINE_PYTHON__"
+ENGINE_PYTHON_OVERRIDE="$ENGINE_PYTHON"
 if [[ -n "$CONDA_PREFIX_OVERRIDE" ]]; then
   export CONDA_PREFIX="$CONDA_PREFIX_OVERRIDE"
   export PATH="$CONDA_PREFIX/bin:$PATH"
@@ -308,6 +311,14 @@ elif [[ -n "${CONDA_PREFIX:-}" ]]; then
   echo "[container] conda already active: $CONDA_PREFIX"
 else
   echo "[container] WARNING: no conda activation path found; relying on current PATH" >&2
+fi
+if [[ -n "$ENGINE_PYTHON" ]]; then
+  if [[ ! -x "$ENGINE_PYTHON" ]]; then
+    echo "ERROR: VLLM_ENGINE_PYTHON is not executable in the container: $ENGINE_PYTHON" >&2
+    exit 1
+  fi
+else
+  ENGINE_PYTHON="$(command -v python3)"
 fi
 
 if [[ -f /usr/local/Ascend/ascend-toolkit/set_env.sh ]]; then
@@ -342,15 +353,15 @@ export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
 export PYTHONPATH="__PYTHONPATH__:${PYTHONPATH:-}"
 
 if [[ "${VLLM_ENGINE_DISCOVER_TORCH_LIBS:-0}" == "1" ]]; then
-  torch_lib="$(python3 -c 'import os, torch; print(os.path.join(os.path.dirname(torch.__file__), "lib"))' 2>/dev/null || true)"
-  torch_npu_lib="$(python3 -c 'import os, torch_npu; print(os.path.join(os.path.dirname(torch_npu.__file__), "lib"))' 2>/dev/null || true)"
+  torch_lib="$("$ENGINE_PYTHON" -c 'import os, torch; print(os.path.join(os.path.dirname(torch.__file__), "lib"))' 2>/dev/null || true)"
+  torch_npu_lib="$("$ENGINE_PYTHON" -c 'import os, torch_npu; print(os.path.join(os.path.dirname(torch_npu.__file__), "lib"))' 2>/dev/null || true)"
   if [[ -n "$torch_lib" || -n "$torch_npu_lib" ]]; then
     export LD_LIBRARY_PATH="${torch_lib:-}:${torch_npu_lib:-}:${LD_LIBRARY_PATH:-}"
   fi
 fi
 
 if [[ "${VLLM_ASCEND_TORCH_PREFLIGHT:-0}" == "1" ]]; then
-  python3 - <<'PY'
+  "$ENGINE_PYTHON" - <<'PY'
 import torch
 import torch_npu  # noqa: F401
 
@@ -372,24 +383,39 @@ mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$VLLM_CACHE_ROOT" "$VLLM_
 
 VLLM_BIN="__VLLM_BIN__"
 VLLM_SCRIPT="__VLLM_SCRIPT__"
-if ! command -v "$VLLM_BIN" >/dev/null 2>&1; then
-  VLLM_BIN="$(command -v vllm-hust 2>/dev/null || command -v vllm 2>/dev/null || true)"
+if [[ -n "$ENGINE_PYTHON" ]]; then
+  VLLM_SCRIPT=""
 fi
-if [[ -z "$VLLM_BIN" ]]; then
-  echo "ERROR: neither requested vLLM binary nor vllm-hust/vllm found in container PATH" >&2
-  exit 1
+if [[ -n "$VLLM_SCRIPT" ]]; then
+  if command -v "$VLLM_BIN" >/dev/null 2>&1; then
+    VLLM_BIN="$(command -v "$VLLM_BIN")"
+  else
+    VLLM_BIN="$(command -v vllm-hust 2>/dev/null || command -v vllm 2>/dev/null || true)"
+  fi
+  if [[ -z "$VLLM_BIN" ]]; then
+    echo "ERROR: neither requested vLLM binary nor vllm-hust/vllm found in container PATH" >&2
+    exit 1
+  fi
+  echo "[container] using vLLM binary: $VLLM_BIN"
+elif [[ -n "$ENGINE_PYTHON_OVERRIDE" ]]; then
+  VLLM_BIN="$(dirname "$ENGINE_PYTHON")/vllm"
+  if [[ ! -f "$VLLM_BIN" ]]; then
+    echo "ERROR: expected vLLM script next to VLLM_ENGINE_PYTHON, but not found: $VLLM_BIN" >&2
+    exit 1
+  fi
+  echo "[container] using vLLM binary: $VLLM_BIN"
 fi
-
-echo "[container] using vLLM binary: $VLLM_BIN"
-echo "[container] python: $(command -v python3)"
-echo "[container] vllm: $(python3 -c 'import vllm; print(vllm.__file__)' 2>/dev/null || echo 'N/A')"
-echo "[container] vllm_ascend: $(python3 -c 'import vllm_ascend; print(vllm_ascend.__file__)' 2>/dev/null || echo 'N/A')"
+echo "[container] python: $ENGINE_PYTHON"
+echo "[container] vllm: $("$ENGINE_PYTHON" -c 'import vllm; print(vllm.__file__)' 2>/dev/null || echo 'N/A')"
+echo "[container] vllm_ascend: $("$ENGINE_PYTHON" -c 'import vllm_ascend; print(vllm_ascend.__file__)' 2>/dev/null || echo 'N/A')"
 
 args=(
-  "$VLLM_BIN"
+  "$ENGINE_PYTHON"
 )
 if [[ -n "$VLLM_SCRIPT" ]]; then
-  args+=("$VLLM_SCRIPT")
+  args+=("$VLLM_BIN" "$VLLM_SCRIPT")
+else
+  args+=("$VLLM_BIN")
 fi
 args+=(
   serve "__MODEL_PATH__"
@@ -422,7 +448,7 @@ fi
 [[ -n "__QUANTIZATION__" ]] && args+=(--quantization "__QUANTIZATION__")
 [[ -n "${VLLM_ENGINE_COMPILATION_CONFIG:-}" ]] && args+=(--compilation-config "$VLLM_ENGINE_COMPILATION_CONFIG")
 if [[ -n "${VLLM_ENGINE_EXTRA_ARGS_JSON:-}" ]]; then
-  mapfile -t extra_args < <(python3 -S - <<'PY'
+  mapfile -t extra_args < <("$ENGINE_PYTHON" -S - <<'PY'
 import json
 import os
 import sys
@@ -453,6 +479,7 @@ replace() {
 
 replace "__CONDA_ENV__" "$conda_env"
 replace "__CONDA_PREFIX__" "$conda_prefix"
+replace "__ENGINE_PYTHON__" "$engine_python"
 replace "__EXTRA_ENV_EXPORTS__" "$extra_env_exports"
 replace "__CONTAINER_LOG_FILE__" "$container_log_file"
 replace "__TARGET_DEVICE__" "$target_device"

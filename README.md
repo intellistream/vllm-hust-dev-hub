@@ -1,69 +1,305 @@
 # vllm-hust-dev-hub
 
-`vllm-hust-dev-hub` is a lightweight meta repository for daily development.
+`vllm-hust-dev-hub` is the daily development hub for the vLLM-HUST workspace.
+It keeps the commonly used repositories, VS Code workspace, bootstrap scripts,
+Ascend container helpers, and one-command engine service management in one
+place.
 
-It provides a single VS Code multi-root workspace centered on `vllm-hust`, with room for related repositories that are commonly opened together during development, debugging, and upstream-sync work.
+Use this repo when you need to:
 
-It also ships with a bootstrap script that can clone the common workspace repositories in parallel.
+- clone or refresh the standard vLLM-HUST multi-repo workspace
+- create or repair the `vllm-hust-dev` conda environment
+- start the official Ascend development container
+- launch or manage a host-managed vLLM-HUST engine service
+- prepare offline assets for an Ascend docker instance
+- install a GitHub Actions self-hosted runner for the workspace
 
-Team onboarding reference: [docs/team-onboarding.md](docs/team-onboarding.md)
+Agent workflow note: on any prepared dev-hub Ascend development machine,
+use this repo's `./manage.sh` as the first-choice entrypoint for launching,
+restarting, health-checking, and testing the prepared vLLM-HUST service. Avoid
+ad-hoc host environment setup unless `manage.sh` is insufficient for the task.
 
-GitHub Actions self-hosted runner reference: [docs/github-actions-self-hosted-runner.md](docs/github-actions-self-hosted-runner.md)
+## Quick Start
 
-Performance follow-up roadmap: [ROADMAP.md](ROADMAP.md)
+Open the multi-root workspace:
 
-## Included Repositories
+```bash
+code /home/<your name>/vllm-hust-dev-hub/vllm-hust-dev-hub.code-workspace
+```
 
-The default workspace includes these repositories when they exist under `/home/<your name>`:
+Run the interactive bootstrap:
 
+```bash
+bash scripts/quickstart.sh
+```
+
+The recommended interactive paths are:
+
+- `Recommended bootstrap`: sync repositories, prepare the conda environment,
+  and refresh core local editable installs.
+- `Refresh local repositories in existing env`: reinstall selected local repos
+  without recloning or recreating the environment.
+- `Sync repositories only`: clone or update workspace repositories.
+- `Option 6`: create or reuse the official Ascend Docker container, configure
+  SSH when key material is available, and mount the workspace at `/workspace`.
+
+For non-interactive setup:
+
+```bash
+# clone + conda setup + core local installs
+bash scripts/quickstart.sh --all -y
+
+# clone or update repositories only
+bash scripts/clone-workspace-repos.sh --yes
+
+# install Miniconda explicitly
+bash scripts/install-miniconda.sh
+```
+
+## Workspace Layout
+
+The workspace expects sibling repositories under `/home/<your name>` and keeps
+upstream comparison repositories under `reference-repos/`.
+
+Core and engine repositories:
+
+- `ascend-runtime-manager`
 - `vllm-hust`
+- `vllm-ascend-hust`
+- `vllm-ascend-quant-hust`
+- `triton-ascend-hust`
+
+Services, apps, tooling, and docs:
+
 - `vllm-hust-workstation`
 - `vllm-hust-website`
 - `vllm-hust-docs`
+- `vllm-hust-benchmark`
+- `vllm-hust-perf-analyzer`
+- `claude-code-hust`
+- `EvoScientist`
 - `vllm-hust-org-profile`
-- `vllm-ascend-hust`
-- `vllm-ascend-quant-hust`
+
+Papers and surveys:
+
+- `cccf-domestic-inference-engine-survey`
+- `fcs-domestic-chip-llm-recsys`
+
+Upstream reference clones:
+
 - `reference-repos/vllm`
 - `reference-repos/sglang`
 - `reference-repos/vllm-ascend`
-- `EvoScientist`
-- `vllm-hust-benchmark`
-- `vllm-hust-perf-analyzer`
-- `cccf-domestic-inference-engine-survey`
 
-## Files
+To add another repository to VS Code, edit
+`vllm-hust-dev-hub.code-workspace` and append an entry to `folders`.
 
-- `vllm-hust-dev-hub.code-workspace`: main multi-root workspace for VS Code.
-- `vllm-hust-org-profile`: local clone of the special `vLLM-HUST/.github` organization profile repository.
-- `scripts/clone-workspace-repos.sh`: clone the common workspace repositories in parallel.
-- `scripts/install-miniconda.sh`: download and install Miniconda into the current user's home directory.
-- `scripts/quickstart.sh`: interactive one-command bootstrap for clone + conda environment setup, plus menu option 6 for the official Ascend container and container SSH setup.
-- `scripts/ascend-official-container.sh`: start, reuse, and enter the official Ascend vLLM container from the host.
-- `scripts/ssh-into-ascend-container.sh`: SSH into a running Ascend dev container.
-- `scripts/ascend-container-runtime.sh`: SSH keepalive helper for Ascend dev containers.
-- `scripts/enable-existing-container-ssh.sh`: fallback helper for an already-running custom container when you need to turn on direct SSH access and surface mounted repos under the login home.
-- `scripts/offline-sync-instance.sh`: prepare offline wheels and model assets on the local machine, sync them through the bastion host into the docker instance, then install local repos inside the container without public network access.
-- `scripts/setup-github-actions-runner.sh`: install and manage a rootless GitHub Actions self-hosted runner as a user-level systemd service.
-- `scripts/launch_ascend_model_service.sh`: start an Ascend model service via `hust-ascend-manager launch`, with presets (`--preset w8a8`), ModelScope download (`--download-model`), health wait, and log capture.
-- `manage.sh`: install/start/restart/stop/log/check a user-level vLLM-HUST engine service from the host.
-- `scripts/run_vllm_hust_engine.sh`: the host-side Docker launcher used by `manage.sh`; it validates the real API key, auto-creates/starts the Ascend Docker container when needed, reserves NPU devices, enters the configured container, activates the container conda env, and starts `vllm-hust serve`.
-- `scripts/sync-env.sh`: propagate the canonical token `.env` from this repo to all sibling workspace repos.
-- `scripts/ci/`: CI-specific helpers (quickstart runner, smoke tests, benchmark install).
+## Common Workflows
 
-### Managed Engine For Optimization Repos
+### Refresh Local Repositories
+
+```bash
+bash scripts/clone-workspace-repos.sh
+```
+
+If a repository already exists, the script fetches remote updates and asks
+whether to run `git pull --ff-only`. Fresh clones prefer SSH and fall back to
+HTTPS when SSH auth is unavailable.
+
+Set clone parallelism with `CLONE_JOBS`:
+
+```bash
+CLONE_JOBS=6 bash scripts/clone-workspace-repos.sh --yes
+```
+
+### Prepare Conda and Editable Installs
+
+Create or update the default development environment:
+
+```bash
+bash scripts/quickstart.sh --conda --env-name vllm-hust-dev --python 3.11 -y
+```
+
+Install missing local repositories into an existing environment:
+
+```bash
+bash scripts/quickstart.sh --install --env-name vllm-hust-dev -y
+```
+
+Refresh editable installs:
+
+```bash
+bash scripts/quickstart.sh \
+  --install \
+  --install-mode refresh \
+  --env-name vllm-hust-dev \
+  -y
+```
+
+Install the wider local workspace when extra repos are available:
+
+```bash
+bash scripts/quickstart.sh \
+  --install \
+  --install-mode install \
+  --install-scope full \
+  --env-name vllm-hust-dev \
+  -y
+```
+
+Install scopes:
+
+- `core`: `ascend-runtime-manager`, `vllm-hust`, `vllm-ascend-hust`,
+  `vllm-hust-benchmark`
+- `full`: core repos plus installable extra local repos such as workstation,
+  docs, website, EvoScientist, and TraceLoom
+
+Quickstart is intentionally user-space first. It does not run `sudo`, `sg`,
+`HwHiAiUser`, or host-level Ascend setup by default. If a machine still needs
+system packages, permissions, or CANN setup, run `hust-ascend-manager setup`
+manually with the appropriate privileges.
+
+### Use the Official Ascend Container
+
+Create or start the default container:
+
+```bash
+bash scripts/ascend-official-container.sh start
+```
+
+Enter the container with Ascend environment variables sourced and the workspace
+mounted at `/workspace`:
+
+```bash
+bash scripts/ascend-official-container.sh shell
+```
+
+Run a quick sanity check:
+
+```bash
+bash scripts/ascend-official-container.sh exec -- \
+  python -c 'import torch; import torch_npu; print(torch.npu.device_count())'
+```
+
+Container behavior:
+
+- Uses `docker` directly when available, otherwise falls back to `sudo -n docker`.
+- Mounts the whole workspace parent directory into `/workspace`.
+- Mounts resolved external symlink targets under the workspace root.
+- Reuses a persistent container named `vllm-ascend-dev` by default.
+- Sources Ascend toolkit and ATB environment scripts before shell or command
+  execution.
+- Can auto-configure container SSH using host `authorized_keys`, discovered
+  public keys, and `~/.ssh/vllm-ascend-extra-authorized_keys`.
+- Uses host port `2222` for ProxyJump-friendly SSH access when configured.
+
+If you need to recreate the container with different settings:
+
+```bash
+bash scripts/ascend-official-container.sh rm
+bash scripts/ascend-official-container.sh start
+```
+
+For direct SSH-to-container setup from remote Windows clients, see
+[docs/train8-container-quickstart.md](docs/train8-container-quickstart.md).
+
+### Launch an Ascend Model Service
+
+Host mode uses `hust-ascend-manager launch` and is intended for bare-metal
+Ascend machines where CANN, `torch_npu`, and `vllm-hust` live in the same conda
+environment:
+
+```bash
+bash scripts/launch_ascend_model_service.sh \
+  --env vllm-hust-dev \
+  --model Qwen/Qwen3-235B-A22B-Instruct-2507 \
+  --tp 8 \
+  --port 8000
+```
+
+Use a preset:
+
+```bash
+# W8A8 quantized model: download from ModelScope and launch
+bash scripts/launch_ascend_model_service.sh --preset w8a8 --download-model
+
+# print the command without launching
+bash scripts/launch_ascend_model_service.sh --preset w8a8 --dry-run
+```
+
+Docker mode runs inside an existing container and avoids mixing host conda
+runtime libraries with the container CANN stack:
+
+```bash
+bash scripts/launch_ascend_model_service.sh \
+  --preset coder \
+  --docker vllm-ascend-dev
+```
+
+Available presets include:
+
+- `w8a8`: Qwen3-235B-A22B-W8A8, quantized, TP=8
+- `coder`: Qwen2.5-Coder-32B-Instruct, dense coding model, TP=4
+- `qwen3-32b`: Qwen3-32B, dense model, TP=4
+
+### Manage the Host-Managed vLLM-HUST Engine
+
+`manage.sh` installs and controls a user-level systemd service. The service is
+always launched from the host through `scripts/run_vllm_hust_engine.sh`, which
+then enters the configured Docker container. This keeps day-to-day launch,
+debugging, and service management on the same path.
+
+Prepare local configuration:
+
+```bash
+cp .env.template .env
+# edit .env and set a real VLLM_HUST_API_KEY
+```
+
+Start and inspect the service:
+
+```bash
+./manage.sh start
+./manage.sh status
+./manage.sh health
+./manage.sh logs
+./manage.sh restart
+./manage.sh stop
+```
+
+Common `.env` knobs:
+
+```bash
+VLLM_ENGINE_CONTAINER=vllm-ascend-dev
+VLLM_ENGINE_AUTO_CREATE_CONTAINER=true
+VLLM_ENGINE_MODEL_PATH=/data/shared_models/modelscope_cache/Qwen/Qwen3-32B
+VLLM_ENGINE_SERVED_MODEL_NAME=qwen3-32b
+VLLM_ENGINE_PORT=8000
+VLLM_ENGINE_TP_SIZE=4
+VLLM_ENGINE_NPU_DEVICES=0,1,2,3
+VLLM_ENGINE_PYTHON=/usr/local/python3.12.13/bin/python
+VLLM_ENGINE_CONDA_ENV=vllm-hust-dev
+COMPILE_CUSTOM_KERNELS=0
+VLLM_PLUGINS=ascend
+```
+
+If the container is missing or stopped, `manage.sh start` pulls/creates it automatically through `scripts/ascend-official-container.sh`.
+
+### Use Optimization Repositories
 
 `manage.sh` is intentionally optimization-repo agnostic. Keep repo-specific
 plugin names, Python paths, and feature flags in the caller environment or in a
-local `.env`; do not hard-code them into dev-hub.
+local `.env`.
 
 For an optimization repository mounted at `/workspace/<repo-name>` inside the
-container, prefer the generic overlay knobs:
+container:
 
 ```bash
 export VLLM_ENGINE_CONTAINER=<unique-container-name>
 export VLLM_ENGINE_SYSTEMD_UNIT=<unique-unit-name>.service
 export VLLM_ENGINE_PORT=<free-port>
 export VLLM_ENGINE_NPU_DEVICES=<dedicated-npus>
+export VLLM_ENGINE_PYTHON=/usr/local/python3.12.13/bin/python
 export VLLM_OPTIMIZATION_REPO_CONTAINER=/workspace/<repo-name>
 export VLLM_OPTIMIZATION_SRC_SUBDIR=src
 export VLLM_OPTIMIZATION_PLUGIN=<plugin-entrypoint-name>
@@ -73,256 +309,189 @@ export <PLUGIN_PREFIX>_ENABLE=1
 ./manage.sh restart
 ```
 
-The launcher builds `PYTHONPATH` from
-`$VLLM_OPTIMIZATION_REPO_CONTAINER/src:$VLLM_OPTIMIZATION_REPO_CONTAINER` plus
-`VLLM_ENGINE_BASE_PYTHONPATH`, and sets `VLLM_PLUGINS=ascend,<plugin>` when
-`VLLM_PLUGINS` is not explicitly provided. Use `VLLM_ENGINE_PYTHONPATH` or
-`VLLM_PLUGINS` only when you need full manual control.
+The launcher builds `PYTHONPATH` from:
 
-## Usage
+- `$VLLM_OPTIMIZATION_REPO_CONTAINER/src`
+- `$VLLM_OPTIMIZATION_REPO_CONTAINER`
+- `VLLM_ENGINE_BASE_PYTHONPATH`
 
-Open the workspace directly in VS Code:
+It also sets `VLLM_PLUGINS=ascend,<plugin>` when `VLLM_PLUGINS` is not
+explicitly provided. Use `VLLM_ENGINE_PYTHONPATH` or `VLLM_PLUGINS` only when
+you need full manual control.
 
-```bash
-code /home/<your name>/vllm-hust-dev-hub/vllm-hust-dev-hub.code-workspace
-```
+### Sync into an Offline Container
 
-If you want to add more repositories, edit the workspace file and append another entry to `folders`.
-
-To bootstrap the common repositories under the parent directory of this repo:
-
-```bash
-bash scripts/clone-workspace-repos.sh
-```
-
-If a repository already exists locally, the clone script checks for remote updates and asks whether to run `git pull --ff-only`.
-
-Local workspace repositories now default to the `vLLM-HUST` GitHub organization, while upstream comparison repos remain under `reference-repos/*`.
-
-Upstream `reference-repos/*` clones are also confirmed interactively before cloning.
-
-For an interactive bootstrap (clone repositories and create/update a conda environment):
-
-```bash
-bash scripts/quickstart.sh
-```
-
-Interactive mode keeps the common paths at the top level:
-
-- `Recommended bootstrap`: sync repositories, prepare the conda env, and refresh core local installs
-- `Refresh local repositories in existing env`: reinstall selected local repos without recloning or recreating the env
-- `Sync repositories only`: update or clone workspace repositories without touching the env
-- `Advanced options`: conda-only repair, install-missing mode, and bashrc-only registration
-
-Interactive menu option 6 is the recommended entrypoint for the official Ascend container workflow:
-
-- it can prompt for an extra SSH public key and persist it under `~/.ssh/vllm-ascend-extra-authorized_keys`
-- it auto-enables `sshd` inside the container when host SSH key material is available
-- it aligns the container SSH user with the mounted workspace owner so `/workspace` is directly usable after login
-- it reuses `ProxyJump`-friendly SSH access on host port `2222`
-- when Docker storage under `/var/lib/docker` is too small and `/data` has space, it can migrate Docker data-root to `/data/docker`
-
-The advanced install flows still support two install actions:
-
-- `install`: only install packages that are missing from the selected conda environment
-- `refresh`: reinstall selected editable local repositories even if they are already present
-
-Then they let you choose a scope:
-
-- `core`: `ascend-runtime-manager`, `vllm-hust`, `vllm-ascend-hust`, `vllm-hust-benchmark`
-- `full`: core repos plus extra local repos such as workstation, docs, website, EvoScientist, and TraceLoom when they are installable
-
-If `conda` is not available yet, `quickstart.sh` can automatically call the Miniconda installer script for flows that include conda setup (for example `--conda` / `--all`).
-
-Install-only runs (`--install` without `--conda`) will not auto-install Miniconda; they fail fast and ask you to run a conda setup flow first.
-
-If a copied or relocated Miniconda prefix is present but unusable because its embedded interpreter path is stale, `quickstart.sh` now ignores that broken executable, backs up the bad prefix, and reinstalls Miniconda before continuing.
-
-By default, `quickstart.sh` does not update `~/.bashrc`.
-
-If you want new interactive shells to auto-activate the selected conda environment, opt in explicitly with either:
-
-- `bash scripts/quickstart.sh --update-bashrc ...`
-- interactive menu option `7` (only update `~/.bashrc` auto-activation)
-- `export HUST_DEV_HUB_UPDATE_BASHRC=1` before running quickstart
-
-Quickstart now installs conda activate/deactivate hooks for the selected environment. On each `conda activate`, the hook probes `https://hf-mirror.com` and auto-sets `HF_ENDPOINT=https://hf-mirror.com` when reachable; otherwise it unsets `HF_ENDPOINT` so Hugging Face clients fall back to the default upstream endpoint.
-
-To disable this auto-switch behavior for a shell/session, set:
-
-```bash
-export HUST_DEV_HUB_DISABLE_HF_MIRROR_AUTOSET=1
-```
-
-The hook preserves your previous `HF_ENDPOINT` and restores it on `conda deactivate`.
-
-To keep activation deterministic and avoid unintended environment drift, the conda activate hook does not apply `hust-ascend-manager env --shell` by default.
-
-If you need manager-provided env exports during `conda activate`, opt in with:
-
-```bash
-export HUST_DEV_HUB_ENABLE_MANAGER_ENV_HOOK=1
-```
-
-When enabled, the hook only applies a conservative allowlist of Ascend runtime variables (`ASCEND_*`, `TORCH_DEVICE_BACKEND_AUTOLOAD`, `HUST_ASCEND_*`, plus `LD_LIBRARY_PATH` / `PYTHONPATH`) and still restores saved values on `conda deactivate`.
-
-When conda supports channel Terms of Service checks, `quickstart.sh` only asks for acceptance when it actually needs to create a new conda environment. Install-only flows on an existing environment do not prompt for Anaconda channel ToS. It also isolates conda operations from a pre-existing `PYTHONPATH` to reduce Miniconda runtime warnings.
-
-After ToS is accepted, quickstart records a local marker under `~/.config/vllm-hust-dev-hub/` so install-only runs do not keep asking for the same acceptance.
-
-Quickstart now writes a timestamped install log to `~/.cache/vllm-hust-dev-hub/logs/` while still streaming the same output to the console. Override the destination with `HUST_DEV_HUB_QUICKSTART_LOG_DIR=/path/to/logs` or pin a specific file via `HUST_DEV_HUB_QUICKSTART_LOG_FILE=/path/to/quickstart.log` before running the script.
-
-During environment setup, `quickstart.sh` installs both sibling repositories in editable mode when available:
-
-- `ascend-runtime-manager`
-- `vllm-hust`
-- `vllm-ascend-hust`
-- `vllm-hust-benchmark`
-
-`ascend-runtime-manager` now lives as a sibling repository under the workspace root, not inside `vllm-hust-dev-hub`.
-
-On Ascend-capable hosts, quickstart treats `ascend-runtime-manager` as the source of truth for user-space Python stack repair. After the core repos are installed, it calls `hust-ascend-manager setup --install-python-stack` with the local workspace manifest so `torch` and `torch-npu` stay aligned without attempting host-level CANN or group-managed system changes.
-
-`quickstart.sh` is intentionally user-space only. It does not attempt `sudo`, `sg`, `HwHiAiUser`, or other system-level setup by default. If a machine still needs host-level Ascend packages or permissions, run `hust-ascend-manager setup` manually with the appropriate privileges outside quickstart. If you explicitly want quickstart to invoke manager system steps, set `HUST_DEV_HUB_APPLY_ASCEND_SYSTEM_STEPS=1` first.
-
-`reference-repos/*` is for upstream comparison only and is not installed by quickstart.
-
-Long-running installs now emit verbose pip output when possible, plus periodic heartbeat logs, so the script does not look stuck on large packages like `vllm-hust`.
-
-When quickstart installs `vllm-ascend-hust`, it now always ensures `triton-ascend` is present, including lightweight plugin mode (`COMPILE_CUSTOM_KERNELS=0`).
-
-If the sibling `vllm-ascend-hust` repo is unavailable, quickstart now falls back
-to `hust-ascend-manager runtime repair --install-plugin` and installs the PyPI
-distribution `vllm-ascend-hust` directly into the selected conda environment.
-
-Quickstart conda activate hooks no longer prepend `${CONDA_PREFIX}/lib` to `LD_LIBRARY_PATH`, which avoids breaking host system tools such as `git` and `curl` in activated shells.
-
-Ascend custom-kernel selection now uses auto-detection by default and is not persisted into conda env vars. To force behavior explicitly, set `HUST_DEV_HUB_ASCEND_COMPILE_CUSTOM_KERNELS=1` (always compile) or `HUST_DEV_HUB_ASCEND_COMPILE_CUSTOM_KERNELS=0` (always lightweight mode) before running quickstart.
-
-If repositories are already cloned and conda environment is already created, use install-only mode to refresh local editable installs without recloning or recreating the env.
-
-Non-interactive examples:
-
-```bash
-# clone + conda setup in one command
-bash scripts/quickstart.sh --all -y
-
-# only conda setup with custom env name and python version
-bash scripts/quickstart.sh --conda --env-name vllm-hust-dev --python 3.11 -y
-
-# only install missing local repositories into an existing conda env
-bash scripts/quickstart.sh --install --env-name vllm-hust-dev -y
-
-# refresh core local repositories into an existing conda env
-bash scripts/quickstart.sh --install --install-mode refresh --env-name vllm-hust-dev -y
-
-# install missing core + extra local repos into an existing conda env
-bash scripts/quickstart.sh --install --install-mode install --install-scope full --env-name vllm-hust-dev -y
-
-# clone without prompts
-bash scripts/clone-workspace-repos.sh --yes
-
-# install Miniconda explicitly
-bash scripts/install-miniconda.sh
-
-# create or start the official Ascend container on this host
-bash scripts/ascend-official-container.sh start
-
-# enter the container with Ascend env sourced and workspace mounted at /workspace
-bash scripts/ascend-official-container.sh shell
-
-# create or start the official Ascend container through the interactive menu
-bash scripts/quickstart.sh
-
-# run a quick sanity check without opening a shell
-bash scripts/ascend-official-container.sh exec -- python -c 'import torch; import torch_npu; print(torch.npu.device_count())'
-
-# helper for SSH RemoteCommand: open the container directly after SSH login
-bash scripts/ssh-into-ascend-container.sh
-
-# start Qwen3-235B on Ascend via dev-hub script (with health wait)
-bash scripts/launch_ascend_model_service.sh --env vllm-hust-dev --model Qwen/Qwen3-235B-A22B-Instruct-2507 --tp 8 --port 8000
-
-# one-command host-managed Docker launch for vLLM-HUST
-cp .env.template .env
-# edit .env: set a real VLLM_HUST_API_KEY; optionally pin VLLM_ENGINE_IMAGE
-# if the container is missing, ./manage.sh start pulls/creates it automatically
-./manage.sh start
-./manage.sh status
-./manage.sh health
-./manage.sh logs
-./manage.sh restart
-
-# W8A8 quantized: download from ModelScope + launch (one command)
-bash scripts/launch_ascend_model_service.sh --preset w8a8 --download-model
-
-# print launch command only
-bash scripts/launch_ascend_model_service.sh --dry-run
-bash scripts/launch_ascend_model_service.sh --preset w8a8 --dry-run
-
-# configure a Linux self-hosted GitHub Actions runner for an org or repo
-export GITHUB_RUNNER_URL=https://github.com/vLLM-HUST
-export GITHUB_RUNNER_TOKEN=<temporary-registration-token>
-bash scripts/setup-github-actions-runner.sh install --labels train8,ascend
-```
-
-For direct host-to-container development on the official Huawei image, use `scripts/ascend-official-container.sh`.
-
-- It uses `docker` directly when available, otherwise falls back to `sudo -n docker`.
-- If `IMAGE` is unset, it uses the current dev-hub default `quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler`. Set `IMAGE` or `VLLM_ENGINE_IMAGE` explicitly only when you need to pin a non-default OS flavor or validate another release line.
-- It mounts the whole workspace parent directory into `/workspace`, so sibling repos like `/home/<your name>/vllm-hust` become available inside the container at `/workspace/vllm-hust`.
-- It also mounts resolved external symlink targets under the workspace root, so sibling repos symlinked into `/data/...` remain valid inside the container.
-- It reuses a persistent container named `vllm-ascend-dev` by default, so repeated `shell` and `exec` calls do not need to rebuild the mount/device list.
-- It sources `/usr/local/Ascend/ascend-toolkit/set_env.sh` and `/usr/local/Ascend/nnal/atb/set_env.sh` automatically before dropping you into the shell or running your command.
-- It can auto-configure container SSH on `start` or `install`, using host `authorized_keys`, discovered `*.pub` files, and `~/.ssh/vllm-ascend-extra-authorized_keys`.
-- If you already have a running custom container and only need direct SSH plus home-directory links back to the mounted repos, use `bash scripts/enable-existing-container-ssh.sh`.
-- When direct public access to host port `2222` is unavailable, use a client-side SSH alias with `HostName 127.0.0.1`, `Port 2222`, and `ProxyJump <host-alias>`.
-- If you need to recreate the container with different settings, run `bash scripts/ascend-official-container.sh rm` first.
-- For remote Windows SSH, see [docs/train8-container-quickstart.md](docs/train8-container-quickstart.md) for the generic team setup for direct SSH-to-container access.
-
-## Offline Container Sync
-
-If the Ascend docker instance cannot access the public network, use the local helper below from an internet-connected development machine.
-
-It performs four steps in one run:
-
-- downloads an `aarch64` / Python `3.10` wheelhouse for `vllm-hust` and `vllm-ascend-hust`
-- downloads a Hugging Face model snapshot locally, or reuses an existing model directory
-- syncs the local repositories, wheelhouse, and model into the docker instance through `cgcl-bastion`
-- installs the editable local repos inside the container's `vllm-hust-dev` conda environment without using the container network
-
-Example:
+Use this helper from an internet-connected development machine when the target
+Ascend docker instance cannot access the public network:
 
 ```bash
 bash scripts/offline-sync-instance.sh \
-	--model-id Qwen/Qwen2.5-1.5B-Instruct
+  --model-id Qwen/Qwen2.5-1.5B-Instruct
 ```
 
 If the model already exists locally:
 
 ```bash
 bash scripts/offline-sync-instance.sh \
-	--model-path /data/models/Qwen2.5-1.5B-Instruct
+  --model-path /data/models/Qwen2.5-1.5B-Instruct
 ```
 
-Notes:
+The helper:
 
-- The script expects the sibling repositories `ascend-runtime-manager`, `vllm-hust`, `vllm-ascend-hust`, `vllm-hust-benchmark`, and `vllm-hust-dev-hub` to exist under the workspace root.
-- It assumes the container already has the `vllm-hust-dev` conda environment with `torch` and `torch_npu` available.
-- The script syncs `ascend-runtime-manager` into `/workspace/ascend-runtime-manager`, which closes the gap left by the standard dev-hub sync scope.
+- prepares an `aarch64` / Python 3.10 wheelhouse for `vllm-hust` and
+  `vllm-ascend-hust`
+- downloads or reuses a local model snapshot
+- syncs local repositories, wheels, and model assets through `cgcl-bastion`
+- installs editable local repos inside the container's `vllm-hust-dev` conda
+  environment without public network access
 
-The script skips destinations that already exist. Set `CLONE_JOBS` to control the parallelism level, for example:
+Expected sibling repositories:
+
+- `ascend-runtime-manager`
+- `vllm-hust`
+- `vllm-ascend-hust`
+- `vllm-hust-benchmark`
+- `vllm-hust-dev-hub`
+
+### Install a GitHub Actions Runner
 
 ```bash
-CLONE_JOBS=6 bash scripts/clone-workspace-repos.sh
+export GITHUB_RUNNER_URL=https://github.com/vLLM-HUST
+export GITHUB_RUNNER_TOKEN=<temporary-registration-token>
+bash scripts/setup-github-actions-runner.sh install --labels train8,ascend
 ```
 
-The `reference-repos` directory is reserved for upstream repositories used for comparison and sync work. The bootstrap script clones:
+See
+[docs/github-actions-self-hosted-runner.md](docs/github-actions-self-hosted-runner.md)
+for details.
 
-- `vllm-project/vllm`
-- `sgl-project/sglang`
-- `vllm-project/vllm-ascend`
+## Environment Notes
 
-These upstream repositories are kept under `/home/<your name>/reference-repos` and are not cloned as top-level siblings of `vllm-hust`.
+### `.env`
 
-The localized fork `vllm-ascend-hust` is cloned as a sibling repository under `/home/<your name>/vllm-ascend-hust`, not under `reference-repos`.
+Copy `.env.template` to `.env` for local secrets and service knobs:
+
+```bash
+cp .env.template .env
+```
+
+Important values:
+
+- `GITHUB_TOKEN`: optional helper token for private GitHub access.
+- `HF_ENDPOINT` / `HF_TOKEN`: optional Hugging Face download configuration.
+- `VLLM_HUST_API_KEY`: required by `manage.sh`; must be a real non-placeholder
+  key.
+- `VLLM_ENGINE_*`: host-managed engine and container launch settings.
+- `CONTAINER_SSH_*`: direct SSH access into configured containers.
+
+Do not commit `.env`.
+
+### Conda Activation Hooks
+
+Quickstart installs activate/deactivate hooks for the selected conda
+environment.
+
+On `conda activate`, the hook probes `https://hf-mirror.com` and sets
+`HF_ENDPOINT=https://hf-mirror.com` when reachable. Otherwise it unsets
+`HF_ENDPOINT` so Hugging Face clients fall back to upstream. On deactivate, the
+previous value is restored.
+
+Disable this behavior for a shell/session:
+
+```bash
+export HUST_DEV_HUB_DISABLE_HF_MIRROR_AUTOSET=1
+```
+
+The hook does not apply `hust-ascend-manager env --shell` by default. To opt in
+to manager-provided environment exports:
+
+```bash
+export HUST_DEV_HUB_ENABLE_MANAGER_ENV_HOOK=1
+```
+
+When enabled, only a conservative allowlist is applied:
+
+- `ASCEND_*`
+- `TORCH_DEVICE_BACKEND_AUTOLOAD`
+- `HUST_ASCEND_*`
+- `LD_LIBRARY_PATH`
+- `PYTHONPATH`
+
+### Bashrc Auto-Activation
+
+Quickstart does not update `~/.bashrc` by default. To auto-activate the selected
+conda environment in new interactive shells, opt in explicitly:
+
+```bash
+bash scripts/quickstart.sh --update-bashrc ...
+```
+
+or:
+
+```bash
+export HUST_DEV_HUB_UPDATE_BASHRC=1
+bash scripts/quickstart.sh ...
+```
+
+Interactive menu option `7` only updates `~/.bashrc` auto-activation.
+
+### Logs and Install Behavior
+
+Quickstart writes timestamped logs to:
+
+```text
+~/.cache/vllm-hust-dev-hub/logs/
+```
+
+Override log paths with:
+
+```bash
+export HUST_DEV_HUB_QUICKSTART_LOG_DIR=/path/to/logs
+export HUST_DEV_HUB_QUICKSTART_LOG_FILE=/path/to/quickstart.log
+```
+
+Other behavior worth knowing:
+
+- Conda operations are isolated from pre-existing `PYTHONPATH` to reduce
+  Miniconda runtime warnings.
+- Anaconda channel Terms of Service prompts only appear when quickstart needs
+  to create a new conda environment.
+- Accepted ToS markers are recorded under
+  `~/.config/vllm-hust-dev-hub/`.
+- Broken relocated Miniconda prefixes are backed up and reinstalled before
+  continuing.
+- Long-running installs emit verbose pip output and heartbeat logs.
+- `reference-repos/*` is for upstream comparison only and is not installed by
+  quickstart.
+
+## Script Index
+
+| Path | Purpose |
+| --- | --- |
+| `vllm-hust-dev-hub.code-workspace` | VS Code multi-root workspace. |
+| `manage.sh` | Install/start/restart/stop/log/check the host-managed vLLM-HUST engine service. |
+| `scripts/quickstart.sh` | Interactive and non-interactive workspace bootstrap. |
+| `scripts/clone-workspace-repos.sh` | Clone or refresh standard workspace repositories. |
+| `scripts/install-miniconda.sh` | Install Miniconda into the current user's home directory. |
+| `scripts/ascend-official-container.sh` | Start, reuse, enter, or remove the official Ascend vLLM container. |
+| `scripts/ssh-into-ascend-container.sh` | SSH helper for entering a running Ascend dev container. |
+| `scripts/ascend-container-runtime.sh` | SSH keepalive helper for Ascend dev containers. |
+| `scripts/enable-existing-container-ssh.sh` | Enable SSH and home-directory repo links in an already-running custom container. |
+| `scripts/run_vllm_hust_engine.sh` | Docker/container launcher used by `manage.sh`. |
+| `scripts/cleanup_vllm_hust_engine.sh` | Cleanup helper used when stopping the managed engine. |
+| `scripts/launch_ascend_model_service.sh` | Launch an Ascend model service with host and Docker modes. |
+| `scripts/offline-sync-instance.sh` | Sync repos, wheels, and model assets into an offline docker instance. |
+| `scripts/setup-github-actions-runner.sh` | Install and manage a rootless GitHub Actions runner. |
+| `scripts/sync-env.sh` | Propagate the canonical `.env` from this repo to sibling workspace repos. |
+| `scripts/create_cloudflare_api_token.py` | Create a scoped Cloudflare API token from bootstrap credentials. |
+| `scripts/ci/` | CI helpers for quickstart, smoke tests, and benchmark install. |
+
+## References
+
+- Team onboarding: [docs/team-onboarding.md](docs/team-onboarding.md)
+- Git workflow: [docs/contribution-git-workflow.md](docs/contribution-git-workflow.md)
+- GitHub Actions runner:
+  [docs/github-actions-self-hosted-runner.md](docs/github-actions-self-hosted-runner.md)
+- Train8 container quickstart:
+  [docs/train8-container-quickstart.md](docs/train8-container-quickstart.md)
+- Performance follow-up roadmap: [ROADMAP.md](ROADMAP.md)

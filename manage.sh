@@ -67,6 +67,7 @@ Common .env knobs:
   VLLM_ENGINE_PORT=8000
   VLLM_ENGINE_TP_SIZE=4
   VLLM_ENGINE_NPU_DEVICES=0,1,2,3
+  VLLM_ENGINE_PYTHON=/usr/local/python3.12.13/bin/python
   VLLM_ENGINE_CONDA_ENV=vllm-hust-dev
 	  VLLM_ENGINE_COMPILATION_CONFIG='{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[1,2,4,8,16],"max_cudagraph_capture_size":16}'
 	  VLLM_PLUGINS=ascend
@@ -118,6 +119,7 @@ explicit = {
     "TRANSFORMERS_OFFLINE",
     "IMAGE",
     "DOCKER_CONTAINER",
+    "VLLM_ENGINE_PYTHON",
 }
 prefixes = ("VLLM_ENGINE_", "VLLM_ASCEND_", "VLLM_OPTIMIZATION_")
 extra_keys = {
