@@ -47,7 +47,9 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("VLLM_ENGINE_AUTO_CREATE_CONTAINER=true", template)
         self.assertIn("VLLM_ENGINE_IMAGE=quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler", template)
         self.assertIn("VLLM_ENGINE_NPU_DEVICES=0,1,2,3", template)
+        self.assertIn("VLLM_ENGINE_PYTHON=/usr/local/python3.12.13/bin/python", template)
         self.assertIn("VLLM_ENGINE_CONDA_ENV=vllm-hust-dev", template)
+        self.assertIn("COMPILE_CUSTOM_KERNELS=0", template)
         self.assertIn("VLLM_ENGINE_COMPILATION_CONFIG", template)
         self.assertIn("VLLM_PLUGINS=ascend", template)
         self.assertIn("VLLM_ENGINE_BASE_PYTHONPATH", template)
@@ -89,6 +91,7 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("VLLM_ENGINE_EXTRA_ENV_PREFIXES", manage)
         self.assertIn("VLLM_OPTIMIZATION_", manage)
         self.assertIn("TORCH_DEVICE_BACKEND_AUTOLOAD", manage)
+        self.assertIn("VLLM_ENGINE_PYTHON", manage)
         self.assertLess(
             manage.index('load_dotenv "$repo_root/.env"'),
             manage.index('unit_name="${VLLM_ENGINE_SYSTEMD_UNIT'),
@@ -106,6 +109,8 @@ class ManageEngineGuardTests(unittest.TestCase):
         template = ENV_TEMPLATE.read_text()
 
         self.assertIn("VLLM_PLUGINS", script)
+        self.assertIn("ENGINE_PYTHON", script)
+        self.assertIn('"$ENGINE_PYTHON"', script)
         self.assertIn("VLLM_ENGINE_PYTHONPATH", script)
         self.assertIn("VLLM_OPTIMIZATION_REPO_CONTAINER", script)
         self.assertIn("VLLM_OPTIMIZATION_PLUGIN", script)
