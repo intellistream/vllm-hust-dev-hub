@@ -12,6 +12,9 @@ GitHub Actions self-hosted runner reference: [docs/github-actions-self-hosted-ru
 
 Performance follow-up roadmap: [ROADMAP.md](ROADMAP.md)
 
+Perfgate scenario rollout plan:
+[docs/perfgate-scenario-rollout.md](docs/perfgate-scenario-rollout.md)
+
 ## Included Repositories
 
 The default workspace includes these repositories when they exist under `/home/<your name>`:
