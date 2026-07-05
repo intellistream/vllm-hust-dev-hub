@@ -11,17 +11,22 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 load_dotenv() {
   local env_file="$1"
+  local overwrite="${2:-false}"
   [[ -f "$env_file" ]] || return 0
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
     local key="${line%%=*}"
     key="${key// /}"
-    [[ -z "$key" || -n "${!key:-}" ]] && continue
+    [[ -z "$key" ]] && continue
+    [[ "$overwrite" != "true" && -n "${!key:-}" ]] && continue
     export "$line"
   done < "$env_file"
 }
 
 load_dotenv "$repo_root/.env"
+if [[ -n "${VLLM_ENGINE_ENV_FILE:-}" ]]; then
+  load_dotenv "$VLLM_ENGINE_ENV_FILE" true
+fi
 
 unit_name="${VLLM_ENGINE_SYSTEMD_UNIT:-vllm-hust-dev-hub-engine.service}"
 unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
@@ -60,6 +65,7 @@ Required .env:
 Common .env knobs:
   VLLM_ENGINE_CONTAINER=vllm-ascend-dev
   VLLM_ENGINE_IMAGE=quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler
+  VLLM_ENGINE_ENV_FILE=profiles/smoke-qwen2.5-7b-npu1.env
   VLLM_ENGINE_AUTO_CREATE_CONTAINER=true
   VLLM_ENGINE_RECREATE_CONTAINER=false
   VLLM_ENGINE_MODEL_PATH=/data/shared_models/modelscope_cache/Qwen/Qwen3-32B
@@ -120,6 +126,7 @@ explicit = {
     "IMAGE",
     "DOCKER_CONTAINER",
     "VLLM_ENGINE_PYTHON",
+    "VLLM_USE_SIMPLE_KV_OFFLOAD",
 }
 prefixes = ("VLLM_ENGINE_", "VLLM_ASCEND_", "VLLM_OPTIMIZATION_")
 extra_keys = {
@@ -132,11 +139,18 @@ extra_prefixes = tuple(
     for item in os.environ.get("VLLM_ENGINE_EXTRA_ENV_PREFIXES", "").split(",")
     if item.strip()
 )
+safe_token_keys = {
+    "MAX_NUM_BATCHED_TOKENS",
+    "VLLM_ENGINE_MAX_NUM_BATCHED_TOKENS",
+}
 
 keys = []
 for key in os.environ:
     upper = key.upper()
-    if "KEY" in upper or "TOKEN" in upper or "SECRET" in upper:
+    if (
+        key not in safe_token_keys
+        and ("KEY" in upper or "TOKEN" in upper or "SECRET" in upper)
+    ):
         continue
     if (
         key.startswith(prefixes)
