@@ -5,6 +5,9 @@ import tempfile
 import unittest
 
 
+SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts/clone-workspace-repos.sh"
+
+
 def _run(cmd: list[str], cwd: Path | None = None) -> str:
     result = subprocess.run(
         cmd,
@@ -31,6 +34,17 @@ def _run_bash(script: str, repo: Path) -> str:
 
 
 class CloneWorkspaceReposGuardTests(unittest.TestCase):
+    def test_optional_workspace_repos_do_not_fail_bootstrap(self) -> None:
+        script_text = SCRIPT_PATH.read_text()
+
+        self.assertIn(
+            "fcs-domestic-chip-llm-recsys|git@github.com:vLLM-HUST/"
+            "fcs-domestic-chip-llm-recsys.git|optional",
+            script_text,
+        )
+        self.assertIn('repo_is_optional "$entry"', script_text)
+        self.assertIn("optional repository $relative_path is unavailable; skipping", script_text)
+
     def _create_repo_with_deleted_upstream(self, branch_name: str) -> Path:
         tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(tmpdir.cleanup)

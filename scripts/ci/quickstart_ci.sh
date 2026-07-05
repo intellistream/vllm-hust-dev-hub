@@ -202,7 +202,7 @@ install_smoke_test_dependencies() {
   run_step \
     "install smoke test deps" \
     env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
-    "$conda_bin" run -n "$ENV_NAME" bash -lc "python -m pip install 'setuptools-scm>=8.0' && python -m pip install -e '$WORKSPACE_ROOT/vllm-hust[ci-smoke]' --no-build-isolation"
+    "$conda_bin" run -n "$ENV_NAME" bash -lc "python -m pip install 'setuptools-scm>=8.0' setuptools-rust && VLLM_TARGET_DEVICE=empty VLLM_USE_PRECOMPILED=0 python -m pip install -e '$WORKSPACE_ROOT/vllm-hust[ci-smoke]' --no-build-isolation"
 }
 
 run_vllm_hust_smoke_step() {
@@ -270,11 +270,19 @@ main() {
     SCRIPT_EXIT_CODE=1
   fi
 
-  if ! run_step \
-    "runtime check" \
-    env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
-    "$conda_bin" run -n "$ENV_NAME" python -m hust_ascend_manager.cli runtime check --repo "$WORKSPACE_ROOT/vllm-hust"; then
+  if ! install_smoke_test_dependencies "$conda_bin"; then
     SCRIPT_EXIT_CODE=1
+  fi
+
+  if runner_requires_plugin_check; then
+    if ! run_step \
+      "runtime check" \
+      env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
+      "$conda_bin" run -n "$ENV_NAME" python -m hust_ascend_manager.cli runtime check --repo "$WORKSPACE_ROOT/vllm-hust"; then
+      SCRIPT_EXIT_CODE=1
+    fi
+  else
+    skip_step "runtime check" "runner flavor does not require Ascend runtime validation"
   fi
 
   if ! run_pytest_step \
@@ -283,10 +291,6 @@ main() {
     "ascend-runtime-manager.xml" \
     "$conda_bin" \
     "$WORKSPACE_ROOT/ascend-runtime-manager/tests"; then
-    SCRIPT_EXIT_CODE=1
-  fi
-
-  if ! install_smoke_test_dependencies "$conda_bin"; then
     SCRIPT_EXIT_CODE=1
   fi
 

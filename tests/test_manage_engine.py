@@ -10,6 +10,7 @@ MANAGE_SCRIPT = REPO_ROOT / "manage.sh"
 ENGINE_SCRIPT = REPO_ROOT / "scripts" / "run_vllm_hust_engine.sh"
 ENV_TEMPLATE = REPO_ROOT / ".env.template"
 README = REPO_ROOT / "README.md"
+SMOKE_PROFILE = REPO_ROOT / "profiles" / "smoke-qwen2.5-7b-npu1.env"
 
 
 class ManageEngineGuardTests(unittest.TestCase):
@@ -45,6 +46,7 @@ class ManageEngineGuardTests(unittest.TestCase):
 
         self.assertIn("VLLM_ENGINE_CONTAINER=vllm-ascend-dev", template)
         self.assertIn("VLLM_ENGINE_AUTO_CREATE_CONTAINER=true", template)
+        self.assertIn("VLLM_ENGINE_ENV_FILE=profiles/smoke-qwen2.5-7b-npu1.env", template)
         self.assertIn("VLLM_ENGINE_IMAGE=quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler", template)
         self.assertIn("VLLM_ENGINE_NPU_DEVICES=0,1,2,3", template)
         self.assertIn("VLLM_ENGINE_PYTHON=/usr/local/python3.12.13/bin/python", template)
@@ -65,6 +67,7 @@ class ManageEngineGuardTests(unittest.TestCase):
 
         self.assertIn("./manage.sh start", readme)
         self.assertIn("./manage.sh restart", readme)
+        self.assertIn("VLLM_ENGINE_ENV_FILE=profiles/smoke-qwen2.5-7b-npu1.env", readme)
         self.assertIn("scripts/run_vllm_hust_engine.sh", readme)
         self.assertIn("pulls/creates it automatically", readme)
 
@@ -89,6 +92,7 @@ class ManageEngineGuardTests(unittest.TestCase):
         manage = MANAGE_SCRIPT.read_text()
         self.assertIn("VLLM_ENGINE_EXTRA_ENV_KEYS", manage)
         self.assertIn("VLLM_ENGINE_EXTRA_ENV_PREFIXES", manage)
+        self.assertIn("VLLM_ENGINE_ENV_FILE", manage)
         self.assertIn("VLLM_OPTIMIZATION_", manage)
         self.assertIn("TORCH_DEVICE_BACKEND_AUTOLOAD", manage)
         self.assertIn("VLLM_ENGINE_PYTHON", manage)
@@ -118,6 +122,28 @@ class ManageEngineGuardTests(unittest.TestCase):
         for text in (script, manage, template):
             self.assertNotIn("segment_reuse", text)
             self.assertNotIn("SEGMENT_REUSE", text)
+
+    def test_engine_launcher_has_no_hard_coded_model_default(self) -> None:
+        script = ENGINE_SCRIPT.read_text()
+
+        self.assertIn("VLLM_ENGINE_MODEL_PATH or MODEL_ID must be set", script)
+        self.assertNotIn(
+            "model_path=\"${VLLM_ENGINE_MODEL_PATH:-${MODEL_ID:-/data/shared_models",
+            script,
+        )
+
+    def test_smoke_profile_is_non_secret_and_single_npu(self) -> None:
+        profile = SMOKE_PROFILE.read_text()
+
+        self.assertIn("VLLM_ENGINE_NPU_DEVICES=1", profile)
+        self.assertIn(
+            "VLLM_ENGINE_MODEL_PATH=/data/shared_models/Qwen2.5-7B-Instruct",
+            profile,
+        )
+        self.assertIn("VLLM_PLUGINS=ascend", profile)
+        self.assertNotIn("VLLM_HUST_API_KEY", profile)
+        self.assertNotIn("TOKEN=", profile)
+        self.assertNotIn("SECRET=", profile)
 
     def test_engine_launcher_has_generic_optimization_repo_overlay(self) -> None:
         script = ENGINE_SCRIPT.read_text()

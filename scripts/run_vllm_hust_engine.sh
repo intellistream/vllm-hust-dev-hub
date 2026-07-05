@@ -12,25 +12,30 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 
 load_dotenv() {
   local env_file="$1"
+  local overwrite="${2:-false}"
   [[ -f "$env_file" ]] || return 0
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
     local key="${line%%=*}"
     key="${key// /}"
-    [[ -z "$key" || -n "${!key:-}" ]] && continue
+    [[ -z "$key" ]] && continue
+    [[ "$overwrite" != "true" && -n "${!key:-}" ]] && continue
     export "$line"
   done < "$env_file"
 }
 
 load_dotenv "$repo_root/.env"
+if [[ -n "${VLLM_ENGINE_ENV_FILE:-}" ]]; then
+  load_dotenv "$VLLM_ENGINE_ENV_FILE" true
+fi
 
 container="${VLLM_ENGINE_CONTAINER:-${DOCKER_CONTAINER:-vllm-ascend-dev}}"
 container_image="${VLLM_ENGINE_IMAGE:-${IMAGE:-quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler}}"
 auto_create_container="${VLLM_ENGINE_AUTO_CREATE_CONTAINER:-true}"
 container_non_interactive="${VLLM_ENGINE_CONTAINER_NON_INTERACTIVE:-1}"
 recreate_container="${VLLM_ENGINE_RECREATE_CONTAINER:-false}"
-model_path="${VLLM_ENGINE_MODEL_PATH:-${MODEL_ID:-/data/shared_models/modelscope_cache/Qwen/Qwen3-32B}}"
-served_model_name="${VLLM_ENGINE_SERVED_MODEL_NAME:-${SERVED_MODEL_NAME:-qwen3-32b}}"
+model_path="${VLLM_ENGINE_MODEL_PATH:-${MODEL_ID:-}}"
+served_model_name="${VLLM_ENGINE_SERVED_MODEL_NAME:-${SERVED_MODEL_NAME:-}}"
 host="${VLLM_ENGINE_HOST:-${HOST:-0.0.0.0}}"
 port="${VLLM_ENGINE_PORT:-${PORT:-8000}}"
 tp_size="${VLLM_ENGINE_TP_SIZE:-${TP_SIZE:-4}}"
@@ -87,6 +92,7 @@ if [[ -n "$optimization_env_prefix" && -z "${VLLM_ENGINE_EXTRA_ENV_PREFIXES:-}" 
 fi
 target_device="${VLLM_TARGET_DEVICE:-npu}"
 container_log_file="${VLLM_ENGINE_CONTAINER_LOG_FILE:-}"
+simple_kv_offload="${VLLM_USE_SIMPLE_KV_OFFLOAD:-0}"
 
 container_extra_env_exports() {
   python3 - <<'PY'
@@ -121,11 +127,18 @@ extra_prefixes = tuple(
     for item in os.environ.get("VLLM_ENGINE_EXTRA_ENV_PREFIXES", "").split(",")
     if item.strip()
 )
+safe_token_keys = {
+    "MAX_NUM_BATCHED_TOKENS",
+    "VLLM_ENGINE_MAX_NUM_BATCHED_TOKENS",
+}
 
 keys = []
 for key in os.environ:
     upper = key.upper()
-    if "KEY" in upper or "TOKEN" in upper or "SECRET" in upper:
+    if (
+        key not in safe_token_keys
+        and ("KEY" in upper or "TOKEN" in upper or "SECRET" in upper)
+    ):
         continue
     if (
         key in explicit
@@ -146,6 +159,14 @@ if [[ -z "$api_key" || "$api_key" == "EMPTY" ]]; then
   echo "ERROR: vLLM-HUST must be started with a real API key." >&2
   echo "Set VLLM_HUST_API_KEY in .env; never use EMPTY." >&2
   exit 1
+fi
+if [[ -z "$model_path" ]]; then
+  echo "ERROR: VLLM_ENGINE_MODEL_PATH or MODEL_ID must be set." >&2
+  echo "Put model/topology choices in VLLM_ENGINE_ENV_FILE profiles or a local .env." >&2
+  exit 1
+fi
+if [[ -z "$served_model_name" ]]; then
+  served_model_name="$(basename "$model_path")"
 fi
 
 if (( max_num_batched_tokens < max_model_len )); then
@@ -383,10 +404,29 @@ mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$VLLM_CACHE_ROOT" "$VLLM_
 
 VLLM_BIN="__VLLM_BIN__"
 VLLM_SCRIPT="__VLLM_SCRIPT__"
-if [[ -n "$ENGINE_PYTHON" ]]; then
-  VLLM_SCRIPT=""
-fi
 if [[ -n "$VLLM_SCRIPT" ]]; then
+  if [[ -x "$VLLM_BIN" ]]; then
+    :
+  elif command -v "$VLLM_BIN" >/dev/null 2>&1; then
+    VLLM_BIN="$(command -v "$VLLM_BIN")"
+  fi
+  if [[ ! -x "$VLLM_BIN" ]]; then
+    echo "ERROR: VLLM_ENGINE_BIN is not executable in the container: $VLLM_BIN" >&2
+    exit 1
+  fi
+  if [[ ! -f "$VLLM_SCRIPT" ]]; then
+    echo "ERROR: VLLM_ENGINE_SCRIPT does not exist in the container: $VLLM_SCRIPT" >&2
+    exit 1
+  fi
+  echo "[container] using vLLM launcher: $VLLM_BIN $VLLM_SCRIPT"
+elif [[ -n "$ENGINE_PYTHON_OVERRIDE" ]]; then
+  VLLM_BIN="$(dirname "$ENGINE_PYTHON")/vllm"
+  if [[ ! -f "$VLLM_BIN" ]]; then
+    echo "ERROR: expected vLLM script next to VLLM_ENGINE_PYTHON, but not found: $VLLM_BIN" >&2
+    exit 1
+  fi
+  echo "[container] using vLLM binary: $VLLM_BIN"
+else
   if command -v "$VLLM_BIN" >/dev/null 2>&1; then
     VLLM_BIN="$(command -v "$VLLM_BIN")"
   else
@@ -397,25 +437,17 @@ if [[ -n "$VLLM_SCRIPT" ]]; then
     exit 1
   fi
   echo "[container] using vLLM binary: $VLLM_BIN"
-elif [[ -n "$ENGINE_PYTHON_OVERRIDE" ]]; then
-  VLLM_BIN="$(dirname "$ENGINE_PYTHON")/vllm"
-  if [[ ! -f "$VLLM_BIN" ]]; then
-    echo "ERROR: expected vLLM script next to VLLM_ENGINE_PYTHON, but not found: $VLLM_BIN" >&2
-    exit 1
-  fi
-  echo "[container] using vLLM binary: $VLLM_BIN"
 fi
 echo "[container] python: $ENGINE_PYTHON"
 echo "[container] vllm: $("$ENGINE_PYTHON" -c 'import vllm; print(vllm.__file__)' 2>/dev/null || echo 'N/A')"
 echo "[container] vllm_ascend: $("$ENGINE_PYTHON" -c 'import vllm_ascend; print(vllm_ascend.__file__)' 2>/dev/null || echo 'N/A')"
 
-args=(
-  "$ENGINE_PYTHON"
-)
 if [[ -n "$VLLM_SCRIPT" ]]; then
-  args+=("$VLLM_BIN" "$VLLM_SCRIPT")
+  args=("$VLLM_BIN" "$VLLM_SCRIPT")
+elif [[ -n "$ENGINE_PYTHON_OVERRIDE" ]]; then
+  args=("$ENGINE_PYTHON" "$VLLM_BIN")
 else
-  args+=("$VLLM_BIN")
+  args=("$VLLM_BIN")
 fi
 args+=(
   serve "__MODEL_PATH__"
@@ -526,5 +558,5 @@ exec "${docker_cmd[@]}" exec \
   --env "ASCEND_VISIBLE_DEVICES=$npu_devices" \
   --env "VLLM_ENGINE_COMPILATION_CONFIG=$compilation_config" \
   --env "VLLM_ENGINE_EXTRA_ARGS_JSON=${VLLM_ENGINE_EXTRA_ARGS_JSON:-}" \
-  --env "VLLM_USE_SIMPLE_KV_OFFLOAD=${VLLM_USE_SIMPLE_KV_OFFLOAD:-}" \
+  --env "VLLM_USE_SIMPLE_KV_OFFLOAD=$simple_kv_offload" \
   "$container" bash "$container_script"

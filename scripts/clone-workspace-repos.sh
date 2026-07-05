@@ -207,6 +207,16 @@ clone_destination() {
   printf '%s\n' "$TARGET_BASE_DIR/$1"
 }
 
+repo_url_from_entry() {
+  local entry="$1"
+  local rest="${entry#*|}"
+  printf '%s\n' "${rest%%|*}"
+}
+
+repo_is_optional() {
+  [[ "$1" == *"|optional" ]]
+}
+
 github_repo_path_from_url() {
   local repo_url="$1"
 
@@ -260,6 +270,7 @@ maybe_sync_origin_remote_to_ssh() {
 queue_clone() {
   local relative_path="$1"
   local repo_url="$2"
+  local optional="${3:-false}"
   local destination
   local https_url
   destination="$(clone_destination "$relative_path")"
@@ -274,8 +285,17 @@ queue_clone() {
 
   if https_url="$(https_url_from_ssh_url "$repo_url")"; then
     echo "[clone] $relative_path SSH clone failed; retrying via $https_url"
-    run_git_with_retry 3 clone "$https_url" "$destination"
+    if run_git_with_retry 3 clone "$https_url" "$destination"; then
+      return 0
+    fi
   fi
+
+  if [[ "$optional" == "true" ]]; then
+    echo "[warn] optional repository $relative_path is unavailable; skipping" >&2
+    return 0
+  fi
+
+  return 1
 }
 
 maybe_pull_updates() {
@@ -390,7 +410,7 @@ REPOS=(
   "claude-code-hust|git@github.com:vLLM-HUST/claude-code-hust.git"
   # ── papers & surveys ─────────────────────────────────────────────────────
   "cccf-domestic-inference-engine-survey|git@github.com:intellistream/cccf-domestic-inference-engine-survey.git"
-  "fcs-domestic-chip-llm-recsys|git@github.com:vLLM-HUST/fcs-domestic-chip-llm-recsys.git"
+  "fcs-domestic-chip-llm-recsys|git@github.com:vLLM-HUST/fcs-domestic-chip-llm-recsys.git|optional"
   # ── org profile ──────────────────────────────────────────────────────────
   "vllm-hust-org-profile|git@github.com:vLLM-HUST/.github.git"
   # ── upstream reference clones ────────────────────────────────────────────
@@ -409,7 +429,7 @@ pending_clones=()
 
 for entry in "${REPOS[@]}"; do
   relative_path="${entry%%|*}"
-  repo_url="${entry#*|}"
+  repo_url="$(repo_url_from_entry "$entry")"
   destination="$(clone_destination "$relative_path")"
 
   if [[ -e "$destination" ]]; then
@@ -438,9 +458,13 @@ done
 
 for entry in "${pending_clones[@]}"; do
   relative_path="${entry%%|*}"
-  repo_url="${entry#*|}"
+  repo_url="$(repo_url_from_entry "$entry")"
+  optional="false"
+  if repo_is_optional "$entry"; then
+    optional="true"
+  fi
 
-  queue_clone "$relative_path" "$repo_url" &
+  queue_clone "$relative_path" "$repo_url" "$optional" &
   running_jobs=$((running_jobs + 1))
 
   if (( running_jobs >= CLONE_JOBS )); then

@@ -256,6 +256,14 @@ cp .env.template .env
 # edit .env and set a real VLLM_HUST_API_KEY
 ```
 
+Keep `.env` for local secrets and machine-private defaults. Put model,
+topology, plugin, and smoke-test choices in a non-secret profile, then select it
+per launch:
+
+```bash
+VLLM_ENGINE_ENV_FILE=profiles/smoke-qwen2.5-7b-npu1.env ./manage.sh start
+```
+
 Start and inspect the service:
 
 ```bash
@@ -272,6 +280,7 @@ Common `.env` knobs:
 ```bash
 VLLM_ENGINE_CONTAINER=vllm-ascend-dev
 VLLM_ENGINE_AUTO_CREATE_CONTAINER=true
+VLLM_ENGINE_ENV_FILE=profiles/smoke-qwen2.5-7b-npu1.env
 VLLM_ENGINE_MODEL_PATH=/data/shared_models/modelscope_cache/Qwen/Qwen3-32B
 VLLM_ENGINE_SERVED_MODEL_NAME=qwen3-32b
 VLLM_ENGINE_PORT=8000
@@ -381,7 +390,11 @@ Important values:
 - `HF_ENDPOINT` / `HF_TOKEN`: optional Hugging Face download configuration.
 - `VLLM_HUST_API_KEY`: required by `manage.sh`; must be a real non-placeholder
   key.
-- `VLLM_ENGINE_*`: host-managed engine and container launch settings.
+- `VLLM_ENGINE_ENV_FILE`: optional non-secret profile with model/topology/plugin
+  settings for a specific service or smoke test.
+- `VLLM_ENGINE_*`: host-managed engine and container launch settings. Prefer
+  profiles for reusable model/topology choices instead of hard-coding them in
+  `.env`.
 - `CONTAINER_SSH_*`: direct SSH access into configured containers.
 
 Do not commit `.env`.
