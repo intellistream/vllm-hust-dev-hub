@@ -68,6 +68,8 @@ if [[ -z "$plugins" ]]; then
 fi
 engine_base_pythonpath="${VLLM_ENGINE_BASE_PYTHONPATH-/workspace/vllm-hust:/workspace/vllm-ascend-hust}"
 pythonpath="${VLLM_ENGINE_PYTHONPATH:-}"
+triton_source_dir="${VLLM_ENGINE_TRITON_SOURCE_DIR:-}"
+container_home="${VLLM_ENGINE_CONTAINER_HOME:-}"
 if [[ -z "$pythonpath" ]]; then
   pythonpath="$engine_base_pythonpath"
   if [[ -n "$optimization_repo_container" ]]; then
@@ -375,12 +377,105 @@ print("[container] torch_npu_preflight: ok shape=%s device=%s" % (tuple(probe.sh
 PY
 fi
 
-export HOME="${VLLM_ENGINE_CONTAINER_HOME:-/tmp/vllm-hust-home}"
+CONTAINER_HOME="__CONTAINER_HOME__"
+export HOME="${CONTAINER_HOME:-/tmp/vllm-hust-home}"
 export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_CONFIG_HOME="$HOME/.config"
 export VLLM_CACHE_ROOT="$HOME/.cache/vllm"
 export VLLM_CONFIG_ROOT="$HOME/.config/vllm"
 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$VLLM_CACHE_ROOT" "$VLLM_CONFIG_ROOT"
+
+TRITON_SOURCE_DIR="__TRITON_SOURCE_DIR__"
+if [[ -n "$TRITON_SOURCE_DIR" ]]; then
+  if [[ ! -f "$TRITON_SOURCE_DIR/setup.py" ]]; then
+    echo "ERROR: VLLM_ENGINE_TRITON_SOURCE_DIR does not look like a Triton source tree: $TRITON_SOURCE_DIR" >&2
+    exit 1
+  fi
+  export PIP_CACHE_DIR="${PIP_CACHE_DIR:-/data/tmp/segment-reuse-pip-cache}"
+  export TMPDIR="${TMPDIR:-/data/tmp/segment-reuse-build}"
+  export PYTHONPATH="$TRITON_SOURCE_DIR/python:${PYTHONPATH:-}"
+  mkdir -p "$PIP_CACHE_DIR" "$TMPDIR"
+  git config --global --add safe.directory "$TRITON_SOURCE_DIR" >/dev/null 2>&1 || true
+  if command -v rpm >/dev/null 2>&1 && ! rpm -q zlib-devel libxml2-devel >/dev/null 2>&1; then
+    if command -v dnf >/dev/null 2>&1; then
+      if ! dnf install -y zlib-devel libxml2-devel; then
+        if [[ -e "$TRITON_SOURCE_DIR/python/triton/_C" ]]; then
+          echo "WARNING: failed to install Triton build deps; continuing with existing source build artifacts" >&2
+        else
+          exit 1
+        fi
+      fi
+    elif command -v yum >/dev/null 2>&1; then
+      if ! yum install -y zlib-devel libxml2-devel; then
+        if [[ -e "$TRITON_SOURCE_DIR/python/triton/_C" ]]; then
+          echo "WARNING: failed to install Triton build deps; continuing with existing source build artifacts" >&2
+        else
+          exit 1
+        fi
+      fi
+    else
+      echo "ERROR: Triton source build requires zlib-devel and libxml2-devel" >&2
+      exit 1
+    fi
+  fi
+  "$ENGINE_PYTHON" - <<'PY' >/dev/null 2>&1 || "$ENGINE_PYTHON" -m pip install 'nanobind>=2.4'
+import nanobind
+PY
+  nanobind_cmake_dir="$("$ENGINE_PYTHON" - <<'PY'
+from pathlib import Path
+import nanobind
+
+root = Path(nanobind.__file__).resolve().parent
+candidates = (
+    list(root.glob("**/nanobindConfig.cmake"))
+    + list(root.glob("**/nanobind-config.cmake"))
+    + list(root.glob("**/nanobind.cps"))
+)
+print(candidates[0].parent if candidates else root)
+PY
+)"
+  export nanobind_DIR="$nanobind_cmake_dir"
+  export CMAKE_PREFIX_PATH="$nanobind_cmake_dir:${CMAKE_PREFIX_PATH:-}"
+  triton_ascend_file="$("$ENGINE_PYTHON" - <<'PY' 2>/dev/null || true
+import importlib.util
+
+spec = importlib.util.find_spec("triton.backends.ascend")
+print(spec.origin if spec and spec.origin else "")
+PY
+)"
+  case "$triton_ascend_file" in
+    "$TRITON_SOURCE_DIR"/python/triton/*)
+      echo "[container] Triton Ascend source already active: $triton_ascend_file"
+      ;;
+    *)
+      echo "[container] installing Triton from source: $TRITON_SOURCE_DIR"
+      "$ENGINE_PYTHON" -m pip install --no-build-isolation -e "$TRITON_SOURCE_DIR"
+      ;;
+  esac
+  "$ENGINE_PYTHON" - <<'PY'
+import inspect
+import importlib.util
+import triton
+
+source_dir = "__TRITON_SOURCE_DIR__"
+triton_paths = list(getattr(triton, "__path__", []))
+print("[container] triton:", getattr(triton, "__version__", "unknown"))
+print("[container] triton_paths:", triton_paths)
+spec = importlib.util.find_spec("triton.backends.ascend")
+ascend_file = spec.origin if spec and spec.origin else ""
+print("[container] triton_ascend_backend:", ascend_file)
+if not ascend_file.startswith(source_dir + "/python/triton/backends/ascend/"):
+    raise SystemExit(
+        "Triton source install verification failed: "
+        f"{ascend_file} is not under {source_dir}/python/triton/backends/ascend"
+    )
+try:
+    import triton.backends.ascend as ascend
+except Exception as exc:
+    raise SystemExit(f"failed to import Triton Ascend backend: {exc}") from exc
+print("[container] triton_ascend_backend_import:", inspect.getfile(ascend))
+PY
+fi
 
 VLLM_BIN="__VLLM_BIN__"
 VLLM_SCRIPT="__VLLM_SCRIPT__"
@@ -494,6 +589,8 @@ replace "__CONDA_PREFIX__" "$conda_prefix"
 replace "__ENGINE_PYTHON__" "$engine_python"
 replace "__EXTRA_ENV_EXPORTS__" "$extra_env_exports"
 replace "__CONTAINER_LOG_FILE__" "$container_log_file"
+replace "__TRITON_SOURCE_DIR__" "$triton_source_dir"
+replace "__CONTAINER_HOME__" "$container_home"
 replace "__TARGET_DEVICE__" "$target_device"
 replace "__NPU_DEVICES__" "$npu_devices"
 replace "__PLUGINS__" "$plugins"
