@@ -239,6 +239,7 @@ fi
 echo "[vllm-hust] plugins          = $plugins"
 
 if [[ "$replace_existing" == "true" ]]; then
+cleanup_timeout_seconds="${VLLM_ENGINE_CLEANUP_TIMEOUT_SECONDS:-15}"
 cleanup_script='
 port="$1"
 all=""
@@ -276,7 +277,11 @@ if [ -n "$all" ]; then
   echo "$all"
 fi
 '
-  cleaned_pids=$("${docker_cmd[@]}" exec --env "VLLM_ENGINE_AGGRESSIVE_CLEANUP=${VLLM_ENGINE_AGGRESSIVE_CLEANUP:-0}" "$container" sh -c "$cleanup_script" sh "$port" 2>/dev/null || true)
+  if command -v timeout >/dev/null 2>&1; then
+    cleaned_pids=$(timeout "$cleanup_timeout_seconds" "${docker_cmd[@]}" exec --env "VLLM_ENGINE_AGGRESSIVE_CLEANUP=${VLLM_ENGINE_AGGRESSIVE_CLEANUP:-0}" "$container" sh -c "$cleanup_script" sh "$port" 2>/dev/null || true)
+  else
+    cleaned_pids=$("${docker_cmd[@]}" exec --env "VLLM_ENGINE_AGGRESSIVE_CLEANUP=${VLLM_ENGINE_AGGRESSIVE_CLEANUP:-0}" "$container" sh -c "$cleanup_script" sh "$port" 2>/dev/null || true)
+  fi
   if [[ -n "$cleaned_pids" ]]; then
     echo "[vllm-hust] stopped existing vLLM process(es) on port $port: $cleaned_pids"
   fi
