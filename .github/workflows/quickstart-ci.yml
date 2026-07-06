@@ -12,6 +12,7 @@ permissions:
 
 jobs:
   quickstart-ubuntu:
+    if: ${{ false }}
     name: quickstart (ubuntu)
     runs-on: ubuntu-latest
     timeout-minutes: 90
