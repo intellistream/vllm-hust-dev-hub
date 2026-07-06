@@ -123,6 +123,7 @@ explicit = {
     "CONTAINER_WORKSPACE_ROOT",
     "CONTAINER_WORKDIR",
     "VLLM_ENGINE_PYTHON",
+    "VLLM_USE_SIMPLE_KV_OFFLOAD",
 }
 prefixes = ("VLLM_ENGINE_", "VLLM_ASCEND_", "VLLM_OPTIMIZATION_")
 extra_keys = {

@@ -87,6 +87,7 @@ if [[ -n "$optimization_env_prefix" && -z "${VLLM_ENGINE_EXTRA_ENV_PREFIXES:-}" 
 fi
 target_device="${VLLM_TARGET_DEVICE:-npu}"
 container_log_file="${VLLM_ENGINE_CONTAINER_LOG_FILE:-}"
+simple_kv_offload="${VLLM_USE_SIMPLE_KV_OFFLOAD:-0}"
 
 container_extra_env_exports() {
   python3 - <<'PY'
@@ -383,10 +384,29 @@ mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$VLLM_CACHE_ROOT" "$VLLM_
 
 VLLM_BIN="__VLLM_BIN__"
 VLLM_SCRIPT="__VLLM_SCRIPT__"
-if [[ -n "$ENGINE_PYTHON" ]]; then
-  VLLM_SCRIPT=""
-fi
 if [[ -n "$VLLM_SCRIPT" ]]; then
+  if [[ -x "$VLLM_BIN" ]]; then
+    :
+  elif command -v "$VLLM_BIN" >/dev/null 2>&1; then
+    VLLM_BIN="$(command -v "$VLLM_BIN")"
+  fi
+  if [[ ! -x "$VLLM_BIN" ]]; then
+    echo "ERROR: VLLM_ENGINE_BIN is not executable in the container: $VLLM_BIN" >&2
+    exit 1
+  fi
+  if [[ ! -f "$VLLM_SCRIPT" ]]; then
+    echo "ERROR: VLLM_ENGINE_SCRIPT does not exist in the container: $VLLM_SCRIPT" >&2
+    exit 1
+  fi
+  echo "[container] using vLLM launcher: $VLLM_BIN $VLLM_SCRIPT"
+elif [[ -n "$ENGINE_PYTHON_OVERRIDE" ]]; then
+  VLLM_BIN="$(dirname "$ENGINE_PYTHON")/vllm"
+  if [[ ! -f "$VLLM_BIN" ]]; then
+    echo "ERROR: expected vLLM script next to VLLM_ENGINE_PYTHON, but not found: $VLLM_BIN" >&2
+    exit 1
+  fi
+  echo "[container] using vLLM binary: $VLLM_BIN"
+else
   if command -v "$VLLM_BIN" >/dev/null 2>&1; then
     VLLM_BIN="$(command -v "$VLLM_BIN")"
   else
@@ -397,25 +417,17 @@ if [[ -n "$VLLM_SCRIPT" ]]; then
     exit 1
   fi
   echo "[container] using vLLM binary: $VLLM_BIN"
-elif [[ -n "$ENGINE_PYTHON_OVERRIDE" ]]; then
-  VLLM_BIN="$(dirname "$ENGINE_PYTHON")/vllm"
-  if [[ ! -f "$VLLM_BIN" ]]; then
-    echo "ERROR: expected vLLM script next to VLLM_ENGINE_PYTHON, but not found: $VLLM_BIN" >&2
-    exit 1
-  fi
-  echo "[container] using vLLM binary: $VLLM_BIN"
 fi
 echo "[container] python: $ENGINE_PYTHON"
 echo "[container] vllm: $("$ENGINE_PYTHON" -c 'import vllm; print(vllm.__file__)' 2>/dev/null || echo 'N/A')"
 echo "[container] vllm_ascend: $("$ENGINE_PYTHON" -c 'import vllm_ascend; print(vllm_ascend.__file__)' 2>/dev/null || echo 'N/A')"
 
-args=(
-  "$ENGINE_PYTHON"
-)
 if [[ -n "$VLLM_SCRIPT" ]]; then
-  args+=("$VLLM_BIN" "$VLLM_SCRIPT")
+  args=("$VLLM_BIN" "$VLLM_SCRIPT")
+elif [[ -n "$ENGINE_PYTHON_OVERRIDE" ]]; then
+  args=("$ENGINE_PYTHON" "$VLLM_BIN")
 else
-  args+=("$VLLM_BIN")
+  args=("$VLLM_BIN")
 fi
 args+=(
   serve "__MODEL_PATH__"
@@ -526,5 +538,5 @@ exec "${docker_cmd[@]}" exec \
   --env "ASCEND_VISIBLE_DEVICES=$npu_devices" \
   --env "VLLM_ENGINE_COMPILATION_CONFIG=$compilation_config" \
   --env "VLLM_ENGINE_EXTRA_ARGS_JSON=${VLLM_ENGINE_EXTRA_ARGS_JSON:-}" \
-  --env "VLLM_USE_SIMPLE_KV_OFFLOAD=${VLLM_USE_SIMPLE_KV_OFFLOAD:-}" \
+  --env "VLLM_USE_SIMPLE_KV_OFFLOAD=$simple_kv_offload" \
   "$container" bash "$container_script"
