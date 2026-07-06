@@ -325,6 +325,17 @@ if [[ -f /usr/local/Ascend/ascend-toolkit/set_env.sh ]]; then
   source /usr/local/Ascend/ascend-toolkit/set_env.sh
 fi
 
+if [[ -z "${TRITON_NPU_COMPILER_PATH:-}" ]]; then
+  if command -v bisheng >/dev/null 2>&1; then
+    TRITON_NPU_COMPILER_PATH="$(dirname "$(command -v bisheng)")"
+    export TRITON_NPU_COMPILER_PATH
+  elif [[ -x /usr/local/Ascend/ascend-toolkit/latest/compiler/ccec_compiler/bin/ccec ]]; then
+    export TRITON_NPU_COMPILER_PATH=/usr/local/Ascend/ascend-toolkit/latest/compiler/ccec_compiler/bin
+  elif [[ -x /usr/local/Ascend/ascend-toolkit/compiler/ccec_compiler/bin/ccec ]]; then
+    export TRITON_NPU_COMPILER_PATH=/usr/local/Ascend/ascend-toolkit/compiler/ccec_compiler/bin
+  fi
+fi
+
 if [[ -n "${HUST_ATB_SET_ENV:-}" && -f "${HUST_ATB_SET_ENV}" ]]; then
   set +u
   source "${HUST_ATB_SET_ENV}" --cxx_abi=1
