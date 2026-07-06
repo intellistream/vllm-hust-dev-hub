@@ -547,18 +547,54 @@ read_build_requirement_spec_from_pyproject() {
   ' "$repo_path/pyproject.toml"
 }
 
+resolve_local_triton_ascend_repo() {
+  local candidate
+
+  for candidate in "${HUST_TRITON_ASCEND_REPO:-}" "$WORKSPACE_ROOT/triton-ascend-hust"; do
+    if [[ -n "$candidate" && -f "$candidate/pyproject.toml" && -f "$candidate/setup.py" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+ensure_triton_ascend_in_env() {
+  local repo_path="$1"
+  local triton_ascend_repo
+  local triton_ascend_spec
+  local triton_max_jobs
+  local build_ld_library_path
+
+  if triton_ascend_repo="$(resolve_local_triton_ascend_repo)"; then
+    triton_max_jobs="${HUST_TRITON_ASCEND_MAX_JOBS:-32}"
+    log "Installing triton-ascend from local HUST source: $triton_ascend_repo"
+    build_ld_library_path="$(sanitize_ld_library_path_for_system_tools "${LD_LIBRARY_PATH:-}")"
+    run_with_heartbeat \
+      "installing local triton-ascend from $triton_ascend_repo" \
+      run_pip_install_in_env "$ENV_NAME" \
+        "TRITON_WHEEL_NAME=triton-ascend" \
+        "MAX_JOBS=$triton_max_jobs" \
+        "LD_LIBRARY_PATH=$build_ld_library_path" \
+        -- --no-build-isolation -v -e "$triton_ascend_repo"
+    return 0
+  fi
+
+  triton_ascend_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "triton-ascend" || true)"
+  ensure_pip_package_in_env "$ENV_NAME" "${triton_ascend_spec:-triton-ascend}"
+}
+
 ensure_ascend_build_python_packages() {
   local repo_path="$1"
   local compile_custom_kernels="$2"
   local pybind11_spec
-  local triton_ascend_spec
 
   ensure_pip_package_in_env "$ENV_NAME" "setuptools-scm>=8"
   ensure_pip_package_in_env "$ENV_NAME" "decorator"
   ensure_pip_package_in_env "$ENV_NAME" "scipy"
 
-  triton_ascend_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "triton-ascend" || true)"
-  ensure_pip_package_in_env "$ENV_NAME" "${triton_ascend_spec:-triton-ascend}"
+  ensure_triton_ascend_in_env "$repo_path"
 
   # pybind11 is a runtime dependency of triton-ascend's Ascend backend
   # (triton.backends.ascend.utils imports pybind11 at module load time).
@@ -1664,7 +1700,7 @@ has_local_ascend_plugin_checkout() {
 repo_prefers_no_build_isolation() {
   local repo_path="$1"
 
-  [[ "$repo_path" == "$MANAGER_REPO" || "$repo_path" == "$WORKSPACE_ROOT/vllm-hust-benchmark" ]]
+  [[ "$repo_path" == "$MANAGER_REPO" || "$repo_path" == "$WORKSPACE_ROOT/vllm-hust" || "$repo_path" == "$WORKSPACE_ROOT/vllm-hust-benchmark" ]]
 }
 
 install_editable_repo_into_env() {
@@ -1712,13 +1748,19 @@ install_editable_repo_into_env() {
   local pip_env=()
   if [[ "$(basename "$repo_path")" == "vllm-hust" ]]; then
     editable_target="${repo_path}[ci-smoke]"
+    ensure_pip_package_in_env "$ENV_NAME" "setuptools-rust>=1.9.0"
     # Build vllm-hust from source with no CUDA/HIP C extensions.
     # VLLM_USE_PRECOMPILED=0 prevents setup.py from trying to download
     # CUDA-only prebuilt wheels from wheels.vllm.ai (not available for Ascend/aarch64).
-    pip_env+=("VLLM_TARGET_DEVICE=empty" "VLLM_USE_PRECOMPILED=0")
+    # TORCH_DEVICE_BACKEND_AUTOLOAD=0 prevents pip metadata generation from
+    # importing torch_npu while pip's sanitized LD_LIBRARY_PATH is active.
+    pip_env+=("VLLM_TARGET_DEVICE=empty" "VLLM_USE_PRECOMPILED=0" "TORCH_DEVICE_BACKEND_AUTOLOAD=0")
   fi
 
   pip_args=(-v -e "$editable_target")
+  if [[ "$(basename "$repo_path")" == "vllm-hust" ]]; then
+    pip_args=(--no-deps "${pip_args[@]}")
+  fi
   if repo_prefers_no_build_isolation "$repo_path"; then
     pip_args=(--no-build-isolation "${pip_args[@]}")
   fi
