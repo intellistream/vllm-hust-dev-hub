@@ -24,6 +24,7 @@ load_dotenv() {
 load_dotenv "$repo_root/.env"
 
 unit_name="${VLLM_ENGINE_SYSTEMD_UNIT:-vllm-hust-dev-hub-engine.service}"
+unit_restart="${VLLM_ENGINE_SYSTEMD_RESTART:-on-failure}"
 unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 unit_path="$unit_dir/$unit_name"
 unit_env_path="$unit_path.env"
@@ -168,7 +169,7 @@ Type=simple
 WorkingDirectory=$repo_root
 EnvironmentFile=-$unit_env_path
 ExecStart=$repo_root/scripts/run_vllm_hust_engine.sh
-Restart=on-failure
+Restart=$unit_restart
 RestartSec=10
 TimeoutStopSec=60
 KillMode=control-group

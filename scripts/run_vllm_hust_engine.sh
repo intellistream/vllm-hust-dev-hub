@@ -160,7 +160,6 @@ if [[ -z "$npu_devices" ]]; then
     npu_devices="0"
   fi
 fi
-
 docker_cmd=(docker)
 if ! command -v docker >/dev/null 2>&1; then
   echo "ERROR: docker not found on PATH." >&2
@@ -210,6 +209,7 @@ ensure_container_ready() {
   echo "[vllm-hust] image             = ${container_image:-auto-detect official Ascend image}"
   CONTAINER_NAME="$container" \
   IMAGE="$container_image" \
+  HUST_ASCEND_MANAGER_VISIBLE_DEVICES="$npu_devices" \
   VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE="$container_non_interactive" \
     "$repo_root/scripts/ascend-official-container.sh" start
 
@@ -526,5 +526,5 @@ exec "${docker_cmd[@]}" exec \
   --env "ASCEND_VISIBLE_DEVICES=$npu_devices" \
   --env "VLLM_ENGINE_COMPILATION_CONFIG=$compilation_config" \
   --env "VLLM_ENGINE_EXTRA_ARGS_JSON=${VLLM_ENGINE_EXTRA_ARGS_JSON:-}" \
-  --env "VLLM_USE_SIMPLE_KV_OFFLOAD=${VLLM_USE_SIMPLE_KV_OFFLOAD:-}" \
+  --env "VLLM_USE_SIMPLE_KV_OFFLOAD=${VLLM_USE_SIMPLE_KV_OFFLOAD:-0}" \
   "$container" bash "$container_script"
