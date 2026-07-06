@@ -531,11 +531,15 @@ chmod +x "$tmp_host_script"
 container_script="/tmp/$(basename "$tmp_host_script")"
 "${docker_cmd[@]}" cp "$tmp_host_script" "$container:$container_script"
 
-exec "${docker_cmd[@]}" exec \
+docker_exec_env=(
   --env "VLLM_TARGET_DEVICE=$target_device" \
   --env "ASCEND_RT_VISIBLE_DEVICES=$npu_devices" \
   --env "ASCEND_VISIBLE_DEVICES=$npu_devices" \
   --env "VLLM_ENGINE_COMPILATION_CONFIG=$compilation_config" \
-  --env "VLLM_ENGINE_EXTRA_ARGS_JSON=${VLLM_ENGINE_EXTRA_ARGS_JSON:-}" \
-  --env "VLLM_USE_SIMPLE_KV_OFFLOAD=${VLLM_USE_SIMPLE_KV_OFFLOAD:-}" \
-  "$container" bash "$container_script"
+  --env "VLLM_ENGINE_EXTRA_ARGS_JSON=${VLLM_ENGINE_EXTRA_ARGS_JSON:-}"
+)
+if [ -n "${VLLM_USE_SIMPLE_KV_OFFLOAD+x}" ] && [ -n "${VLLM_USE_SIMPLE_KV_OFFLOAD}" ]; then
+  docker_exec_env+=(--env "VLLM_USE_SIMPLE_KV_OFFLOAD=${VLLM_USE_SIMPLE_KV_OFFLOAD}")
+fi
+
+exec "${docker_cmd[@]}" exec "${docker_exec_env[@]}" "$container" bash "$container_script"
