@@ -210,6 +210,8 @@ ensure_container_ready() {
   echo "[vllm-hust] image             = ${container_image:-auto-detect official Ascend image}"
   CONTAINER_NAME="$container" \
   IMAGE="$container_image" \
+  CONTAINER_NPU_DEVICES="${VLLM_ENGINE_CONTAINER_NPU_DEVICES:-$npu_devices}" \
+  CONTAINER_PRIVILEGED="${VLLM_ENGINE_CONTAINER_PRIVILEGED:-${VLLM_HUST_ASCEND_CONTAINER_PRIVILEGED:-1}}" \
   VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE="$container_non_interactive" \
     "$repo_root/scripts/ascend-official-container.sh" start
 
@@ -525,11 +527,17 @@ chmod +x "$tmp_host_script"
 container_script="/tmp/$(basename "$tmp_host_script")"
 "${docker_cmd[@]}" cp "$tmp_host_script" "$container:$container_script"
 
-exec "${docker_cmd[@]}" exec \
-  --env "VLLM_TARGET_DEVICE=$target_device" \
-  --env "ASCEND_RT_VISIBLE_DEVICES=$npu_devices" \
-  --env "ASCEND_VISIBLE_DEVICES=$npu_devices" \
-  --env "VLLM_ENGINE_COMPILATION_CONFIG=$compilation_config" \
-  --env "VLLM_ENGINE_EXTRA_ARGS_JSON=${VLLM_ENGINE_EXTRA_ARGS_JSON:-}" \
-  --env "VLLM_USE_SIMPLE_KV_OFFLOAD=${VLLM_USE_SIMPLE_KV_OFFLOAD:-}" \
+docker_exec_args=(
+  exec
+  --env "VLLM_TARGET_DEVICE=$target_device"
+  --env "ASCEND_RT_VISIBLE_DEVICES=$npu_devices"
+  --env "ASCEND_VISIBLE_DEVICES=$npu_devices"
+  --env "VLLM_ENGINE_COMPILATION_CONFIG=$compilation_config"
+  --env "VLLM_ENGINE_EXTRA_ARGS_JSON=${VLLM_ENGINE_EXTRA_ARGS_JSON:-}"
+)
+if [[ -n "${VLLM_USE_SIMPLE_KV_OFFLOAD:-}" ]]; then
+  docker_exec_args+=(--env "VLLM_USE_SIMPLE_KV_OFFLOAD=$VLLM_USE_SIMPLE_KV_OFFLOAD")
+fi
+
+exec "${docker_cmd[@]}" "${docker_exec_args[@]}" \
   "$container" bash "$container_script"

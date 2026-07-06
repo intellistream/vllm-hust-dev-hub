@@ -18,6 +18,9 @@ Agent workflow note: on any prepared dev-hub Ascend development machine,
 use this repo's `./manage.sh` as the first-choice entrypoint for launching,
 restarting, health-checking, and testing the prepared vLLM-HUST service. Avoid
 ad-hoc host environment setup unless `manage.sh` is insufficient for the task.
+For single-device experiments, set `VLLM_ENGINE_CONTAINER_NPU_DEVICES` and
+`VLLM_ENGINE_CONTAINER_PRIVILEGED=0` before auto-creating the container so the
+runtime manager mounts only the requested host NPU device nodes.
 
 ## Quick Start
 
