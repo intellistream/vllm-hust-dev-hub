@@ -47,6 +47,8 @@ vllm_script="${VLLM_ENGINE_SCRIPT:-}"
 conda_prefix="${VLLM_ENGINE_CONDA_PREFIX:-}"
 conda_env="${VLLM_ENGINE_CONDA_ENV:-${CONDA_ENV:-vllm-hust-dev}}"
 engine_python="${VLLM_ENGINE_PYTHON:-}"
+pip_install="${VLLM_ENGINE_PIP_INSTALL:-}"
+import_preflight="${VLLM_ENGINE_IMPORT_PREFLIGHT:-}"
 api_key="${VLLM_HUST_API_KEY:-${VLLM_ENGINE_API_KEY:-}}"
 replace_existing="${VLLM_ENGINE_REPLACE_EXISTING:-true}"
 enable_prefix_caching="${VLLM_ENGINE_ENABLE_PREFIX_CACHING:-1}"
@@ -334,6 +336,9 @@ elif [[ -f /usr/local/Ascend/nnal/atb/set_env.sh ]]; then
   source /usr/local/Ascend/nnal/atb/set_env.sh --cxx_abi=1
   set -u
 fi
+if [[ -d /usr/local/lib ]]; then
+  export LD_LIBRARY_PATH="/usr/local/lib:${LD_LIBRARY_PATH:-}"
+fi
 
 export VLLM_TARGET_DEVICE="__TARGET_DEVICE__"
 export ASCEND_RT_VISIBLE_DEVICES="__NPU_DEVICES__"
@@ -408,6 +413,15 @@ fi
 echo "[container] python: $ENGINE_PYTHON"
 echo "[container] vllm: $("$ENGINE_PYTHON" -c 'import vllm; print(vllm.__file__)' 2>/dev/null || echo 'N/A')"
 echo "[container] vllm_ascend: $("$ENGINE_PYTHON" -c 'import vllm_ascend; print(vllm_ascend.__file__)' 2>/dev/null || echo 'N/A')"
+if [[ -n "__PIP_INSTALL__" ]]; then
+  echo "[container] installing extra Python packages: __PIP_INSTALL__"
+  # shellcheck disable=SC2086
+  "$ENGINE_PYTHON" -m pip install --no-cache-dir __PIP_INSTALL__
+fi
+if [[ -n "__IMPORT_PREFLIGHT__" ]]; then
+  echo "[container] import preflight: __IMPORT_PREFLIGHT__"
+  "$ENGINE_PYTHON" -c "__IMPORT_PREFLIGHT__"
+fi
 
 args=(
   "$ENGINE_PYTHON"
@@ -507,6 +521,8 @@ replace "__ENABLE_CHUNKED_PREFILL__" "$enable_chunked_prefill"
 replace "__ENFORCE_EAGER__" "$enforce_eager"
 replace "__EXPERT_PARALLEL__" "$expert_parallel"
 replace "__QUANTIZATION__" "$quantization"
+replace "__PIP_INSTALL__" "$pip_install"
+replace "__IMPORT_PREFLIGHT__" "$import_preflight"
 
 tmp_host_script="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/vllm-hust-engine.XXXXXX.sh")"
 cleanup() {
