@@ -74,6 +74,8 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         script_text = SCRIPT_PATH.read_text()
         main_flow = script_text[script_text.index('conda_bin="$(resolve_conda_bin)"') :]
 
+        self.assertIn('install_scope_is_core()', script_text)
+        self.assertIn('python -m pip install jsonschema pytest', script_text)
         self.assertIn("'setuptools-scm>=8.0' setuptools-rust", script_text)
         self.assertIn("VLLM_TARGET_DEVICE=empty VLLM_USE_PRECOMPILED=0", script_text)
         self.assertLess(
@@ -82,6 +84,10 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         )
         self.assertIn(
             'skip_step "runtime check" "runner flavor does not require Ascend runtime validation"',
+            script_text,
+        )
+        self.assertIn(
+            'skip_step "vllm cli smoke" "core install scope does not install the full vLLM CLI"',
             script_text,
         )
 

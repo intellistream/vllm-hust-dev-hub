@@ -198,11 +198,16 @@ run_pytest_step() {
 
 install_smoke_test_dependencies() {
   local conda_bin="$1"
+  local install_command="python -m pip install jsonschema pytest 'setuptools-scm>=8.0' setuptools-rust"
+
+  if ! install_scope_is_core; then
+    install_command="$install_command && VLLM_TARGET_DEVICE=empty VLLM_USE_PRECOMPILED=0 python -m pip install -e '$WORKSPACE_ROOT/vllm-hust[ci-smoke]' --no-build-isolation"
+  fi
 
   run_step \
     "install smoke test deps" \
     env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" TORCH_DEVICE_BACKEND_AUTOLOAD=0 \
-    "$conda_bin" run -n "$ENV_NAME" bash -lc "python -m pip install 'setuptools-scm>=8.0' setuptools-rust && VLLM_TARGET_DEVICE=empty VLLM_USE_PRECOMPILED=0 python -m pip install -e '$WORKSPACE_ROOT/vllm-hust[ci-smoke]' --no-build-isolation"
+    "$conda_bin" run -n "$ENV_NAME" bash -lc "$install_command"
 }
 
 run_vllm_hust_smoke_step() {
@@ -227,6 +232,10 @@ PY
 
 runner_requires_plugin_check() {
   [[ "$RUNNER_FLAVOR" == "self-hosted" ]]
+}
+
+install_scope_is_core() {
+  [[ "$INSTALL_SCOPE" == "core" ]]
 }
 
 main() {
@@ -263,11 +272,15 @@ main() {
     SCRIPT_EXIT_CODE=1
   fi
 
-  if ! run_step \
-    "vllm cli smoke" \
-    env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
-    "$conda_bin" run -n "$ENV_NAME" python -c 'from shutil import which; assert which("vllm-hust") or which("vllm"); from vllm.entrypoints.cli.main import _resolve_cli_version; print(_resolve_cli_version())'; then
-    SCRIPT_EXIT_CODE=1
+  if install_scope_is_core; then
+    skip_step "vllm cli smoke" "core install scope does not install the full vLLM CLI"
+  else
+    if ! run_step \
+      "vllm cli smoke" \
+      env HOME="$HOME" XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}" XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}" \
+      "$conda_bin" run -n "$ENV_NAME" python -c 'from shutil import which; assert which("vllm-hust") or which("vllm"); from vllm.entrypoints.cli.main import _resolve_cli_version; print(_resolve_cli_version())'; then
+      SCRIPT_EXIT_CODE=1
+    fi
   fi
 
   if ! install_smoke_test_dependencies "$conda_bin"; then
