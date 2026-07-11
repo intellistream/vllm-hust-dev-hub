@@ -6,7 +6,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 HUB_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 WORKSPACE_ROOT="$(cd -- "$HUB_ROOT/.." && pwd)"
-MANAGER_SRC="$WORKSPACE_ROOT/ascend-runtime-manager/src"
+PARENT_ROOT="$(cd -- "$WORKSPACE_ROOT/.." && pwd)"
+if [[ -d "$PARENT_ROOT/third_party/ascend-runtime-manager/src" ]]; then
+  MANAGER_SRC="$PARENT_ROOT/third_party/ascend-runtime-manager/src"
+else
+  MANAGER_SRC="$WORKSPACE_ROOT/ascend-runtime-manager/src"
+fi
 
 IMAGE="${IMAGE:-}"
 CONTAINER_NAME="${CONTAINER_NAME:-vllm-ascend-dev}"
@@ -377,6 +382,9 @@ main() {
 
   if [[ "${VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE:-0}" == "1" ]]; then
     manager_cmd+=(--non-interactive)
+  fi
+  if [[ "${VLLM_ENGINE_CONTAINER_PRIVILEGED:-1}" == "0" || "${VLLM_ENGINE_CONTAINER_PRIVILEGED:-1}" == "false" ]]; then
+    manager_cmd+=(--no-privileged)
   fi
 
   manager_cmd+=("${extra_container_args[@]}")

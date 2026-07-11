@@ -163,6 +163,8 @@ if [[ -z "$npu_devices" ]]; then
     npu_devices="0"
   fi
 fi
+host_npu_devices="${VLLM_ENGINE_CONTAINER_NPU_DEVICES:-$npu_devices}"
+container_npu_devices="${VLLM_ENGINE_CONTAINER_VISIBLE_DEVICES:-$npu_devices}"
 
 docker_cmd=(docker)
 if ! command -v docker >/dev/null 2>&1; then
@@ -213,6 +215,7 @@ ensure_container_ready() {
   echo "[vllm-hust] image             = ${container_image:-auto-detect official Ascend image}"
   CONTAINER_NAME="$container" \
   IMAGE="$container_image" \
+  VLLM_ENGINE_NPU_DEVICES="$host_npu_devices" \
   VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE="$container_non_interactive" \
     "$repo_root/scripts/ascend-official-container.sh" start
 
@@ -231,6 +234,8 @@ echo "[vllm-hust] served_model_name = $served_model_name"
 echo "[vllm-hust] host:port         = $host:$port"
 echo "[vllm-hust] tp_size           = $tp_size"
 echo "[vllm-hust] npu_devices       = $npu_devices"
+echo "[vllm-hust] host_npu_devices  = $host_npu_devices"
+echo "[vllm-hust] container_visible = $container_npu_devices"
 echo "[vllm-hust] max_model_len     = $max_model_len"
 echo "[vllm-hust] max_num_seqs      = $max_num_seqs"
 echo "[vllm-hust] prefix_cache      = $enable_prefix_caching"
@@ -339,8 +344,8 @@ elif [[ -f /usr/local/Ascend/nnal/atb/set_env.sh ]]; then
 fi
 
 export VLLM_TARGET_DEVICE="__TARGET_DEVICE__"
-export ASCEND_RT_VISIBLE_DEVICES="__NPU_DEVICES__"
-export ASCEND_VISIBLE_DEVICES="__NPU_DEVICES__"
+export ASCEND_RT_VISIBLE_DEVICES="__CONTAINER_NPU_DEVICES__"
+export ASCEND_VISIBLE_DEVICES="__CONTAINER_NPU_DEVICES__"
 export TORCH_DEVICE_BACKEND_AUTOLOAD="${TORCH_DEVICE_BACKEND_AUTOLOAD:-1}"
 if [[ -n "${HCCL_OP_EXPANSION_MODE:-}" ]]; then
   export HCCL_OP_EXPANSION_MODE
@@ -396,7 +401,11 @@ if [[ -n "$TRITON_SOURCE_DIR" ]]; then
   export PYTHONPATH="$TRITON_SOURCE_DIR/python:${PYTHONPATH:-}"
   mkdir -p "$PIP_CACHE_DIR" "$TMPDIR"
   git config --global --add safe.directory "$TRITON_SOURCE_DIR" >/dev/null 2>&1 || true
-  if command -v rpm >/dev/null 2>&1 && ! rpm -q zlib-devel libxml2-devel >/dev/null 2>&1; then
+  triton_has_existing_build=0
+  if [[ -e "$TRITON_SOURCE_DIR/python/triton/_C" ]]; then
+    triton_has_existing_build=1
+  fi
+  if [[ "$triton_has_existing_build" != "1" ]] && command -v rpm >/dev/null 2>&1 && ! rpm -q zlib-devel libxml2-devel >/dev/null 2>&1; then
     if command -v dnf >/dev/null 2>&1; then
       if ! dnf install -y zlib-devel libxml2-devel; then
         if [[ -e "$TRITON_SOURCE_DIR/python/triton/_C" ]]; then
@@ -417,6 +426,8 @@ if [[ -n "$TRITON_SOURCE_DIR" ]]; then
       echo "ERROR: Triton source build requires zlib-devel and libxml2-devel" >&2
       exit 1
     fi
+  elif [[ "$triton_has_existing_build" == "1" ]]; then
+    echo "[container] Triton source build artifacts already exist; skipping system build-deps install"
   fi
   "$ENGINE_PYTHON" - <<'PY' >/dev/null 2>&1 || "$ENGINE_PYTHON" -m pip install 'nanobind>=2.4'
 import nanobind
@@ -593,6 +604,7 @@ replace "__TRITON_SOURCE_DIR__" "$triton_source_dir"
 replace "__CONTAINER_HOME__" "$container_home"
 replace "__TARGET_DEVICE__" "$target_device"
 replace "__NPU_DEVICES__" "$npu_devices"
+replace "__CONTAINER_NPU_DEVICES__" "$container_npu_devices"
 replace "__PLUGINS__" "$plugins"
 replace "__FLASHCOMM1__" "$flashcomm1"
 replace "__FUSED_MC2__" "$fused_mc2"
@@ -631,8 +643,8 @@ container_script="/tmp/$(basename "$tmp_host_script")"
 
 exec "${docker_cmd[@]}" exec \
   --env "VLLM_TARGET_DEVICE=$target_device" \
-  --env "ASCEND_RT_VISIBLE_DEVICES=$npu_devices" \
-  --env "ASCEND_VISIBLE_DEVICES=$npu_devices" \
+  --env "ASCEND_RT_VISIBLE_DEVICES=$container_npu_devices" \
+  --env "ASCEND_VISIBLE_DEVICES=$container_npu_devices" \
   --env "VLLM_ENGINE_COMPILATION_CONFIG=$compilation_config" \
   --env "VLLM_ENGINE_EXTRA_ARGS_JSON=${VLLM_ENGINE_EXTRA_ARGS_JSON:-}" \
   --env "VLLM_USE_SIMPLE_KV_OFFLOAD=$simple_kv_offload" \
