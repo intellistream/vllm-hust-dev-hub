@@ -407,7 +407,7 @@ if [[ -n "$TRITON_SOURCE_DIR" ]]; then
     triton_has_existing_build=1
   fi
   triton_install_build_deps="__TRITON_INSTALL_BUILD_DEPS__"
-  if [[ "$triton_has_existing_build" != "1" ]] && command -v rpm >/dev/null 2>&1 && ! rpm -q zlib-devel libxml2-devel >/dev/null 2>&1; then
+  if command -v rpm >/dev/null 2>&1 && ! rpm -q zlib-devel libxml2-devel >/dev/null 2>&1; then
     if [[ "$triton_install_build_deps" != "1" && "$triton_install_build_deps" != "true" ]]; then
       echo "WARNING: Triton build deps are missing; skipping online dnf/yum install because VLLM_ENGINE_TRITON_INSTALL_BUILD_DEPS=$triton_install_build_deps" >&2
     elif command -v dnf >/dev/null 2>&1; then
@@ -430,7 +430,8 @@ if [[ -n "$TRITON_SOURCE_DIR" ]]; then
       echo "ERROR: Triton source build requires zlib-devel and libxml2-devel" >&2
       exit 1
     fi
-  elif [[ "$triton_has_existing_build" == "1" ]]; then
+  fi
+  if [[ "$triton_has_existing_build" == "1" ]]; then
     echo "[container] Triton source build artifacts already exist; skipping system build-deps install"
   fi
   "$ENGINE_PYTHON" - <<'PY' >/dev/null 2>&1 || "$ENGINE_PYTHON" -m pip install 'nanobind>=2.4'
