@@ -70,6 +70,7 @@ engine_base_pythonpath="${VLLM_ENGINE_BASE_PYTHONPATH-/workspace/vllm-hust:/work
 pythonpath="${VLLM_ENGINE_PYTHONPATH:-}"
 triton_source_dir="${VLLM_ENGINE_TRITON_SOURCE_DIR:-}"
 triton_install_build_deps="${VLLM_ENGINE_TRITON_INSTALL_BUILD_DEPS:-0}"
+triton_codegen_backends="${TRITON_CODEGEN_BACKENDS:-}"
 container_home="${VLLM_ENGINE_CONTAINER_HOME:-}"
 if [[ -z "$pythonpath" ]]; then
   pythonpath="$engine_base_pythonpath"
@@ -400,6 +401,10 @@ if [[ -n "$TRITON_SOURCE_DIR" ]]; then
   export PIP_CACHE_DIR="${PIP_CACHE_DIR:-/data/tmp/segment-reuse-pip-cache}"
   export TMPDIR="${TMPDIR:-/data/tmp/segment-reuse-build}"
   export PYTHONPATH="$TRITON_SOURCE_DIR/python:${PYTHONPATH:-}"
+  triton_codegen_backends="__TRITON_CODEGEN_BACKENDS__"
+  if [[ -n "$triton_codegen_backends" ]]; then
+    export TRITON_CODEGEN_BACKENDS="$triton_codegen_backends"
+  fi
   mkdir -p "$PIP_CACHE_DIR" "$TMPDIR"
   git config --global --add safe.directory "$TRITON_SOURCE_DIR" >/dev/null 2>&1 || true
   triton_has_existing_build=0
@@ -607,6 +612,7 @@ replace "__EXTRA_ENV_EXPORTS__" "$extra_env_exports"
 replace "__CONTAINER_LOG_FILE__" "$container_log_file"
 replace "__TRITON_SOURCE_DIR__" "$triton_source_dir"
 replace "__TRITON_INSTALL_BUILD_DEPS__" "$triton_install_build_deps"
+replace "__TRITON_CODEGEN_BACKENDS__" "$triton_codegen_backends"
 replace "__CONTAINER_HOME__" "$container_home"
 replace "__TARGET_DEVICE__" "$target_device"
 replace "__NPU_DEVICES__" "$npu_devices"
