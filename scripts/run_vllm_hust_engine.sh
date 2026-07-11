@@ -69,6 +69,7 @@ fi
 engine_base_pythonpath="${VLLM_ENGINE_BASE_PYTHONPATH-/workspace/vllm-hust:/workspace/vllm-ascend-hust}"
 pythonpath="${VLLM_ENGINE_PYTHONPATH:-}"
 triton_source_dir="${VLLM_ENGINE_TRITON_SOURCE_DIR:-}"
+triton_install_build_deps="${VLLM_ENGINE_TRITON_INSTALL_BUILD_DEPS:-0}"
 container_home="${VLLM_ENGINE_CONTAINER_HOME:-}"
 if [[ -z "$pythonpath" ]]; then
   pythonpath="$engine_base_pythonpath"
@@ -405,8 +406,11 @@ if [[ -n "$TRITON_SOURCE_DIR" ]]; then
   if [[ -e "$TRITON_SOURCE_DIR/python/triton/_C" ]]; then
     triton_has_existing_build=1
   fi
+  triton_install_build_deps="__TRITON_INSTALL_BUILD_DEPS__"
   if [[ "$triton_has_existing_build" != "1" ]] && command -v rpm >/dev/null 2>&1 && ! rpm -q zlib-devel libxml2-devel >/dev/null 2>&1; then
-    if command -v dnf >/dev/null 2>&1; then
+    if [[ "$triton_install_build_deps" != "1" && "$triton_install_build_deps" != "true" ]]; then
+      echo "WARNING: Triton build deps are missing; skipping online dnf/yum install because VLLM_ENGINE_TRITON_INSTALL_BUILD_DEPS=$triton_install_build_deps" >&2
+    elif command -v dnf >/dev/null 2>&1; then
       if ! dnf install -y zlib-devel libxml2-devel; then
         if [[ -e "$TRITON_SOURCE_DIR/python/triton/_C" ]]; then
           echo "WARNING: failed to install Triton build deps; continuing with existing source build artifacts" >&2
@@ -601,6 +605,7 @@ replace "__ENGINE_PYTHON__" "$engine_python"
 replace "__EXTRA_ENV_EXPORTS__" "$extra_env_exports"
 replace "__CONTAINER_LOG_FILE__" "$container_log_file"
 replace "__TRITON_SOURCE_DIR__" "$triton_source_dir"
+replace "__TRITON_INSTALL_BUILD_DEPS__" "$triton_install_build_deps"
 replace "__CONTAINER_HOME__" "$container_home"
 replace "__TARGET_DEVICE__" "$target_device"
 replace "__NPU_DEVICES__" "$npu_devices"
