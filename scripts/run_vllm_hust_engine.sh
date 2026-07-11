@@ -70,7 +70,7 @@ engine_base_pythonpath="${VLLM_ENGINE_BASE_PYTHONPATH-/workspace/vllm-hust:/work
 pythonpath="${VLLM_ENGINE_PYTHONPATH:-}"
 triton_source_dir="${VLLM_ENGINE_TRITON_SOURCE_DIR:-}"
 triton_install_build_deps="${VLLM_ENGINE_TRITON_INSTALL_BUILD_DEPS:-0}"
-triton_codegen_backends="${TRITON_CODEGEN_BACKENDS:-}"
+triton_codegen_backends="${VLLM_ENGINE_TRITON_CODEGEN_BACKENDS:-${TRITON_CODEGEN_BACKENDS:-}}"
 container_home="${VLLM_ENGINE_CONTAINER_HOME:-}"
 if [[ -z "$pythonpath" ]]; then
   pythonpath="$engine_base_pythonpath"
