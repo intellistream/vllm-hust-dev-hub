@@ -246,11 +246,12 @@ idle engine 的 counters 默认全 0（vllm 进程不持久历史），看不出
 #### urllib 后端示例
 
 ```bash
+# 16 并发，32 请求（urllib 已知会 hang 在 16+，所以保持 16×16 已经能验高负载）
 VLLM_HUST_API_KEY=testkey123 \
   bash scripts/manage-container.sh profile --kind engine \
-    --label engine-urllib --duration 20 --interval 2 \
-    --traffic-requests 8 --traffic-concurrency 8 --traffic-rate 0 \
-    --traffic-max-tokens 16
+    --label my-test-1 --duration 30 --interval 2 \
+    --traffic-requests 16 --traffic-concurrency 16 --traffic-rate 0 \
+    --traffic-max-tokens 64
 ```
 
 #### bench 后端示例
