@@ -109,6 +109,15 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         self.assertIn('--upgrade --ignore-installed', script_text)
         self.assertIn('if ! ensure_ascend_torch_runtime_healthy "$ENV_NAME"; then', script_text)
 
+    def test_quickstart_installs_vllm_hust_without_build_isolation(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        self.assertIn('"$repo_path" == "$WORKSPACE_ROOT/vllm-hust"', script_text)
+        self.assertIn('ensure_vllm_hust_editable_build_python_packages "$repo_path"', script_text)
+        self.assertIn('pip_args=(--no-build-isolation "${pip_args[@]}")', script_text)
+        self.assertIn("VLLM_TARGET_DEVICE=empty", script_text)
+        self.assertIn("VLLM_USE_PRECOMPILED=0", script_text)
+
     def test_quickstart_reads_setup_py_variable_backed_project_name(self) -> None:
         synthetic_setup_py = (
             'PROJECT_NAME = "my-test-project"\n'
