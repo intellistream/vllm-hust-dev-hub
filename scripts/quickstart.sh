@@ -1664,7 +1664,31 @@ has_local_ascend_plugin_checkout() {
 repo_prefers_no_build_isolation() {
   local repo_path="$1"
 
-  [[ "$repo_path" == "$MANAGER_REPO" || "$repo_path" == "$WORKSPACE_ROOT/vllm-hust-benchmark" ]]
+  [[ "$repo_path" == "$MANAGER_REPO" || "$repo_path" == "$WORKSPACE_ROOT/vllm-hust" || "$repo_path" == "$WORKSPACE_ROOT/vllm-hust-benchmark" ]]
+}
+
+ensure_vllm_hust_editable_build_python_packages() {
+  local repo_path="$1"
+  local package_name
+  local package_spec
+  local build_packages=(
+    cmake
+    ninja
+    packaging
+    setuptools
+    setuptools-scm
+    setuptools-rust
+    wheel
+    jinja2
+  )
+
+  for package_name in "${build_packages[@]}"; do
+    package_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "$package_name" || true)"
+    if [[ -z "$package_spec" ]]; then
+      package_spec="$package_name"
+    fi
+    ensure_pip_package_in_env "$ENV_NAME" "$package_spec"
+  done
 }
 
 install_editable_repo_into_env() {
@@ -1716,6 +1740,9 @@ install_editable_repo_into_env() {
     # VLLM_USE_PRECOMPILED=0 prevents setup.py from trying to download
     # CUDA-only prebuilt wheels from wheels.vllm.ai (not available for Ascend/aarch64).
     pip_env+=("VLLM_TARGET_DEVICE=empty" "VLLM_USE_PRECOMPILED=0")
+    # Reuse the current conda env for editable metadata/build hooks instead of
+    # letting pip create an isolated env that re-resolves torch/CUDA build deps.
+    ensure_vllm_hust_editable_build_python_packages "$repo_path"
   fi
 
   pip_args=(-v -e "$editable_target")
