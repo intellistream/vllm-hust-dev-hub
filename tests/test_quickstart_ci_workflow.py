@@ -97,6 +97,16 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         self.assertIn('Installing missing or incompatible Ascend runtime Python dependencies', script_text)
         self.assertIn('run_pip_install_in_env "$ENV_NAME" -- "${missing_requirement_specs[@]}"', script_text)
 
+    def test_quickstart_defaults_official_triton_ascend_extra_index_for_ascend(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        self.assertIn('PIP_ASCEND_TRITON_EXTRA_INDEX_URL="https://triton-ascend.osinfra.cn/pypi/simple"', script_text)
+        self.assertIn('select_pip_extra_index_url() {', script_text)
+        self.assertIn('explicit_extra_index_url="$(get_first_nonempty_env PIP_EXTRA_INDEX_URL HUST_DEV_HUB_PIP_EXTRA_INDEX_URL HUST_ASCEND_MANAGER_PIP_EXTRA_INDEX_URL || true)"', script_text)
+        self.assertIn('if should_reconcile_ascend_runtime; then', script_text)
+        self.assertIn('printf \'%s\\n\' "$PIP_ASCEND_TRITON_EXTRA_INDEX_URL"', script_text)
+        self.assertIn('PIP_SELECTED_EXTRA_INDEX_URL="$(select_pip_extra_index_url || true)"', script_text)
+
     def test_quickstart_validates_torch_npu_runtime_before_ascend_install(self) -> None:
         script_text = QUICKSTART_SCRIPT_PATH.read_text()
 
