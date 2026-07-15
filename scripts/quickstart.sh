@@ -460,12 +460,16 @@ run_conda_env_cmd() {
   local env_name="$1"
   shift
   local env_prefix=""
+  local runtime_ld_library_path=""
   local wrapped_cmd=("$@")
 
   detect_conda_run_stream_flag
   env_prefix="$(get_conda_env_prefix "$env_name")"
-  if [[ -n "$env_prefix" && -d "$env_prefix/lib" ]]; then
-    wrapped_cmd=(env "LD_LIBRARY_PATH=$env_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$@")
+  runtime_ld_library_path="$(build_runtime_ld_library_path_for_env "$env_name" || true)"
+  if [[ -n "$runtime_ld_library_path" ]]; then
+    wrapped_cmd=(env "LD_LIBRARY_PATH=$runtime_ld_library_path" "$@")
+  elif [[ -n "$env_prefix" && -d "$env_prefix/lib" ]]; then
+    wrapped_cmd=(env "LD_LIBRARY_PATH=$env_prefix/lib" "$@")
   fi
 
   if [[ -n "$CONDA_RUN_STREAM_FLAG" ]]; then
@@ -473,6 +477,102 @@ run_conda_env_cmd() {
   else
     run_conda_cmd run -n "$env_name" "${wrapped_cmd[@]}"
   fi
+}
+
+build_runtime_ld_library_path_for_env() {
+  local env_name="$1"
+  local env_prefix=""
+  local raw_ld_library_path="${LD_LIBRARY_PATH:-}"
+  local path_entries=()
+  local prepend_entries=()
+  local filtered_entries=()
+  local combined_entries=()
+  local entry
+  local env_python_bin=""
+  local torch_lib=""
+  local torch_npu_lib=""
+  local seen_entries=""
+
+  env_prefix="$(get_conda_env_prefix "$env_name" 2>/dev/null || true)"
+  if [[ -z "$env_prefix" || ! -d "$env_prefix" ]]; then
+    return 0
+  fi
+
+  prepend_entries+=("$env_prefix/lib")
+
+  env_python_bin="$(get_conda_env_python_bin "$env_name" 2>/dev/null || true)"
+  if [[ -n "$env_python_bin" && -x "$env_python_bin" ]]; then
+    torch_lib="$("$env_python_bin" - <<'PY' 2>/dev/null || true
+import importlib.util
+import os
+
+spec = importlib.util.find_spec("torch")
+if spec and spec.origin:
+    print(os.path.join(os.path.dirname(spec.origin), "lib"))
+PY
+)"
+    torch_npu_lib="$("$env_python_bin" - <<'PY' 2>/dev/null || true
+import importlib.util
+import os
+
+spec = importlib.util.find_spec("torch_npu")
+if spec and spec.origin:
+    print(os.path.join(os.path.dirname(spec.origin), "lib"))
+PY
+)"
+  fi
+
+  if [[ -n "$torch_lib" && -d "$torch_lib" ]]; then
+    prepend_entries+=("$torch_lib")
+  fi
+  if [[ -n "$torch_npu_lib" && -d "$torch_npu_lib" ]]; then
+    prepend_entries+=("$torch_npu_lib")
+  fi
+
+  if [[ -n "$raw_ld_library_path" ]]; then
+    IFS=':' read -r -a path_entries <<< "$raw_ld_library_path"
+    for entry in "${path_entries[@]}"; do
+      if [[ -z "$entry" ]]; then
+        continue
+      fi
+
+      case "$entry" in
+        "$env_prefix"|"$env_prefix"/*)
+          continue
+          ;;
+        */envs/*/lib/python*/site-packages/torch/lib|*/envs/*/lib/python*/site-packages/torch_npu/lib|*/envs/*/lib)
+          continue
+          ;;
+      esac
+
+      filtered_entries+=("$entry")
+    done
+  fi
+
+  combined_entries=("${prepend_entries[@]}" "${filtered_entries[@]}")
+  filtered_entries=()
+  for entry in "${combined_entries[@]}"; do
+    if [[ -z "$entry" || ! -d "$entry" ]]; then
+      continue
+    fi
+    case ":$seen_entries:" in
+      *":$entry:"*)
+        continue
+        ;;
+    esac
+    filtered_entries+=("$entry")
+    if [[ -z "$seen_entries" ]]; then
+      seen_entries="$entry"
+    else
+      seen_entries="${seen_entries}:$entry"
+    fi
+  done
+
+  if (( ${#filtered_entries[@]} == 0 )); then
+    return 0
+  fi
+
+  printf '%s\n' "$(IFS=':'; printf '%s' "${filtered_entries[*]}")"
 }
 
 run_with_heartbeat() {
@@ -924,6 +1024,11 @@ PY
 force_reinstall_ascend_python_stack_in_env() {
   local env_name="$1"
   local stack_specs=()
+  local runtime_support_specs=(
+    "decorator"
+    "scipy"
+  )
+  local package_spec
 
   remove_conflicting_conda_torch_packages_in_env "$env_name"
 
@@ -936,6 +1041,11 @@ force_reinstall_ascend_python_stack_in_env() {
   run_with_heartbeat \
     "force reinstalling Ascend Python stack in $env_name" \
     run_pip_install_in_env "$env_name" -- --upgrade --ignore-installed "${stack_specs[@]}"
+
+  log "Reinstalling Ascend runtime support Python dependencies in '$env_name': ${runtime_support_specs[*]}"
+  for package_spec in "${runtime_support_specs[@]}"; do
+    ensure_pip_package_in_env "$env_name" "$package_spec"
+  done
 }
 
 ensure_ascend_torch_runtime_healthy() {
@@ -1949,6 +2059,7 @@ ensure_vllm_hust_editable_build_python_packages() {
     return 0
   fi
 
+  log "Missing vllm-hust editable build requirements: ${missing_package_specs[*]}"
   log "Installing missing vllm-hust editable build requirements into '$ENV_NAME' (${#missing_package_specs[@]} packages)"
   for package_spec in "${missing_package_specs[@]}"; do
     ensure_pip_package_in_env "$ENV_NAME" "$package_spec"
@@ -1981,6 +2092,7 @@ ensure_vllm_hust_runtime_python_packages() {
     return 0
   fi
 
+  log "Missing vllm-hust common runtime Python dependencies: ${missing_requirement_specs[*]}"
   log "Installing missing vllm-hust common runtime Python dependencies into '$ENV_NAME' (${#missing_requirement_specs[@]} packages)"
   run_with_heartbeat \
     "installing vllm-hust common runtime Python dependencies into $ENV_NAME" \
@@ -2657,6 +2769,9 @@ if [[ -n "${CONDA_PREFIX:-}" && -n "${LD_LIBRARY_PATH:-}" ]]; then
     fi
     case "$_hust_dev_hub_ld_entry" in
       "$CONDA_PREFIX"|"$CONDA_PREFIX"/*)
+        continue
+        ;;
+      */envs/*/lib/python*/site-packages/torch/lib|*/envs/*/lib/python*/site-packages/torch_npu/lib|*/envs/*/lib)
         continue
         ;;
     esac
