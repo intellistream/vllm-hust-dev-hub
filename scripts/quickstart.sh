@@ -489,10 +489,14 @@ run_with_heartbeat() {
   pid=$!
 
   (
+    local now_epoch
+    local elapsed
     while kill -0 "$pid" >/dev/null 2>&1; do
       sleep 30
       if kill -0 "$pid" >/dev/null 2>&1; then
-        log "Still running: $description"
+        now_epoch="$(date +%s)"
+        elapsed=$(( now_epoch - start_epoch ))
+        log "Still running: $description (elapsed=${elapsed}s)"
       fi
     done
   ) &
@@ -1912,6 +1916,8 @@ ensure_vllm_hust_editable_build_python_packages() {
   local repo_path="$1"
   local package_name
   local package_spec
+  local build_package_specs=()
+  local missing_package_specs=()
   local build_packages=(
     cmake
     ninja
@@ -1928,6 +1934,23 @@ ensure_vllm_hust_editable_build_python_packages() {
     if [[ -z "$package_spec" ]]; then
       package_spec="$package_name"
     fi
+    build_package_specs+=("$package_spec")
+  done
+
+  log "Checking vllm-hust editable build requirements in '$ENV_NAME' (${#build_package_specs[@]} packages)"
+  for package_spec in "${build_package_specs[@]}"; do
+    if ! pip_requirement_satisfied_in_env "$ENV_NAME" "$package_spec"; then
+      missing_package_specs+=("$package_spec")
+    fi
+  done
+
+  if (( ${#missing_package_specs[@]} == 0 )); then
+    log "vllm-hust editable build requirements already satisfied in '$ENV_NAME'"
+    return 0
+  fi
+
+  log "Installing missing vllm-hust editable build requirements into '$ENV_NAME' (${#missing_package_specs[@]} packages)"
+  for package_spec in "${missing_package_specs[@]}"; do
     ensure_pip_package_in_env "$ENV_NAME" "$package_spec"
   done
 }
@@ -1946,6 +1969,7 @@ ensure_vllm_hust_runtime_python_packages() {
     return 0
   fi
 
+  log "Checking vllm-hust common runtime Python dependencies in '$ENV_NAME' (${#requirement_specs[@]} packages)"
   for requirement_spec in "${requirement_specs[@]}"; do
     if ! pip_requirement_satisfied_in_env "$ENV_NAME" "$requirement_spec"; then
       missing_requirement_specs+=("$requirement_spec")
@@ -1953,10 +1977,11 @@ ensure_vllm_hust_runtime_python_packages() {
   done
 
   if (( ${#missing_requirement_specs[@]} == 0 )); then
+    log "vllm-hust common runtime Python dependencies already satisfied in '$ENV_NAME'"
     return 0
   fi
 
-  log "Installing missing vllm-hust common runtime Python dependencies into '$ENV_NAME'"
+  log "Installing missing vllm-hust common runtime Python dependencies into '$ENV_NAME' (${#missing_requirement_specs[@]} packages)"
   run_with_heartbeat \
     "installing vllm-hust common runtime Python dependencies into $ENV_NAME" \
     run_pip_install_in_env "$ENV_NAME" -- "${missing_requirement_specs[@]}"
@@ -2014,6 +2039,7 @@ install_editable_repo_into_env() {
   local pip_env=()
   if [[ "$(basename "$repo_path")" == "vllm-hust" ]]; then
     editable_target="${repo_path}[ci-smoke]"
+    log "Preparing vllm-hust editable install in '$ENV_NAME'"
     # Build vllm-hust from source with no CUDA/HIP C extensions.
     # VLLM_USE_PRECOMPILED=0 prevents setup.py from trying to download
     # CUDA-only prebuilt wheels from wheels.vllm.ai (not available for Ascend/aarch64).
@@ -2121,6 +2147,7 @@ reconcile_ascend_runtime_with_manager() {
     manager_args+=(--non-interactive)
   fi
 
+  log "Starting Ascend Python stack reconciliation via hust-ascend-manager"
   log "Reconciling Ascend Python stack via hust-ascend-manager (user-space only; no system changes)"
   run_with_heartbeat \
     "reconciling Ascend Python stack via hust-ascend-manager" \
@@ -2298,6 +2325,7 @@ install_workspace_repos_into_env() {
   local installed_list=()
   local skipped_list=()
   local fatal_failure_messages=()
+  local repo_result_messages=()
   local repo_entries=()
   local install_rc=0
   local fatal_failure_rc=0
@@ -2314,6 +2342,8 @@ install_workspace_repos_into_env() {
   local non_manager_entries=()
   local repo_path
   local project_name
+  local total_repo_count=0
+  local repo_index=0
   for entry in "${repo_entries[@]}"; do
     repo_path="${entry%%|*}"
     project_name="${entry#*|}"
@@ -2323,14 +2353,22 @@ install_workspace_repos_into_env() {
       non_manager_entries+=("$entry")
     fi
   done
+  total_repo_count="${#non_manager_entries[@]}"
+  if [[ -n "$manager_entry" ]]; then
+    total_repo_count=$(( total_repo_count + 1 ))
+  fi
+  log "Planned editable repository installs into '$ENV_NAME': $total_repo_count repositories"
 
   if [[ -n "$manager_entry" ]]; then
     repo_path="${manager_entry%%|*}"
     project_name="${manager_entry#*|}"
+    repo_index=$(( repo_index + 1 ))
+    log "Repository install progress [$repo_index/$total_repo_count]: $project_name from $repo_path"
 
     if [[ "$install_mode" == "install" ]] && is_package_installed_in_env "$ENV_NAME" "$project_name"; then
       log "Skipping already installed package '$project_name' from: $repo_path"
       skipped_list+=("$repo_path ($project_name)")
+      repo_result_messages+=("[$repo_index/$total_repo_count] skipped: $project_name")
     else
       install_editable_repo_into_env "$repo_path" "$reconcile_mode"
       install_rc=$?
@@ -2338,16 +2376,19 @@ install_workspace_repos_into_env() {
         case "$install_rc" in
           10)
             skipped_list+=("$repo_path ($project_name)")
+            repo_result_messages+=("[$repo_index/$total_repo_count] skipped: $project_name (host has no Ascend runtime)")
             ;;
           *)
             fatal_failure_rc="$install_rc"
             fatal_failure_messages+=("$repo_path ($project_name) failed with rc=$install_rc")
+            repo_result_messages+=("[$repo_index/$total_repo_count] failed: $project_name (rc=$install_rc)")
             ;;
         esac
       fi
       installed_any=1
       if [[ "$install_rc" -eq 0 ]]; then
         installed_list+=("$repo_path ($project_name)")
+        repo_result_messages+=("[$repo_index/$total_repo_count] installed: $project_name")
       fi
     fi
   fi
@@ -2362,6 +2403,7 @@ install_workspace_repos_into_env() {
   fi
 
   if [[ "$reconcile_mode" == "with-runtime-reconcile" ]]; then
+    log "Repository install progress: running Ascend Python stack reconciliation before remaining repositories"
     reconcile_ascend_runtime_with_manager
   else
     log "Skipping Ascend Python stack reconciliation for install-only flow. Use --conda to refresh the user-space environment."
@@ -2370,10 +2412,13 @@ install_workspace_repos_into_env() {
   for entry in "${non_manager_entries[@]}"; do
     repo_path="${entry%%|*}"
     project_name="${entry#*|}"
+    repo_index=$(( repo_index + 1 ))
+    log "Repository install progress [$repo_index/$total_repo_count]: $project_name from $repo_path"
 
     if [[ "$install_mode" == "install" ]] && is_package_installed_in_env "$ENV_NAME" "$project_name"; then
       log "Skipping already installed package '$project_name' from: $repo_path"
       skipped_list+=("$repo_path ($project_name)")
+      repo_result_messages+=("[$repo_index/$total_repo_count] skipped: $project_name")
       continue
     fi
 
@@ -2383,17 +2428,20 @@ install_workspace_repos_into_env() {
       case "$install_rc" in
         10)
           skipped_list+=("$repo_path ($project_name)")
+          repo_result_messages+=("[$repo_index/$total_repo_count] skipped: $project_name (host has no Ascend runtime)")
           continue
           ;;
         *)
           fatal_failure_rc="$install_rc"
           fatal_failure_messages+=("$repo_path ($project_name) failed with rc=$install_rc")
+          repo_result_messages+=("[$repo_index/$total_repo_count] failed: $project_name (rc=$install_rc)")
           break
           ;;
       esac
     fi
     installed_any=1
     installed_list+=("$repo_path ($project_name)")
+    repo_result_messages+=("[$repo_index/$total_repo_count] installed: $project_name")
   done
 
   if (( fatal_failure_rc != 0 )); then
@@ -2425,6 +2473,14 @@ install_workspace_repos_into_env() {
     local item
     for item in "${installed_list[@]}"; do
       log "  - $item"
+    done
+  fi
+
+  if (( ${#repo_result_messages[@]} > 0 )); then
+    log "Repository install result summary:"
+    local repo_result_message
+    for repo_result_message in "${repo_result_messages[@]}"; do
+      log "  - $repo_result_message"
     done
   fi
 
