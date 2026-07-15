@@ -761,13 +761,24 @@ ensure_ascend_build_python_packages() {
   local compile_custom_kernels="$2"
   local pybind11_spec
   local triton_ascend_spec
+  local bootstrap_specs=(
+    "setuptools-scm>=8"
+  )
+  local companion_specs=(
+    "decorator==5.1.1"
+    "scipy==1.13.1"
+  )
+  local batch_specs=()
+  local package_spec
+  local missing_batch_specs=()
 
-  ensure_pip_package_in_env "$ENV_NAME" "setuptools-scm>=8"
-  ensure_pip_package_in_env "$ENV_NAME" "decorator"
-  ensure_pip_package_in_env "$ENV_NAME" "scipy"
+  for package_spec in "${bootstrap_specs[@]}"; do
+    ensure_pip_package_in_env "$ENV_NAME" "$package_spec"
+  done
 
   triton_ascend_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "triton-ascend" || true)"
-  ensure_pip_package_in_env "$ENV_NAME" "${triton_ascend_spec:-triton-ascend}"
+  batch_specs+=("${triton_ascend_spec:-triton-ascend}")
+  batch_specs+=("${companion_specs[@]}")
 
   # pybind11 is a runtime dependency of triton-ascend's Ascend backend
   # (triton.backends.ascend.utils imports pybind11 at module load time).
@@ -776,15 +787,29 @@ ensure_ascend_build_python_packages() {
   # the fused qkv_rmsnorm_rope op. Must be installed unconditionally
   # regardless of whether we're compiling custom C++ kernels.
   pybind11_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "pybind11" || true)"
-  ensure_pip_package_in_env "$ENV_NAME" "${pybind11_spec:-pybind11}"
+  batch_specs+=("${pybind11_spec:-pybind11}")
 
   if [[ "$compile_custom_kernels" == "0" ]]; then
+    :
+  else
+    batch_specs+=("cmake" "nanobind>=2.4")
+  fi
+
+  for package_spec in "${batch_specs[@]}"; do
+    if ! pip_requirement_satisfied_in_env "$ENV_NAME" "$package_spec"; then
+      missing_batch_specs+=("$package_spec")
+    fi
+  done
+
+  if (( ${#missing_batch_specs[@]} == 0 )); then
+    log "Ascend build Python dependencies already satisfied in '$ENV_NAME'"
     return 0
   fi
 
-  ensure_pip_package_in_env "$ENV_NAME" "cmake"
-  # nanobind is required for building triton from source (triton-ascend-hust)
-  ensure_pip_package_in_env "$ENV_NAME" "nanobind>=2.4"
+  log "Installing missing or incompatible Ascend build Python dependencies into '$ENV_NAME': ${missing_batch_specs[*]}"
+  run_with_heartbeat \
+    "installing Ascend build Python dependencies into $ENV_NAME" \
+    run_pip_install_in_env "$ENV_NAME" -- "${missing_batch_specs[@]}"
 }
 
 # Patch triton-ascend's JIT-compiled npu_utils.cpp for CANN 9.0.0+ compatibility.
@@ -1993,6 +2018,9 @@ except ImportError:
     raise SystemExit(1)
 
 requirement = Requirement(sys.argv[1])
+
+if requirement.marker and not requirement.marker.evaluate():
+    raise SystemExit(0)
 
 try:
     installed_version = version(requirement.name)
