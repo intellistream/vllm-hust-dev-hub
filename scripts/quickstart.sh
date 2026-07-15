@@ -77,6 +77,7 @@ CONDA_ASCEND_CHANNEL="https://repo.huaweicloud.com/ascend/repos/conda/"
 CONDA_FORGE_MIRROR_CHANNEL="https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/"
 CONDA_FORGE_FALLBACK_CHANNEL="conda-forge"
 PIP_INDEX_MIRROR_URL="https://pypi.tuna.tsinghua.edu.cn/simple"
+PIP_ASCEND_TRITON_EXTRA_INDEX_URL="https://triton-ascend.osinfra.cn/pypi/simple"
 QUICKSTART_SETUPTOOLS_VERSION="77.0.3"
 ASCEND_PLUGIN_PYPI_PACKAGE="vllm-ascend-hust"
 CURRENT_USER_NAME="$(id -un 2>/dev/null || printf '%s' "${USER:-}")"
@@ -973,13 +974,32 @@ select_pip_index_url() {
   fi
 }
 
+select_pip_extra_index_url() {
+  local explicit_extra_index_url
+
+  explicit_extra_index_url="$(get_first_nonempty_env PIP_EXTRA_INDEX_URL HUST_DEV_HUB_PIP_EXTRA_INDEX_URL HUST_ASCEND_MANAGER_PIP_EXTRA_INDEX_URL || true)"
+  if [[ -n "$explicit_extra_index_url" ]]; then
+    printf '%s\n' "$explicit_extra_index_url"
+    return 0
+  fi
+
+  # vllm-ascend-hust pins triton-ascend==3.2.1, which is currently published
+  # on the official Triton-Ascend index but not on the mirrored Tsinghua PyPI
+  # index that quickstart auto-selects as the primary index on many CN hosts.
+  # Default this extra index only for Ascend quickstart flows, while still
+  # allowing explicit user/environment overrides to take precedence.
+  if should_reconcile_ascend_runtime; then
+    printf '%s\n' "$PIP_ASCEND_TRITON_EXTRA_INDEX_URL"
+  fi
+}
+
 ensure_pip_install_defaults() {
   if (( PIP_DEFAULTS_INITIALIZED == 1 )); then
     return 0
   fi
 
   PIP_SELECTED_INDEX_URL="$(select_pip_index_url || true)"
-  PIP_SELECTED_EXTRA_INDEX_URL="$(get_first_nonempty_env PIP_EXTRA_INDEX_URL HUST_DEV_HUB_PIP_EXTRA_INDEX_URL HUST_ASCEND_MANAGER_PIP_EXTRA_INDEX_URL || true)"
+  PIP_SELECTED_EXTRA_INDEX_URL="$(select_pip_extra_index_url || true)"
   PIP_INSTALL_RETRIES="$(read_positive_int_env_with_fallback 8 HUST_DEV_HUB_PIP_RETRIES HUST_ASCEND_MANAGER_PIP_RETRIES)"
   PIP_INSTALL_TIMEOUT="$(read_positive_int_env_with_fallback 120 HUST_DEV_HUB_PIP_TIMEOUT HUST_ASCEND_MANAGER_PIP_TIMEOUT)"
   PIP_INSTALL_RESUME_RETRIES="$(read_positive_int_env_with_fallback 8 HUST_DEV_HUB_PIP_RESUME_RETRIES HUST_ASCEND_MANAGER_PIP_RESUME_RETRIES)"
