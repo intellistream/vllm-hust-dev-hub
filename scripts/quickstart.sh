@@ -74,6 +74,10 @@ MANAGER_MANIFEST_DEFAULT="$(resolve_default_manifest)"
 ENV_NAME="vllm-hust-dev"
 PYTHON_VERSION="3.11"
 AUTO_YES=0
+PERF_TIMESTAMPS="${HUST_DEV_HUB_PERF_TIMESTAMPS:-0}"
+PERF_SUMMARY_LIMIT="${HUST_DEV_HUB_PERF_SUMMARY_LIMIT:-10}"
+PERF_SUMMARY_PRINTED=0
+declare -a PERF_SUMMARY_ENTRIES=()
 DO_CLONE=0
 DO_CONDA=0
 DO_INSTALL=0
@@ -141,6 +145,7 @@ print_help() {
   --env-name NAME          conda 环境名 (默认: vllm-hust-dev)。
   --python VERSION         conda 环境 Python 版本 (默认: 3.11)。
   --update-bashrc          更新 ~/.bashrc，在新交互 shell 自动激活 conda 环境。
+  --perf-timestamps       为关键步骤开始阶段打印时间戳，用于性能分析（默认关闭）。
   -y, --yes                非交互模式；容器公钥可通过 VLLM_HUST_CONTAINER_PUBKEY 传入。
   -h, --help               显示本帮助。
 
@@ -151,6 +156,86 @@ EOF
 
 log() {
   printf '[quickstart] %s\n' "$1"
+}
+
+log_perf_step_start() {
+  local description="$1"
+  local timestamp=""
+
+  if [[ "$PERF_TIMESTAMPS" != "1" ]]; then
+    return 0
+  fi
+
+  timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+  printf '[quickstart][perf][%s] start: %s\n' "$timestamp" "$description"
+}
+
+log_perf_step_end() {
+  local description="$1"
+  local start_epoch="$2"
+  local exit_code="${3:-0}"
+  local timestamp=""
+  local end_epoch=""
+  local duration=""
+  local status="ok"
+
+  if [[ "$PERF_TIMESTAMPS" != "1" ]]; then
+    return 0
+  fi
+
+  timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+  end_epoch="$(date +%s)"
+  duration=$(( end_epoch - start_epoch ))
+  if [[ "$exit_code" != "0" ]]; then
+    status="failed($exit_code)"
+  fi
+  PERF_SUMMARY_ENTRIES+=("${duration}|${status}|${description}")
+  printf '[quickstart][perf][%s] end: %s | duration=%ss | status=%s\n' \
+    "$timestamp" "$description" "$duration" "$status"
+}
+
+print_perf_summary() {
+  local limit="$PERF_SUMMARY_LIMIT"
+  local sorted_entries=""
+  local line=""
+  local duration=""
+  local status=""
+  local description=""
+
+  if [[ "$PERF_TIMESTAMPS" != "1" ]]; then
+    return 0
+  fi
+
+  if (( PERF_SUMMARY_PRINTED == 1 )); then
+    return 0
+  fi
+
+  PERF_SUMMARY_PRINTED=1
+
+  if (( ${#PERF_SUMMARY_ENTRIES[@]} == 0 )); then
+    printf '[quickstart][perf] summary: no recorded timed steps\n'
+    return 0
+  fi
+
+  if [[ ! "$limit" =~ ^[0-9]+$ ]] || (( limit <= 0 )); then
+    limit=10
+  fi
+
+  printf '[quickstart][perf] summary: top %s slowest recorded steps\n' "$limit"
+  sorted_entries="$(printf '%s\n' "${PERF_SUMMARY_ENTRIES[@]}" | sort -t'|' -k1,1nr | head -n "$limit")"
+  while IFS='|' read -r duration status description; do
+    if [[ -z "$duration" && -z "$status" && -z "$description" ]]; then
+      continue
+    fi
+    printf '[quickstart][perf] %ss | %s | %s\n' "$duration" "$status" "$description"
+  done <<< "$sorted_entries"
+}
+
+print_perf_summary_on_exit() {
+  local exit_code="$?"
+
+  print_perf_summary
+  return "$exit_code"
 }
 
 # Install system-level build tools required for compiling C/C++ extensions
@@ -395,7 +480,11 @@ run_with_heartbeat() {
   shift
   local pid
   local heartbeat_pid
+  local start_epoch
+  local exit_code
 
+  start_epoch="$(date +%s)"
+  log_perf_step_start "$description"
   "$@" &
   pid=$!
 
@@ -410,9 +499,10 @@ run_with_heartbeat() {
   heartbeat_pid=$!
 
   wait "$pid"
-  local exit_code=$?
+  exit_code=$?
   kill "$heartbeat_pid" >/dev/null 2>&1 || true
   wait "$heartbeat_pid" >/dev/null 2>&1 || true
+  log_perf_step_end "$description" "$start_epoch" "$exit_code"
   return "$exit_code"
 }
 
@@ -1371,22 +1461,39 @@ ensure_conda_available() {
 }
 
 clone_repositories() {
+  local perf_description="clone workspace repositories"
+  local perf_start_epoch=""
+  local exit_code=0
+
+  perf_start_epoch="$(date +%s)"
   if [[ ! -f "$CLONE_SCRIPT" ]]; then
     log "clone script not found: $CLONE_SCRIPT"
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 2
     return 2
   fi
+  log_perf_step_start "$perf_description"
   log "Cloning workspace repositories..."
   if (( AUTO_YES == 1 )); then
-    bash "$CLONE_SCRIPT" --yes
+    if ! bash "$CLONE_SCRIPT" --yes; then
+      exit_code=$?
+      log_perf_step_end "$perf_description" "$perf_start_epoch" "$exit_code"
+      return "$exit_code"
+    fi
     if [[ -d "$WORKSPACE_ROOT/vllm-hust-org-profile" ]]; then
       log "Organization profile repo is available at $WORKSPACE_ROOT/vllm-hust-org-profile (special repo: vLLM-HUST/.github)."
     fi
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
-  bash "$CLONE_SCRIPT"
+  if ! bash "$CLONE_SCRIPT"; then
+    exit_code=$?
+    log_perf_step_end "$perf_description" "$perf_start_epoch" "$exit_code"
+    return "$exit_code"
+  fi
   if [[ -d "$WORKSPACE_ROOT/vllm-hust-org-profile" ]]; then
     log "Organization profile repo is available at $WORKSPACE_ROOT/vllm-hust-org-profile (special repo: vLLM-HUST/.github)."
   fi
+  log_perf_step_end "$perf_description" "$perf_start_epoch" 0
 }
 
 conda_env_exists() {
@@ -1543,15 +1650,23 @@ accept_conda_tos_if_needed() {
 }
 
 create_or_update_conda_env() {
+  local perf_description=""
+  local perf_start_epoch=""
   ensure_conda_available
   ensure_system_build_packages
 
   if conda_env_exists; then
+    perf_description="update conda environment $ENV_NAME"
+    perf_start_epoch="$(date +%s)"
+    log_perf_step_start "$perf_description"
     log "Conda env '$ENV_NAME' already exists. Updating core tools..."
     reconcile_conda_env_python_version
     ensure_hust_ascend_manager_bootstrap_in_env
   else
     accept_conda_tos_if_needed
+    perf_description="create conda environment $ENV_NAME"
+    perf_start_epoch="$(date +%s)"
+    log_perf_step_start "$perf_description"
     log "Creating conda env '$ENV_NAME' (python=$PYTHON_VERSION)..."
     log "Using explicit channels for env creation:"
     log "  - $CONDA_ASCEND_CHANNEL"
@@ -1591,6 +1706,9 @@ create_or_update_conda_env() {
 
   log "Conda env ready: $ENV_NAME"
   log "Activate with: conda activate $ENV_NAME"
+  if [[ -n "$perf_description" && -n "$perf_start_epoch" ]]; then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
+  fi
 }
 
 read_project_name_from_pyproject() {
@@ -2142,9 +2260,15 @@ install_workspace_repos_into_env() {
   local install_mode="${1:-$INSTALL_MODE}"
   local install_scope="${2:-$INSTALL_SCOPE}"
   local reconcile_mode="${3:-without-runtime-reconcile}"
+  local perf_description="install workspace repositories into $ENV_NAME (mode=$install_mode, scope=$install_scope)"
+  local perf_start_epoch
+
+  perf_start_epoch="$(date +%s)"
+  log_perf_step_start "$perf_description"
 
   if ! ensure_conda_available "no-bootstrap"; then
     log "Install-only flow requires an existing conda setup. Run quickstart with --conda (or --all) first."
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 2
     return 2
   fi
 
@@ -2152,6 +2276,7 @@ install_workspace_repos_into_env() {
 
   if ! conda_env_exists; then
     log "Conda env '$ENV_NAME' does not exist yet. Create it first with --conda."
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 2
     return 2
   fi
 
@@ -2159,11 +2284,13 @@ install_workspace_repos_into_env() {
 
   if [[ "$install_mode" != "install" && "$install_mode" != "refresh" ]]; then
     echo "Invalid install mode: $install_mode" >&2
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 2
     return 2
   fi
 
   if [[ "$install_scope" != "core" && "$install_scope" != "full" ]]; then
     echo "Invalid install scope: $install_scope" >&2
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 2
     return 2
   fi
 
@@ -2178,6 +2305,7 @@ install_workspace_repos_into_env() {
 
   if (( ${#repo_entries[@]} == 0 )); then
     log "No installable local repositories found (pyproject.toml missing or project name unavailable)."
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
@@ -2315,6 +2443,7 @@ install_workspace_repos_into_env() {
   ensure_fastapi_instrumentator_compat
 
   report_vllm_cli_status "$ENV_NAME" || true
+  log_perf_step_end "$perf_description" "$perf_start_epoch" 0
   return 0
 }
 
@@ -2917,6 +3046,9 @@ parse_args() {
       --update-bashrc)
         UPDATE_BASHRC=1
         ;;
+      --perf-timestamps)
+        PERF_TIMESTAMPS=1
+        ;;
       -y|--yes)
         AUTO_YES=1
         ;;
@@ -2947,11 +3079,22 @@ parse_args() {
     echo "无效 Ascend COMPILE_CUSTOM_KERNELS: $ASCEND_COMPILE_CUSTOM_KERNELS_OVERRIDE (应为非负整数)" >&2
     exit 2
   fi
+
+  if [[ "$PERF_TIMESTAMPS" != "0" && "$PERF_TIMESTAMPS" != "1" ]]; then
+    echo "无效性能时间戳开关: $PERF_TIMESTAMPS (应为 0 或 1)" >&2
+    exit 2
+  fi
+
+  if [[ ! "$PERF_SUMMARY_LIMIT" =~ ^[0-9]+$ ]] || (( PERF_SUMMARY_LIMIT <= 0 )); then
+    echo "无效性能汇总条数: $PERF_SUMMARY_LIMIT (应为正整数)" >&2
+    exit 2
+  fi
 }
 
 main() {
   init_quickstart_logging
   parse_args "$@"
+  trap print_perf_summary_on_exit EXIT
 
   if (( DO_CLONE == 0 && DO_CONDA == 0 && DO_INSTALL == 0 )); then
     run_interactive_menu
@@ -2981,6 +3124,7 @@ main() {
   fi
 
   log "已完成所选步骤。"
+  print_perf_summary
 }
 
 main "$@"

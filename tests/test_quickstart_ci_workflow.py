@@ -232,6 +232,46 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
 
         self.assertEqual(result.stdout.strip(), "0")
 
+    def test_quickstart_supports_perf_timestamps_toggle(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        self.assertIn('PERF_TIMESTAMPS="${HUST_DEV_HUB_PERF_TIMESTAMPS:-0}"', script_text)
+        self.assertIn('PERF_SUMMARY_LIMIT="${HUST_DEV_HUB_PERF_SUMMARY_LIMIT:-10}"', script_text)
+        self.assertIn('declare -a PERF_SUMMARY_ENTRIES=()', script_text)
+        self.assertIn('--perf-timestamps', script_text)
+        self.assertIn('log_perf_step_start() {', script_text)
+        self.assertIn('log_perf_step_end() {', script_text)
+        self.assertIn('if [[ "$PERF_TIMESTAMPS" != "1" ]]; then', script_text)
+        self.assertIn('log_perf_step_start "$description"', script_text)
+        self.assertIn('duration=%ss | status=%s', script_text)
+        self.assertIn('PERF_SUMMARY_ENTRIES+=("${duration}|${status}|${description}")', script_text)
+        self.assertIn('print_perf_summary() {', script_text)
+        self.assertIn("summary: top %s slowest recorded steps", script_text)
+        self.assertIn('print_perf_summary_on_exit() {', script_text)
+        self.assertIn('trap print_perf_summary_on_exit EXIT', script_text)
+        self.assertIn('log_perf_step_end "$description" "$start_epoch" "$exit_code"', script_text)
+        self.assertIn('local perf_description="clone workspace repositories"', script_text)
+        self.assertIn('perf_description="create conda environment $ENV_NAME"', script_text)
+        self.assertIn('perf_description="update conda environment $ENV_NAME"', script_text)
+        self.assertIn('local perf_description="install workspace repositories into $ENV_NAME (mode=$install_mode, scope=$install_scope)"', script_text)
+        self.assertIn('log_perf_step_end "$perf_description" "$perf_start_epoch" 0', script_text)
+
+    def test_quickstart_perf_timestamps_cli_sets_switch(self) -> None:
+        command = (
+            f"source <(sed '/^main() {{/,$d' {shlex.quote(str(QUICKSTART_SCRIPT_PATH))}); "
+            "parse_args --perf-timestamps; "
+            'printf "%s" "$PERF_TIMESTAMPS"'
+        )
+
+        result = subprocess.run(
+            ["bash", "-lc", command],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.stdout.strip(), "1")
+
 
 if __name__ == "__main__":
     unittest.main()
