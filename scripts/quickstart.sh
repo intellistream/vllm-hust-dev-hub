@@ -19,10 +19,24 @@ detect_cann_major_version() {
   local candidates=(
     "${ASCEND_HOME_PATH:-}/version.info"
     "${ASCEND_HOME_PATH:-}/runtime/version.info"
+    "${ASCEND_HOME_PATH:-}/compiler/version.info"
+    "${ASCEND_HOME_PATH:-}/opp/version.info"
+    "/usr/local/Ascend/cann/version.info"
+    "/usr/local/Ascend/cann/runtime/version.info"
+    "/usr/local/Ascend/cann/compiler/version.info"
+    "/usr/local/Ascend/cann/opp/version.info"
+    "/usr/local/Ascend/cann-9.0.0/version.info"
+    "/usr/local/Ascend/cann-9.0.0/runtime/version.info"
+    "/usr/local/Ascend/cann-9.0.0/compiler/version.info"
+    "/usr/local/Ascend/cann-9.0.0/opp/version.info"
     "/usr/local/Ascend/ascend-toolkit/latest/version.info"
     "/usr/local/Ascend/ascend-toolkit/latest/runtime/version.info"
+    "/usr/local/Ascend/ascend-toolkit/latest/compiler/version.info"
+    "/usr/local/Ascend/ascend-toolkit/latest/opp/version.info"
     "${CONDA_PREFIX:-}/Ascend/cann/version.info"
     "${CONDA_PREFIX:-}/Ascend/cann/runtime/version.info"
+    "${CONDA_PREFIX:-}/Ascend/cann/compiler/version.info"
+    "${CONDA_PREFIX:-}/Ascend/cann/opp/version.info"
   )
   local f ver major
   for f in "${candidates[@]}"; do
@@ -643,10 +657,8 @@ read_requirement_spec_from_requirements_file() {
   ' "$requirements_file"
 }
 
-list_requirement_specs_from_requirements_file() {
-  local repo_path="$1"
-  local requirements_file="$repo_path/requirements.txt"
-
+list_requirement_specs_from_file() {
+  local requirements_file="$1"
   if [[ ! -f "$requirements_file" ]]; then
     return 1
   fi
@@ -663,6 +675,12 @@ list_requirement_specs_from_requirements_file() {
       print line
     }
   ' "$requirements_file"
+}
+
+list_requirement_specs_from_requirements_file() {
+  local repo_path="$1"
+
+  list_requirement_specs_from_file "$repo_path/requirements.txt"
 }
 
 requirement_name_from_spec() {
@@ -766,6 +784,23 @@ import torch_npu  # noqa: F401
 PY
 }
 
+log_torch_npu_runtime_validation_failure_details() {
+  local env_name="$1"
+  local stage_label="${2:-runtime validation}"
+
+  log "Detailed torch/torch-npu runtime validation traceback for '$env_name' ($stage_label):"
+  run_conda_env_cmd "$env_name" env TORCH_DEVICE_BACKEND_AUTOLOAD=0 python - <<'PY'
+import traceback
+
+try:
+    import torch  # noqa: F401
+    import torch_npu  # noqa: F401
+except Exception:
+    traceback.print_exc()
+    raise SystemExit(1)
+PY
+}
+
 read_ascend_python_stack_specs_from_manifest() {
   local env_name="$1"
   local manifest_path="${2:-$MANAGER_MANIFEST_DEFAULT}"
@@ -816,6 +851,8 @@ ensure_ascend_torch_runtime_healthy() {
     return 0
   fi
 
+  log_torch_npu_runtime_validation_failure_details "$env_name" "initial validation failure" || true
+
   if should_reconcile_ascend_runtime; then
     log "Torch/torch-npu runtime import validation failed in '$env_name'; re-running Ascend Python stack reconciliation"
     reconcile_ascend_runtime_with_manager
@@ -829,6 +866,7 @@ ensure_ascend_torch_runtime_healthy() {
     return 0
   fi
 
+  log_torch_npu_runtime_validation_failure_details "$env_name" "post-reinstall validation failure" || true
   log "Warning: torch/torch-npu runtime import validation is still failing in '$env_name'"
   return 1
 }
@@ -1541,6 +1579,11 @@ create_or_update_conda_env() {
     run_pip_install_in_env "$ENV_NAME" -- pytest pre-commit
 
   install_workspace_repos_into_env "refresh" "$INSTALL_SCOPE" "with-runtime-reconcile"
+  local install_rc=$?
+  if [[ "$install_rc" -ne 0 ]]; then
+    log "Conda env '$ENV_NAME' setup stopped because repository installation failed (rc=$install_rc)"
+    return "$install_rc"
+  fi
   report_vllm_cli_status "$ENV_NAME" || true
 
   configure_bashrc_conda_init
@@ -1771,12 +1814,43 @@ ensure_vllm_hust_editable_build_python_packages() {
   done
 }
 
+ensure_vllm_hust_runtime_python_packages() {
+  local repo_path="$1"
+  local requirements_file="$repo_path/requirements/common.txt"
+  local requirement_specs=()
+  local missing_requirement_specs=()
+  local requirement_spec
+
+  if ! mapfile -t requirement_specs < <(list_requirement_specs_from_file "$requirements_file" || true); then
+    return 0
+  fi
+  if (( ${#requirement_specs[@]} == 0 )); then
+    return 0
+  fi
+
+  for requirement_spec in "${requirement_specs[@]}"; do
+    if ! pip_requirement_satisfied_in_env "$ENV_NAME" "$requirement_spec"; then
+      missing_requirement_specs+=("$requirement_spec")
+    fi
+  done
+
+  if (( ${#missing_requirement_specs[@]} == 0 )); then
+    return 0
+  fi
+
+  log "Installing missing vllm-hust common runtime Python dependencies into '$ENV_NAME'"
+  run_with_heartbeat \
+    "installing vllm-hust common runtime Python dependencies into $ENV_NAME" \
+    run_pip_install_in_env "$ENV_NAME" -- "${missing_requirement_specs[@]}"
+}
+
 install_editable_repo_into_env() {
   local repo_path="$1"
   local reconcile_mode="${2:-without-runtime-reconcile}"
   local editable_target="$repo_path"
   local pip_args=()
   local compile_custom_kernels
+  local ascend_install_rc=0
 
   compile_custom_kernels="$(default_ascend_compile_custom_kernels)"
 
@@ -1800,11 +1874,12 @@ install_editable_repo_into_env() {
       return 11
     fi
 
-    if install_ascend_repo_into_env "$repo_path" "$compile_custom_kernels"; then
+    install_ascend_repo_into_env "$repo_path" "$compile_custom_kernels"
+    ascend_install_rc=$?
+    if [[ "$ascend_install_rc" -eq 0 ]]; then
       return 0
     fi
 
-    local ascend_install_rc=$?
     if [[ "$compile_custom_kernels" != "0" ]] && ! ascend_compile_custom_kernels_configured_explicitly; then
       case "$ascend_install_rc" in
         23|25)
@@ -1835,11 +1910,21 @@ install_editable_repo_into_env() {
     # Reuse the current conda env for editable metadata/build hooks instead of
     # letting pip create an isolated env that re-resolves torch/CUDA build deps.
     ensure_vllm_hust_editable_build_python_packages "$repo_path"
+    if should_reconcile_ascend_runtime; then
+      # On Ascend hosts, keep torch/torch-npu/triton stack under the manager
+      # manifest and vllm-ascend-hust requirements.  Install vllm-hust common
+      # runtime deps separately, then do editable install with --no-deps to
+      # avoid pulling the upstream CUDA torch pin into the shared env.
+      ensure_vllm_hust_runtime_python_packages "$repo_path"
+    fi
   fi
 
   pip_args=(-v -e "$editable_target")
   if repo_prefers_no_build_isolation "$repo_path"; then
     pip_args=(--no-build-isolation "${pip_args[@]}")
+  fi
+  if [[ "$(basename "$repo_path")" == "vllm-hust" ]] && should_reconcile_ascend_runtime; then
+    pip_args=(--no-deps "${pip_args[@]}")
   fi
 
   log "Installing editable package from: $repo_path"
@@ -2085,7 +2170,10 @@ install_workspace_repos_into_env() {
   local installed_any=0
   local installed_list=()
   local skipped_list=()
+  local fatal_failure_messages=()
   local repo_entries=()
+  local install_rc=0
+  local fatal_failure_rc=0
   mapfile -t repo_entries < <(build_installable_repo_entries "$install_scope")
 
   if (( ${#repo_entries[@]} == 0 )); then
@@ -2117,9 +2205,32 @@ install_workspace_repos_into_env() {
       skipped_list+=("$repo_path ($project_name)")
     else
       install_editable_repo_into_env "$repo_path" "$reconcile_mode"
+      install_rc=$?
+      if [[ "$install_rc" -ne 0 ]]; then
+        case "$install_rc" in
+          10)
+            skipped_list+=("$repo_path ($project_name)")
+            ;;
+          *)
+            fatal_failure_rc="$install_rc"
+            fatal_failure_messages+=("$repo_path ($project_name) failed with rc=$install_rc")
+            ;;
+        esac
+      fi
       installed_any=1
-      installed_list+=("$repo_path ($project_name)")
+      if [[ "$install_rc" -eq 0 ]]; then
+        installed_list+=("$repo_path ($project_name)")
+      fi
     fi
+  fi
+
+  if (( fatal_failure_rc != 0 )); then
+    log "Aborting repository installation because a critical setup step failed."
+    local failure_item
+    for failure_item in "${fatal_failure_messages[@]}"; do
+      log "  - $failure_item"
+    done
+    return "$fatal_failure_rc"
   fi
 
   if [[ "$reconcile_mode" == "with-runtime-reconcile" ]]; then
@@ -2138,13 +2249,33 @@ install_workspace_repos_into_env() {
       continue
     fi
 
-    if ! install_editable_repo_into_env "$repo_path" "$reconcile_mode"; then
-      skipped_list+=("$repo_path ($project_name)")
-      continue
+    install_editable_repo_into_env "$repo_path" "$reconcile_mode"
+    install_rc=$?
+    if [[ "$install_rc" -ne 0 ]]; then
+      case "$install_rc" in
+        10)
+          skipped_list+=("$repo_path ($project_name)")
+          continue
+          ;;
+        *)
+          fatal_failure_rc="$install_rc"
+          fatal_failure_messages+=("$repo_path ($project_name) failed with rc=$install_rc")
+          break
+          ;;
+      esac
     fi
     installed_any=1
     installed_list+=("$repo_path ($project_name)")
   done
+
+  if (( fatal_failure_rc != 0 )); then
+    log "Aborting repository installation because a critical setup step failed."
+    local failure_item
+    for failure_item in "${fatal_failure_messages[@]}"; do
+      log "  - $failure_item"
+    done
+    return "$fatal_failure_rc"
+  fi
 
   if install_ascend_plugin_pypi_fallback_with_manager; then
     if ! has_local_ascend_plugin_checkout && should_reconcile_ascend_runtime; then
@@ -2184,6 +2315,7 @@ install_workspace_repos_into_env() {
   ensure_fastapi_instrumentator_compat
 
   report_vllm_cli_status "$ENV_NAME" || true
+  return 0
 }
 
 configure_conda_env_library_hooks() {
@@ -2840,6 +2972,10 @@ main() {
   if (( DO_INSTALL == 1 )) && (( DO_CONDA == 0 )); then
     if (( MENU_CONFIRMED == 1 )) || (( AUTO_YES == 1 )) || ask_yes_no "现在执行本地仓库 '$INSTALL_MODE' 安装步骤吗？"; then
       install_workspace_repos_into_env "$INSTALL_MODE" "$INSTALL_SCOPE" "without-runtime-reconcile"
+      local install_rc=$?
+      if [[ "$install_rc" -ne 0 ]]; then
+        return "$install_rc"
+      fi
       maybe_update_bashrc_auto_activate_env
     fi
   fi
