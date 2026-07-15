@@ -844,13 +844,28 @@ install_ascend_repo_into_env() {
   local compile_custom_kernels="$2"
   local pip_args=(-v --no-build-isolation --no-deps -e "$repo_path")
   local build_ld_library_path
+  local rc_build_python_packages=20
+  local rc_runtime_python_packages=21
+  local rc_catlass_submodule=22
+  local rc_editable_install=23
+  local rc_plugin_validation=24
+  local rc_custom_op_validation=25
 
-  ensure_ascend_build_python_packages "$repo_path" "$compile_custom_kernels"
+  if ! ensure_ascend_build_python_packages "$repo_path" "$compile_custom_kernels"; then
+    log "Warning: failed to prepare Ascend build Python dependencies for '$repo_path'"
+    return "$rc_build_python_packages"
+  fi
   patch_triton_ascend_for_cann9
-  ensure_ascend_runtime_python_packages "$repo_path"
+  if ! ensure_ascend_runtime_python_packages "$repo_path"; then
+    log "Warning: failed to prepare Ascend runtime Python dependencies for '$repo_path'"
+    return "$rc_runtime_python_packages"
+  fi
 
   if [[ "$compile_custom_kernels" != "0" ]]; then
-    ensure_ascend_catlass_submodule_ready "$repo_path"
+    if ! ensure_ascend_catlass_submodule_ready "$repo_path"; then
+      log "Warning: failed to initialize Ascend submodule(s) for '$repo_path'"
+      return "$rc_catlass_submodule"
+    fi
   fi
 
   build_ld_library_path="$(sanitize_ld_library_path_for_system_tools "${LD_LIBRARY_PATH:-}")"
@@ -865,17 +880,20 @@ install_ascend_repo_into_env() {
     log "Using Ascend custom-kernel mode: COMPILE_CUSTOM_KERNELS=$compile_custom_kernels"
   fi
 
-  run_with_heartbeat \
+  if ! run_with_heartbeat \
     "installing editable package from $repo_path" \
     run_pip_install_in_env "$ENV_NAME" \
       "COMPILE_CUSTOM_KERNELS=$compile_custom_kernels" \
       "TORCH_DEVICE_BACKEND_AUTOLOAD=0" \
       "LD_LIBRARY_PATH=$build_ld_library_path" \
-      -- "${pip_args[@]}"
+      -- "${pip_args[@]}"; then
+    log "Warning: editable Ascend install failed for '$repo_path' (COMPILE_CUSTOM_KERNELS=$compile_custom_kernels)"
+    return "$rc_editable_install"
+  fi
 
   if ! validate_ascend_platform_plugin_in_env "$ENV_NAME"; then
     log "Warning: Ascend platform plugin entry point validation failed in '$ENV_NAME'"
-    return 13
+    return "$rc_plugin_validation"
   fi
 
   log "Verified Ascend platform plugin entry point in '$ENV_NAME'"
@@ -896,7 +914,7 @@ install_ascend_repo_into_env() {
   fi
 
   log "Warning: Ascend custom op validation is still failing in '$ENV_NAME'"
-  return 12
+  return "$rc_custom_op_validation"
 }
 
 ensure_ascend_runtime_python_packages() {
@@ -1744,13 +1762,18 @@ install_editable_repo_into_env() {
       return 0
     fi
 
+    local ascend_install_rc=$?
     if [[ "$compile_custom_kernels" != "0" ]] && ! ascend_compile_custom_kernels_configured_explicitly; then
-      log "Ascend custom-kernel install failed in auto mode; falling back to lightweight plugin mode"
-      install_ascend_repo_into_env "$repo_path" "0"
-      return $?
+      case "$ascend_install_rc" in
+        23|25)
+          log "Ascend custom-kernel install failed in auto mode; falling back to lightweight plugin mode"
+          install_ascend_repo_into_env "$repo_path" "0"
+          return $?
+          ;;
+      esac
     fi
 
-    return 12
+    return "$ascend_install_rc"
   fi
 
   local pip_env=()

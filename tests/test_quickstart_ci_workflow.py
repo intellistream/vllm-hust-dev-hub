@@ -128,6 +128,24 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         self.assertIn("VLLM_TARGET_DEVICE=empty", script_text)
         self.assertIn("VLLM_USE_PRECOMPILED=0", script_text)
 
+    def test_quickstart_fail_fast_gates_ascend_fallback(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        self.assertIn('local rc_build_python_packages=20', script_text)
+        self.assertIn('local rc_runtime_python_packages=21', script_text)
+        self.assertIn('local rc_catlass_submodule=22', script_text)
+        self.assertIn('local rc_editable_install=23', script_text)
+        self.assertIn('local rc_plugin_validation=24', script_text)
+        self.assertIn('local rc_custom_op_validation=25', script_text)
+        self.assertIn('if ! ensure_ascend_build_python_packages "$repo_path" "$compile_custom_kernels"; then', script_text)
+        self.assertIn('if ! ensure_ascend_runtime_python_packages "$repo_path"; then', script_text)
+        self.assertIn('if ! ensure_ascend_catlass_submodule_ready "$repo_path"; then', script_text)
+        self.assertIn('if ! run_with_heartbeat \\', script_text)
+        self.assertIn('local ascend_install_rc=$?', script_text)
+        self.assertIn('case "$ascend_install_rc" in', script_text)
+        self.assertIn('23|25)', script_text)
+        self.assertIn('return "$ascend_install_rc"', script_text)
+
     def test_quickstart_reads_setup_py_variable_backed_project_name(self) -> None:
         synthetic_setup_py = (
             'PROJECT_NAME = "my-test-project"\n'
