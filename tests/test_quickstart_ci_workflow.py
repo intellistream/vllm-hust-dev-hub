@@ -127,6 +127,7 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         self.assertIn('pip_args=(--no-build-isolation "${pip_args[@]}")', script_text)
         self.assertIn("VLLM_TARGET_DEVICE=empty", script_text)
         self.assertIn("VLLM_USE_PRECOMPILED=0", script_text)
+        self.assertIn("TORCH_DEVICE_BACKEND_AUTOLOAD=0", script_text)
 
     def test_quickstart_fail_fast_gates_ascend_fallback(self) -> None:
         script_text = QUICKSTART_SCRIPT_PATH.read_text()

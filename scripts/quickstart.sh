@@ -1782,7 +1782,14 @@ install_editable_repo_into_env() {
     # Build vllm-hust from source with no CUDA/HIP C extensions.
     # VLLM_USE_PRECOMPILED=0 prevents setup.py from trying to download
     # CUDA-only prebuilt wheels from wheels.vllm.ai (not available for Ascend/aarch64).
-    pip_env+=("VLLM_TARGET_DEVICE=empty" "VLLM_USE_PRECOMPILED=0")
+    # Disable backend entrypoint auto-loading while generating editable
+    # metadata; otherwise torch imports can eagerly pull in torch_npu and fail
+    # on missing Ascend runtime libs such as libhccl.so before runtime setup.
+    pip_env+=(
+      "VLLM_TARGET_DEVICE=empty"
+      "VLLM_USE_PRECOMPILED=0"
+      "TORCH_DEVICE_BACKEND_AUTOLOAD=0"
+    )
     # Reuse the current conda env for editable metadata/build hooks instead of
     # letting pip create an isolated env that re-resolves torch/CUDA build deps.
     ensure_vllm_hust_editable_build_python_packages "$repo_path"
