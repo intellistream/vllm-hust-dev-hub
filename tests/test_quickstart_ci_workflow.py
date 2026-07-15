@@ -147,6 +147,18 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         self.assertIn('23|25)', script_text)
         self.assertIn('return "$ascend_install_rc"', script_text)
 
+    def test_quickstart_repairs_stale_ascend_cmake_generator_cache(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        self.assertIn('resolve_ascend_expected_cmake_generator() {', script_text)
+        self.assertIn('repair_ascend_cmake_generator_cache() {', script_text)
+        self.assertIn('local cache_file="$build_dir/CMakeCache.txt"', script_text)
+        self.assertIn("printf 'Ninja\\n'", script_text)
+        self.assertIn('Detected stale Ascend CMake generator cache', script_text)
+        self.assertIn('rm -f -- "$cache_file" "$build_dir/Makefile" "$build_dir/build.ninja" "$build_dir/cmake_install.cmake"', script_text)
+        self.assertIn('rm -rf -- "$cmake_files_dir"', script_text)
+        self.assertIn('repair_ascend_cmake_generator_cache "$repo_path"', script_text)
+
     def test_quickstart_reads_setup_py_variable_backed_project_name(self) -> None:
         synthetic_setup_py = (
             'PROJECT_NAME = "my-test-project"\n'

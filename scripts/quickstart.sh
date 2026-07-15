@@ -706,6 +706,46 @@ ensure_ascend_catlass_submodule_ready() {
     git -C "$repo_path" submodule update --init --recursive "$submodule_relative_path"
 }
 
+resolve_ascend_expected_cmake_generator() {
+  local use_ninja_lower=""
+
+  use_ninja_lower="$(printf '%s' "${USE_NINJA:-${VLLM_ASCEND_USE_NINJA:-auto}}" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$use_ninja_lower" == "0" || "$use_ninja_lower" == "false" || "$use_ninja_lower" == "off" || "$use_ninja_lower" == "no" ]]; then
+    return 0
+  fi
+
+  if command -v ninja >/dev/null 2>&1; then
+    printf 'Ninja\n'
+  fi
+}
+
+repair_ascend_cmake_generator_cache() {
+  local repo_path="$1"
+  local build_dir="$repo_path/csrc/build"
+  local cache_file="$build_dir/CMakeCache.txt"
+  local cmake_files_dir="$build_dir/CMakeFiles"
+  local cached_generator=""
+  local expected_generator=""
+
+  if [[ ! -f "$cache_file" ]]; then
+    return 0
+  fi
+
+  cached_generator="$(awk -F= '
+    /^CMAKE_GENERATOR:INTERNAL=/ { print $2; exit }
+    /^CMAKE_GENERATOR:STRING=/ { print $2; exit }
+  ' "$cache_file" 2>/dev/null || true)"
+  expected_generator="$(resolve_ascend_expected_cmake_generator || true)"
+
+  if [[ -z "$cached_generator" || -z "$expected_generator" || "$cached_generator" == "$expected_generator" ]]; then
+    return 0
+  fi
+
+  log "Detected stale Ascend CMake generator cache in '$build_dir' (cached=$cached_generator, expected=$expected_generator); clearing generator metadata"
+  rm -f -- "$cache_file" "$build_dir/Makefile" "$build_dir/build.ninja" "$build_dir/cmake_install.cmake"
+  rm -rf -- "$cmake_files_dir"
+}
+
 validate_ascend_custom_op_in_env() {
   local env_name="$1"
 
@@ -866,6 +906,8 @@ install_ascend_repo_into_env() {
       log "Warning: failed to initialize Ascend submodule(s) for '$repo_path'"
       return "$rc_catlass_submodule"
     fi
+
+    repair_ascend_cmake_generator_cache "$repo_path"
   fi
 
   build_ld_library_path="$(sanitize_ld_library_path_for_system_tools "${LD_LIBRARY_PATH:-}")"
