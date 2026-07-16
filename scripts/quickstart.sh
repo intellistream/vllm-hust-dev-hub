@@ -19,10 +19,24 @@ detect_cann_major_version() {
   local candidates=(
     "${ASCEND_HOME_PATH:-}/version.info"
     "${ASCEND_HOME_PATH:-}/runtime/version.info"
+    "${ASCEND_HOME_PATH:-}/compiler/version.info"
+    "${ASCEND_HOME_PATH:-}/opp/version.info"
+    "/usr/local/Ascend/cann/version.info"
+    "/usr/local/Ascend/cann/runtime/version.info"
+    "/usr/local/Ascend/cann/compiler/version.info"
+    "/usr/local/Ascend/cann/opp/version.info"
+    "/usr/local/Ascend/cann-9.0.0/version.info"
+    "/usr/local/Ascend/cann-9.0.0/runtime/version.info"
+    "/usr/local/Ascend/cann-9.0.0/compiler/version.info"
+    "/usr/local/Ascend/cann-9.0.0/opp/version.info"
     "/usr/local/Ascend/ascend-toolkit/latest/version.info"
     "/usr/local/Ascend/ascend-toolkit/latest/runtime/version.info"
+    "/usr/local/Ascend/ascend-toolkit/latest/compiler/version.info"
+    "/usr/local/Ascend/ascend-toolkit/latest/opp/version.info"
     "${CONDA_PREFIX:-}/Ascend/cann/version.info"
     "${CONDA_PREFIX:-}/Ascend/cann/runtime/version.info"
+    "${CONDA_PREFIX:-}/Ascend/cann/compiler/version.info"
+    "${CONDA_PREFIX:-}/Ascend/cann/opp/version.info"
   )
   local f ver major
   for f in "${candidates[@]}"; do
@@ -60,6 +74,10 @@ MANAGER_MANIFEST_DEFAULT="$(resolve_default_manifest)"
 ENV_NAME="vllm-hust-dev"
 PYTHON_VERSION="3.11"
 AUTO_YES=0
+PERF_TIMESTAMPS="${HUST_DEV_HUB_PERF_TIMESTAMPS:-0}"
+PERF_SUMMARY_LIMIT="${HUST_DEV_HUB_PERF_SUMMARY_LIMIT:-10}"
+PERF_SUMMARY_PRINTED=0
+declare -a PERF_SUMMARY_ENTRIES=()
 DO_CLONE=0
 DO_CONDA=0
 DO_INSTALL=0
@@ -127,6 +145,7 @@ print_help() {
   --env-name NAME          conda 环境名 (默认: vllm-hust-dev)。
   --python VERSION         conda 环境 Python 版本 (默认: 3.11)。
   --update-bashrc          更新 ~/.bashrc，在新交互 shell 自动激活 conda 环境。
+  --perf-timestamps       为关键步骤开始阶段打印时间戳，用于性能分析（默认关闭）。
   -y, --yes                非交互模式；容器公钥可通过 VLLM_HUST_CONTAINER_PUBKEY 传入。
   -h, --help               显示本帮助。
 
@@ -137,6 +156,86 @@ EOF
 
 log() {
   printf '[quickstart] %s\n' "$1"
+}
+
+log_perf_step_start() {
+  local description="$1"
+  local timestamp=""
+
+  if [[ "$PERF_TIMESTAMPS" != "1" ]]; then
+    return 0
+  fi
+
+  timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+  printf '[quickstart][perf][%s] start: %s\n' "$timestamp" "$description"
+}
+
+log_perf_step_end() {
+  local description="$1"
+  local start_epoch="$2"
+  local exit_code="${3:-0}"
+  local timestamp=""
+  local end_epoch=""
+  local duration=""
+  local status="ok"
+
+  if [[ "$PERF_TIMESTAMPS" != "1" ]]; then
+    return 0
+  fi
+
+  timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+  end_epoch="$(date +%s)"
+  duration=$(( end_epoch - start_epoch ))
+  if [[ "$exit_code" != "0" ]]; then
+    status="failed($exit_code)"
+  fi
+  PERF_SUMMARY_ENTRIES+=("${duration}|${status}|${description}")
+  printf '[quickstart][perf][%s] end: %s | duration=%ss | status=%s\n' \
+    "$timestamp" "$description" "$duration" "$status"
+}
+
+print_perf_summary() {
+  local limit="$PERF_SUMMARY_LIMIT"
+  local sorted_entries=""
+  local line=""
+  local duration=""
+  local status=""
+  local description=""
+
+  if [[ "$PERF_TIMESTAMPS" != "1" ]]; then
+    return 0
+  fi
+
+  if (( PERF_SUMMARY_PRINTED == 1 )); then
+    return 0
+  fi
+
+  PERF_SUMMARY_PRINTED=1
+
+  if (( ${#PERF_SUMMARY_ENTRIES[@]} == 0 )); then
+    printf '[quickstart][perf] summary: no recorded timed steps\n'
+    return 0
+  fi
+
+  if [[ ! "$limit" =~ ^[0-9]+$ ]] || (( limit <= 0 )); then
+    limit=10
+  fi
+
+  printf '[quickstart][perf] summary: top %s slowest recorded steps\n' "$limit"
+  sorted_entries="$(printf '%s\n' "${PERF_SUMMARY_ENTRIES[@]}" | sort -t'|' -k1,1nr | head -n "$limit")"
+  while IFS='|' read -r duration status description; do
+    if [[ -z "$duration" && -z "$status" && -z "$description" ]]; then
+      continue
+    fi
+    printf '[quickstart][perf] %ss | %s | %s\n' "$duration" "$status" "$description"
+  done <<< "$sorted_entries"
+}
+
+print_perf_summary_on_exit() {
+  local exit_code="$?"
+
+  print_perf_summary
+  return "$exit_code"
 }
 
 # Install system-level build tools required for compiling C/C++ extensions
@@ -361,12 +460,16 @@ run_conda_env_cmd() {
   local env_name="$1"
   shift
   local env_prefix=""
+  local runtime_ld_library_path=""
   local wrapped_cmd=("$@")
 
   detect_conda_run_stream_flag
   env_prefix="$(get_conda_env_prefix "$env_name")"
-  if [[ -n "$env_prefix" && -d "$env_prefix/lib" ]]; then
-    wrapped_cmd=(env "LD_LIBRARY_PATH=$env_prefix/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" "$@")
+  runtime_ld_library_path="$(build_runtime_ld_library_path_for_env "$env_name" || true)"
+  if [[ -n "$runtime_ld_library_path" ]]; then
+    wrapped_cmd=(env "LD_LIBRARY_PATH=$runtime_ld_library_path" "$@")
+  elif [[ -n "$env_prefix" && -d "$env_prefix/lib" ]]; then
+    wrapped_cmd=(env "LD_LIBRARY_PATH=$env_prefix/lib" "$@")
   fi
 
   if [[ -n "$CONDA_RUN_STREAM_FLAG" ]]; then
@@ -376,29 +479,134 @@ run_conda_env_cmd() {
   fi
 }
 
+build_runtime_ld_library_path_for_env() {
+  local env_name="$1"
+  local env_prefix=""
+  local raw_ld_library_path="${LD_LIBRARY_PATH:-}"
+  local path_entries=()
+  local prepend_entries=()
+  local filtered_entries=()
+  local combined_entries=()
+  local entry
+  local env_python_bin=""
+  local torch_lib=""
+  local torch_npu_lib=""
+  local seen_entries=""
+
+  env_prefix="$(get_conda_env_prefix "$env_name" 2>/dev/null || true)"
+  if [[ -z "$env_prefix" || ! -d "$env_prefix" ]]; then
+    return 0
+  fi
+
+  prepend_entries+=("$env_prefix/lib")
+
+  env_python_bin="$(get_conda_env_python_bin "$env_name" 2>/dev/null || true)"
+  if [[ -n "$env_python_bin" && -x "$env_python_bin" ]]; then
+    torch_lib="$("$env_python_bin" - <<'PY' 2>/dev/null || true
+import importlib.util
+import os
+
+spec = importlib.util.find_spec("torch")
+if spec and spec.origin:
+    print(os.path.join(os.path.dirname(spec.origin), "lib"))
+PY
+)"
+    torch_npu_lib="$("$env_python_bin" - <<'PY' 2>/dev/null || true
+import importlib.util
+import os
+
+spec = importlib.util.find_spec("torch_npu")
+if spec and spec.origin:
+    print(os.path.join(os.path.dirname(spec.origin), "lib"))
+PY
+)"
+  fi
+
+  if [[ -n "$torch_lib" && -d "$torch_lib" ]]; then
+    prepend_entries+=("$torch_lib")
+  fi
+  if [[ -n "$torch_npu_lib" && -d "$torch_npu_lib" ]]; then
+    prepend_entries+=("$torch_npu_lib")
+  fi
+
+  if [[ -n "$raw_ld_library_path" ]]; then
+    IFS=':' read -r -a path_entries <<< "$raw_ld_library_path"
+    for entry in "${path_entries[@]}"; do
+      if [[ -z "$entry" ]]; then
+        continue
+      fi
+
+      case "$entry" in
+        "$env_prefix"|"$env_prefix"/*)
+          continue
+          ;;
+        */envs/*/lib/python*/site-packages/torch/lib|*/envs/*/lib/python*/site-packages/torch_npu/lib|*/envs/*/lib)
+          continue
+          ;;
+      esac
+
+      filtered_entries+=("$entry")
+    done
+  fi
+
+  combined_entries=("${prepend_entries[@]}" "${filtered_entries[@]}")
+  filtered_entries=()
+  for entry in "${combined_entries[@]}"; do
+    if [[ -z "$entry" || ! -d "$entry" ]]; then
+      continue
+    fi
+    case ":$seen_entries:" in
+      *":$entry:"*)
+        continue
+        ;;
+    esac
+    filtered_entries+=("$entry")
+    if [[ -z "$seen_entries" ]]; then
+      seen_entries="$entry"
+    else
+      seen_entries="${seen_entries}:$entry"
+    fi
+  done
+
+  if (( ${#filtered_entries[@]} == 0 )); then
+    return 0
+  fi
+
+  printf '%s\n' "$(IFS=':'; printf '%s' "${filtered_entries[*]}")"
+}
+
 run_with_heartbeat() {
   local description="$1"
   shift
   local pid
   local heartbeat_pid
+  local start_epoch
+  local exit_code
 
+  start_epoch="$(date +%s)"
+  log_perf_step_start "$description"
   "$@" &
   pid=$!
 
   (
+    local now_epoch
+    local elapsed
     while kill -0 "$pid" >/dev/null 2>&1; do
       sleep 30
       if kill -0 "$pid" >/dev/null 2>&1; then
-        log "Still running: $description"
+        now_epoch="$(date +%s)"
+        elapsed=$(( now_epoch - start_epoch ))
+        log "Still running: $description (elapsed=${elapsed}s)"
       fi
     done
   ) &
   heartbeat_pid=$!
 
   wait "$pid"
-  local exit_code=$?
+  exit_code=$?
   kill "$heartbeat_pid" >/dev/null 2>&1 || true
   wait "$heartbeat_pid" >/dev/null 2>&1 || true
+  log_perf_step_end "$description" "$start_epoch" "$exit_code"
   return "$exit_code"
 }
 
@@ -553,13 +761,24 @@ ensure_ascend_build_python_packages() {
   local compile_custom_kernels="$2"
   local pybind11_spec
   local triton_ascend_spec
+  local bootstrap_specs=(
+    "setuptools-scm>=8"
+  )
+  local companion_specs=(
+    "decorator==5.1.1"
+    "scipy==1.13.1"
+  )
+  local batch_specs=()
+  local package_spec
+  local missing_batch_specs=()
 
-  ensure_pip_package_in_env "$ENV_NAME" "setuptools-scm>=8"
-  ensure_pip_package_in_env "$ENV_NAME" "decorator"
-  ensure_pip_package_in_env "$ENV_NAME" "scipy"
+  for package_spec in "${bootstrap_specs[@]}"; do
+    ensure_pip_package_in_env "$ENV_NAME" "$package_spec"
+  done
 
   triton_ascend_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "triton-ascend" || true)"
-  ensure_pip_package_in_env "$ENV_NAME" "${triton_ascend_spec:-triton-ascend}"
+  batch_specs+=("${triton_ascend_spec:-triton-ascend}")
+  batch_specs+=("${companion_specs[@]}")
 
   # pybind11 is a runtime dependency of triton-ascend's Ascend backend
   # (triton.backends.ascend.utils imports pybind11 at module load time).
@@ -568,15 +787,25 @@ ensure_ascend_build_python_packages() {
   # the fused qkv_rmsnorm_rope op. Must be installed unconditionally
   # regardless of whether we're compiling custom C++ kernels.
   pybind11_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "pybind11" || true)"
-  ensure_pip_package_in_env "$ENV_NAME" "${pybind11_spec:-pybind11}"
+  batch_specs+=("${pybind11_spec:-pybind11}")
 
   if [[ "$compile_custom_kernels" == "0" ]]; then
+    :
+  else
+    batch_specs+=("cmake" "nanobind>=2.4")
+  fi
+
+  mapfile -t missing_batch_specs < <(list_missing_pip_requirements_in_env "$ENV_NAME" "${batch_specs[@]}" || true)
+
+  if (( ${#missing_batch_specs[@]} == 0 )); then
+    log "Ascend build Python dependencies already satisfied in '$ENV_NAME'"
     return 0
   fi
 
-  ensure_pip_package_in_env "$ENV_NAME" "cmake"
-  # nanobind is required for building triton from source (triton-ascend-hust)
-  ensure_pip_package_in_env "$ENV_NAME" "nanobind>=2.4"
+  log "Installing missing or incompatible Ascend build Python dependencies into '$ENV_NAME': ${missing_batch_specs[*]}"
+  run_with_heartbeat \
+    "installing Ascend build Python dependencies into $ENV_NAME" \
+    run_pip_install_in_env "$ENV_NAME" -- "${missing_batch_specs[@]}"
 }
 
 # Patch triton-ascend's JIT-compiled npu_utils.cpp for CANN 9.0.0+ compatibility.
@@ -643,10 +872,8 @@ read_requirement_spec_from_requirements_file() {
   ' "$requirements_file"
 }
 
-list_requirement_specs_from_requirements_file() {
-  local repo_path="$1"
-  local requirements_file="$repo_path/requirements.txt"
-
+list_requirement_specs_from_file() {
+  local requirements_file="$1"
   if [[ ! -f "$requirements_file" ]]; then
     return 1
   fi
@@ -663,6 +890,12 @@ list_requirement_specs_from_requirements_file() {
       print line
     }
   ' "$requirements_file"
+}
+
+list_requirement_specs_from_requirements_file() {
+  local repo_path="$1"
+
+  list_requirement_specs_from_file "$repo_path/requirements.txt"
 }
 
 requirement_name_from_spec() {
@@ -706,6 +939,46 @@ ensure_ascend_catlass_submodule_ready() {
     git -C "$repo_path" submodule update --init --recursive "$submodule_relative_path"
 }
 
+resolve_ascend_expected_cmake_generator() {
+  local use_ninja_lower=""
+
+  use_ninja_lower="$(printf '%s' "${USE_NINJA:-${VLLM_ASCEND_USE_NINJA:-auto}}" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$use_ninja_lower" == "0" || "$use_ninja_lower" == "false" || "$use_ninja_lower" == "off" || "$use_ninja_lower" == "no" ]]; then
+    return 0
+  fi
+
+  if command -v ninja >/dev/null 2>&1; then
+    printf 'Ninja\n'
+  fi
+}
+
+repair_ascend_cmake_generator_cache() {
+  local repo_path="$1"
+  local build_dir="$repo_path/csrc/build"
+  local cache_file="$build_dir/CMakeCache.txt"
+  local cmake_files_dir="$build_dir/CMakeFiles"
+  local cached_generator=""
+  local expected_generator=""
+
+  if [[ ! -f "$cache_file" ]]; then
+    return 0
+  fi
+
+  cached_generator="$(awk -F= '
+    /^CMAKE_GENERATOR:INTERNAL=/ { print $2; exit }
+    /^CMAKE_GENERATOR:STRING=/ { print $2; exit }
+  ' "$cache_file" 2>/dev/null || true)"
+  expected_generator="$(resolve_ascend_expected_cmake_generator || true)"
+
+  if [[ -z "$cached_generator" || -z "$expected_generator" || "$cached_generator" == "$expected_generator" ]]; then
+    return 0
+  fi
+
+  log "Detected stale Ascend CMake generator cache in '$build_dir' (cached=$cached_generator, expected=$expected_generator); clearing generator metadata"
+  rm -f -- "$cache_file" "$build_dir/Makefile" "$build_dir/build.ninja" "$build_dir/cmake_install.cmake"
+  rm -rf -- "$cmake_files_dir"
+}
+
 validate_ascend_custom_op_in_env() {
   local env_name="$1"
 
@@ -723,6 +996,23 @@ validate_torch_npu_runtime_in_env() {
   run_conda_env_cmd "$env_name" env TORCH_DEVICE_BACKEND_AUTOLOAD=0 python - >/dev/null 2>&1 <<'PY'
 import torch  # noqa: F401
 import torch_npu  # noqa: F401
+PY
+}
+
+log_torch_npu_runtime_validation_failure_details() {
+  local env_name="$1"
+  local stage_label="${2:-runtime validation}"
+
+  log "Detailed torch/torch-npu runtime validation traceback for '$env_name' ($stage_label):"
+  run_conda_env_cmd "$env_name" env TORCH_DEVICE_BACKEND_AUTOLOAD=0 python - <<'PY'
+import traceback
+
+try:
+    import torch  # noqa: F401
+    import torch_npu  # noqa: F401
+except Exception:
+    traceback.print_exc()
+    raise SystemExit(1)
 PY
 }
 
@@ -755,6 +1045,11 @@ PY
 force_reinstall_ascend_python_stack_in_env() {
   local env_name="$1"
   local stack_specs=()
+  local runtime_support_specs=(
+    "decorator"
+    "scipy"
+  )
+  local package_spec
 
   remove_conflicting_conda_torch_packages_in_env "$env_name"
 
@@ -767,6 +1062,11 @@ force_reinstall_ascend_python_stack_in_env() {
   run_with_heartbeat \
     "force reinstalling Ascend Python stack in $env_name" \
     run_pip_install_in_env "$env_name" -- --upgrade --ignore-installed "${stack_specs[@]}"
+
+  log "Reinstalling Ascend runtime support Python dependencies in '$env_name': ${runtime_support_specs[*]}"
+  for package_spec in "${runtime_support_specs[@]}"; do
+    ensure_pip_package_in_env "$env_name" "$package_spec"
+  done
 }
 
 ensure_ascend_torch_runtime_healthy() {
@@ -775,6 +1075,8 @@ ensure_ascend_torch_runtime_healthy() {
   if validate_torch_npu_runtime_in_env "$env_name"; then
     return 0
   fi
+
+  log_torch_npu_runtime_validation_failure_details "$env_name" "initial validation failure" || true
 
   if should_reconcile_ascend_runtime; then
     log "Torch/torch-npu runtime import validation failed in '$env_name'; re-running Ascend Python stack reconciliation"
@@ -789,6 +1091,7 @@ ensure_ascend_torch_runtime_healthy() {
     return 0
   fi
 
+  log_torch_npu_runtime_validation_failure_details "$env_name" "post-reinstall validation failure" || true
   log "Warning: torch/torch-npu runtime import validation is still failing in '$env_name'"
   return 1
 }
@@ -844,13 +1147,30 @@ install_ascend_repo_into_env() {
   local compile_custom_kernels="$2"
   local pip_args=(-v --no-build-isolation --no-deps -e "$repo_path")
   local build_ld_library_path
+  local rc_build_python_packages=20
+  local rc_runtime_python_packages=21
+  local rc_catlass_submodule=22
+  local rc_editable_install=23
+  local rc_plugin_validation=24
+  local rc_custom_op_validation=25
 
-  ensure_ascend_build_python_packages "$repo_path" "$compile_custom_kernels"
+  if ! ensure_ascend_build_python_packages "$repo_path" "$compile_custom_kernels"; then
+    log "Warning: failed to prepare Ascend build Python dependencies for '$repo_path'"
+    return "$rc_build_python_packages"
+  fi
   patch_triton_ascend_for_cann9
-  ensure_ascend_runtime_python_packages "$repo_path"
+  if ! ensure_ascend_runtime_python_packages "$repo_path"; then
+    log "Warning: failed to prepare Ascend runtime Python dependencies for '$repo_path'"
+    return "$rc_runtime_python_packages"
+  fi
 
   if [[ "$compile_custom_kernels" != "0" ]]; then
-    ensure_ascend_catlass_submodule_ready "$repo_path"
+    if ! ensure_ascend_catlass_submodule_ready "$repo_path"; then
+      log "Warning: failed to initialize Ascend submodule(s) for '$repo_path'"
+      return "$rc_catlass_submodule"
+    fi
+
+    repair_ascend_cmake_generator_cache "$repo_path"
   fi
 
   build_ld_library_path="$(sanitize_ld_library_path_for_system_tools "${LD_LIBRARY_PATH:-}")"
@@ -865,17 +1185,20 @@ install_ascend_repo_into_env() {
     log "Using Ascend custom-kernel mode: COMPILE_CUSTOM_KERNELS=$compile_custom_kernels"
   fi
 
-  run_with_heartbeat \
+  if ! run_with_heartbeat \
     "installing editable package from $repo_path" \
     run_pip_install_in_env "$ENV_NAME" \
       "COMPILE_CUSTOM_KERNELS=$compile_custom_kernels" \
       "TORCH_DEVICE_BACKEND_AUTOLOAD=0" \
       "LD_LIBRARY_PATH=$build_ld_library_path" \
-      -- "${pip_args[@]}"
+      -- "${pip_args[@]}"; then
+    log "Warning: editable Ascend install failed for '$repo_path' (COMPILE_CUSTOM_KERNELS=$compile_custom_kernels)"
+    return "$rc_editable_install"
+  fi
 
   if ! validate_ascend_platform_plugin_in_env "$ENV_NAME"; then
     log "Warning: Ascend platform plugin entry point validation failed in '$ENV_NAME'"
-    return 13
+    return "$rc_plugin_validation"
   fi
 
   log "Verified Ascend platform plugin entry point in '$ENV_NAME'"
@@ -896,7 +1219,7 @@ install_ascend_repo_into_env() {
   fi
 
   log "Warning: Ascend custom op validation is still failing in '$ENV_NAME'"
-  return 12
+  return "$rc_custom_op_validation"
 }
 
 ensure_ascend_runtime_python_packages() {
@@ -904,6 +1227,7 @@ ensure_ascend_runtime_python_packages() {
   local requirement_specs=()
   local missing_requirement_specs=()
   local requirement_spec
+  local required_specs=()
 
   mapfile -t requirement_specs < <(list_requirement_specs_from_requirements_file "$repo_path" || true)
   if (( ${#requirement_specs[@]} == 0 )); then
@@ -914,11 +1238,14 @@ ensure_ascend_runtime_python_packages() {
     if ascend_runtime_requirement_is_optional_for_quickstart "$requirement_spec"; then
       continue
     fi
-
-    if ! pip_requirement_satisfied_in_env "$ENV_NAME" "$requirement_spec"; then
-      missing_requirement_specs+=("$requirement_spec")
-    fi
+    required_specs+=("$requirement_spec")
   done
+
+  if (( ${#required_specs[@]} == 0 )); then
+    return 0
+  fi
+
+  mapfile -t missing_requirement_specs < <(list_missing_pip_requirements_in_env "$ENV_NAME" "${required_specs[@]}" || true)
 
   if (( ${#missing_requirement_specs[@]} == 0 )); then
     return 0
@@ -1273,22 +1600,39 @@ ensure_conda_available() {
 }
 
 clone_repositories() {
+  local perf_description="clone workspace repositories"
+  local perf_start_epoch=""
+  local exit_code=0
+
+  perf_start_epoch="$(date +%s)"
   if [[ ! -f "$CLONE_SCRIPT" ]]; then
     log "clone script not found: $CLONE_SCRIPT"
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 2
     return 2
   fi
+  log_perf_step_start "$perf_description"
   log "Cloning workspace repositories..."
   if (( AUTO_YES == 1 )); then
-    bash "$CLONE_SCRIPT" --yes
+    if ! bash "$CLONE_SCRIPT" --yes; then
+      exit_code=$?
+      log_perf_step_end "$perf_description" "$perf_start_epoch" "$exit_code"
+      return "$exit_code"
+    fi
     if [[ -d "$WORKSPACE_ROOT/vllm-hust-org-profile" ]]; then
       log "Organization profile repo is available at $WORKSPACE_ROOT/vllm-hust-org-profile (special repo: vLLM-HUST/.github)."
     fi
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
-  bash "$CLONE_SCRIPT"
+  if ! bash "$CLONE_SCRIPT"; then
+    exit_code=$?
+    log_perf_step_end "$perf_description" "$perf_start_epoch" "$exit_code"
+    return "$exit_code"
+  fi
   if [[ -d "$WORKSPACE_ROOT/vllm-hust-org-profile" ]]; then
     log "Organization profile repo is available at $WORKSPACE_ROOT/vllm-hust-org-profile (special repo: vLLM-HUST/.github)."
   fi
+  log_perf_step_end "$perf_description" "$perf_start_epoch" 0
 }
 
 conda_env_exists() {
@@ -1445,15 +1789,23 @@ accept_conda_tos_if_needed() {
 }
 
 create_or_update_conda_env() {
+  local perf_description=""
+  local perf_start_epoch=""
   ensure_conda_available
   ensure_system_build_packages
 
   if conda_env_exists; then
+    perf_description="update conda environment $ENV_NAME"
+    perf_start_epoch="$(date +%s)"
+    log_perf_step_start "$perf_description"
     log "Conda env '$ENV_NAME' already exists. Updating core tools..."
     reconcile_conda_env_python_version
     ensure_hust_ascend_manager_bootstrap_in_env
   else
     accept_conda_tos_if_needed
+    perf_description="create conda environment $ENV_NAME"
+    perf_start_epoch="$(date +%s)"
+    log_perf_step_start "$perf_description"
     log "Creating conda env '$ENV_NAME' (python=$PYTHON_VERSION)..."
     log "Using explicit channels for env creation:"
     log "  - $CONDA_ASCEND_CHANNEL"
@@ -1481,6 +1833,11 @@ create_or_update_conda_env() {
     run_pip_install_in_env "$ENV_NAME" -- pytest pre-commit
 
   install_workspace_repos_into_env "refresh" "$INSTALL_SCOPE" "with-runtime-reconcile"
+  local install_rc=$?
+  if [[ "$install_rc" -ne 0 ]]; then
+    log "Conda env '$ENV_NAME' setup stopped because repository installation failed (rc=$install_rc)"
+    return "$install_rc"
+  fi
   report_vllm_cli_status "$ENV_NAME" || true
 
   configure_bashrc_conda_init
@@ -1488,6 +1845,9 @@ create_or_update_conda_env() {
 
   log "Conda env ready: $ENV_NAME"
   log "Activate with: conda activate $ENV_NAME"
+  if [[ -n "$perf_description" && -n "$perf_start_epoch" ]]; then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
+  fi
 }
 
 read_project_name_from_pyproject() {
@@ -1659,6 +2019,9 @@ except ImportError:
 
 requirement = Requirement(sys.argv[1])
 
+if requirement.marker and not requirement.marker.evaluate():
+    raise SystemExit(0)
+
 try:
     installed_version = version(requirement.name)
 except PackageNotFoundError:
@@ -1668,6 +2031,41 @@ if requirement.specifier and not requirement.specifier.contains(installed_versio
     raise SystemExit(1)
 
 raise SystemExit(0)
+PY
+}
+
+list_missing_pip_requirements_in_env() {
+  local env_name="$1"
+  shift
+  local requirement_specs=("$@")
+
+  if (( ${#requirement_specs[@]} == 0 )); then
+    return 0
+  fi
+
+  run_conda_env_cmd "$env_name" python - "${requirement_specs[@]}" <<'PY'
+import sys
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    from packaging.requirements import Requirement
+except ImportError:
+    raise SystemExit(1)
+
+for raw_spec in sys.argv[1:]:
+    requirement = Requirement(raw_spec)
+
+    if requirement.marker and not requirement.marker.evaluate():
+        continue
+
+    try:
+        installed_version = version(requirement.name)
+    except PackageNotFoundError:
+        print(raw_spec)
+        continue
+
+    if requirement.specifier and not requirement.specifier.contains(installed_version, prereleases=True):
+        print(raw_spec)
 PY
 }
 
@@ -1691,6 +2089,8 @@ ensure_vllm_hust_editable_build_python_packages() {
   local repo_path="$1"
   local package_name
   local package_spec
+  local build_package_specs=()
+  local missing_package_specs=()
   local build_packages=(
     cmake
     ninja
@@ -1707,8 +2107,50 @@ ensure_vllm_hust_editable_build_python_packages() {
     if [[ -z "$package_spec" ]]; then
       package_spec="$package_name"
     fi
+    build_package_specs+=("$package_spec")
+  done
+
+  log "Checking vllm-hust editable build requirements in '$ENV_NAME' (${#build_package_specs[@]} packages)"
+  mapfile -t missing_package_specs < <(list_missing_pip_requirements_in_env "$ENV_NAME" "${build_package_specs[@]}" || true)
+
+  if (( ${#missing_package_specs[@]} == 0 )); then
+    log "vllm-hust editable build requirements already satisfied in '$ENV_NAME'"
+    return 0
+  fi
+
+  log "Missing vllm-hust editable build requirements: ${missing_package_specs[*]}"
+  log "Installing missing vllm-hust editable build requirements into '$ENV_NAME' (${#missing_package_specs[@]} packages)"
+  for package_spec in "${missing_package_specs[@]}"; do
     ensure_pip_package_in_env "$ENV_NAME" "$package_spec"
   done
+}
+
+ensure_vllm_hust_runtime_python_packages() {
+  local repo_path="$1"
+  local requirements_file="$repo_path/requirements/common.txt"
+  local requirement_specs=()
+  local missing_requirement_specs=()
+
+  if ! mapfile -t requirement_specs < <(list_requirement_specs_from_file "$requirements_file" || true); then
+    return 0
+  fi
+  if (( ${#requirement_specs[@]} == 0 )); then
+    return 0
+  fi
+
+  log "Checking vllm-hust common runtime Python dependencies in '$ENV_NAME' (${#requirement_specs[@]} packages)"
+  mapfile -t missing_requirement_specs < <(list_missing_pip_requirements_in_env "$ENV_NAME" "${requirement_specs[@]}" || true)
+
+  if (( ${#missing_requirement_specs[@]} == 0 )); then
+    log "vllm-hust common runtime Python dependencies already satisfied in '$ENV_NAME'"
+    return 0
+  fi
+
+  log "Missing vllm-hust common runtime Python dependencies: ${missing_requirement_specs[*]}"
+  log "Installing missing vllm-hust common runtime Python dependencies into '$ENV_NAME' (${#missing_requirement_specs[@]} packages)"
+  run_with_heartbeat \
+    "installing vllm-hust common runtime Python dependencies into $ENV_NAME" \
+    run_pip_install_in_env "$ENV_NAME" -- "${missing_requirement_specs[@]}"
 }
 
 install_editable_repo_into_env() {
@@ -1717,6 +2159,7 @@ install_editable_repo_into_env() {
   local editable_target="$repo_path"
   local pip_args=()
   local compile_custom_kernels
+  local ascend_install_rc=0
 
   compile_custom_kernels="$(default_ascend_compile_custom_kernels)"
 
@@ -1740,34 +2183,58 @@ install_editable_repo_into_env() {
       return 11
     fi
 
-    if install_ascend_repo_into_env "$repo_path" "$compile_custom_kernels"; then
+    install_ascend_repo_into_env "$repo_path" "$compile_custom_kernels"
+    ascend_install_rc=$?
+    if [[ "$ascend_install_rc" -eq 0 ]]; then
       return 0
     fi
 
     if [[ "$compile_custom_kernels" != "0" ]] && ! ascend_compile_custom_kernels_configured_explicitly; then
-      log "Ascend custom-kernel install failed in auto mode; falling back to lightweight plugin mode"
-      install_ascend_repo_into_env "$repo_path" "0"
-      return $?
+      case "$ascend_install_rc" in
+        23|25)
+          log "Ascend custom-kernel install failed in auto mode; falling back to lightweight plugin mode"
+          install_ascend_repo_into_env "$repo_path" "0"
+          return $?
+          ;;
+      esac
     fi
 
-    return 12
+    return "$ascend_install_rc"
   fi
 
   local pip_env=()
   if [[ "$(basename "$repo_path")" == "vllm-hust" ]]; then
     editable_target="${repo_path}[ci-smoke]"
+    log "Preparing vllm-hust editable install in '$ENV_NAME'"
     # Build vllm-hust from source with no CUDA/HIP C extensions.
     # VLLM_USE_PRECOMPILED=0 prevents setup.py from trying to download
     # CUDA-only prebuilt wheels from wheels.vllm.ai (not available for Ascend/aarch64).
-    pip_env+=("VLLM_TARGET_DEVICE=empty" "VLLM_USE_PRECOMPILED=0")
+    # Disable backend entrypoint auto-loading while generating editable
+    # metadata; otherwise torch imports can eagerly pull in torch_npu and fail
+    # on missing Ascend runtime libs such as libhccl.so before runtime setup.
+    pip_env+=(
+      "VLLM_TARGET_DEVICE=empty"
+      "VLLM_USE_PRECOMPILED=0"
+      "TORCH_DEVICE_BACKEND_AUTOLOAD=0"
+    )
     # Reuse the current conda env for editable metadata/build hooks instead of
     # letting pip create an isolated env that re-resolves torch/CUDA build deps.
     ensure_vllm_hust_editable_build_python_packages "$repo_path"
+    if should_reconcile_ascend_runtime; then
+      # On Ascend hosts, keep torch/torch-npu/triton stack under the manager
+      # manifest and vllm-ascend-hust requirements.  Install vllm-hust common
+      # runtime deps separately, then do editable install with --no-deps to
+      # avoid pulling the upstream CUDA torch pin into the shared env.
+      ensure_vllm_hust_runtime_python_packages "$repo_path"
+    fi
   fi
 
   pip_args=(-v -e "$editable_target")
   if repo_prefers_no_build_isolation "$repo_path"; then
     pip_args=(--no-build-isolation "${pip_args[@]}")
+  fi
+  if [[ "$(basename "$repo_path")" == "vllm-hust" ]] && should_reconcile_ascend_runtime; then
+    pip_args=(--no-deps "${pip_args[@]}")
   fi
 
   log "Installing editable package from: $repo_path"
@@ -1846,6 +2313,7 @@ reconcile_ascend_runtime_with_manager() {
     manager_args+=(--non-interactive)
   fi
 
+  log "Starting Ascend Python stack reconciliation via hust-ascend-manager"
   log "Reconciling Ascend Python stack via hust-ascend-manager (user-space only; no system changes)"
   run_with_heartbeat \
     "reconciling Ascend Python stack via hust-ascend-manager" \
@@ -1985,9 +2453,15 @@ install_workspace_repos_into_env() {
   local install_mode="${1:-$INSTALL_MODE}"
   local install_scope="${2:-$INSTALL_SCOPE}"
   local reconcile_mode="${3:-without-runtime-reconcile}"
+  local perf_description="install workspace repositories into $ENV_NAME (mode=$install_mode, scope=$install_scope)"
+  local perf_start_epoch
+
+  perf_start_epoch="$(date +%s)"
+  log_perf_step_start "$perf_description"
 
   if ! ensure_conda_available "no-bootstrap"; then
     log "Install-only flow requires an existing conda setup. Run quickstart with --conda (or --all) first."
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 2
     return 2
   fi
 
@@ -1995,6 +2469,7 @@ install_workspace_repos_into_env() {
 
   if ! conda_env_exists; then
     log "Conda env '$ENV_NAME' does not exist yet. Create it first with --conda."
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 2
     return 2
   fi
 
@@ -2002,22 +2477,29 @@ install_workspace_repos_into_env() {
 
   if [[ "$install_mode" != "install" && "$install_mode" != "refresh" ]]; then
     echo "Invalid install mode: $install_mode" >&2
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 2
     return 2
   fi
 
   if [[ "$install_scope" != "core" && "$install_scope" != "full" ]]; then
     echo "Invalid install scope: $install_scope" >&2
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 2
     return 2
   fi
 
   local installed_any=0
   local installed_list=()
   local skipped_list=()
+  local fatal_failure_messages=()
+  local repo_result_messages=()
   local repo_entries=()
+  local install_rc=0
+  local fatal_failure_rc=0
   mapfile -t repo_entries < <(build_installable_repo_entries "$install_scope")
 
   if (( ${#repo_entries[@]} == 0 )); then
     log "No installable local repositories found (pyproject.toml missing or project name unavailable)."
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
@@ -2026,6 +2508,8 @@ install_workspace_repos_into_env() {
   local non_manager_entries=()
   local repo_path
   local project_name
+  local total_repo_count=0
+  local repo_index=0
   for entry in "${repo_entries[@]}"; do
     repo_path="${entry%%|*}"
     project_name="${entry#*|}"
@@ -2035,22 +2519,57 @@ install_workspace_repos_into_env() {
       non_manager_entries+=("$entry")
     fi
   done
+  total_repo_count="${#non_manager_entries[@]}"
+  if [[ -n "$manager_entry" ]]; then
+    total_repo_count=$(( total_repo_count + 1 ))
+  fi
+  log "Planned editable repository installs into '$ENV_NAME': $total_repo_count repositories"
 
   if [[ -n "$manager_entry" ]]; then
     repo_path="${manager_entry%%|*}"
     project_name="${manager_entry#*|}"
+    repo_index=$(( repo_index + 1 ))
+    log "Repository install progress [$repo_index/$total_repo_count]: $project_name from $repo_path"
 
     if [[ "$install_mode" == "install" ]] && is_package_installed_in_env "$ENV_NAME" "$project_name"; then
       log "Skipping already installed package '$project_name' from: $repo_path"
       skipped_list+=("$repo_path ($project_name)")
+      repo_result_messages+=("[$repo_index/$total_repo_count] skipped: $project_name")
     else
       install_editable_repo_into_env "$repo_path" "$reconcile_mode"
+      install_rc=$?
+      if [[ "$install_rc" -ne 0 ]]; then
+        case "$install_rc" in
+          10)
+            skipped_list+=("$repo_path ($project_name)")
+            repo_result_messages+=("[$repo_index/$total_repo_count] skipped: $project_name (host has no Ascend runtime)")
+            ;;
+          *)
+            fatal_failure_rc="$install_rc"
+            fatal_failure_messages+=("$repo_path ($project_name) failed with rc=$install_rc")
+            repo_result_messages+=("[$repo_index/$total_repo_count] failed: $project_name (rc=$install_rc)")
+            ;;
+        esac
+      fi
       installed_any=1
-      installed_list+=("$repo_path ($project_name)")
+      if [[ "$install_rc" -eq 0 ]]; then
+        installed_list+=("$repo_path ($project_name)")
+        repo_result_messages+=("[$repo_index/$total_repo_count] installed: $project_name")
+      fi
     fi
   fi
 
+  if (( fatal_failure_rc != 0 )); then
+    log "Aborting repository installation because a critical setup step failed."
+    local failure_item
+    for failure_item in "${fatal_failure_messages[@]}"; do
+      log "  - $failure_item"
+    done
+    return "$fatal_failure_rc"
+  fi
+
   if [[ "$reconcile_mode" == "with-runtime-reconcile" ]]; then
+    log "Repository install progress: running Ascend Python stack reconciliation before remaining repositories"
     reconcile_ascend_runtime_with_manager
   else
     log "Skipping Ascend Python stack reconciliation for install-only flow. Use --conda to refresh the user-space environment."
@@ -2059,20 +2578,46 @@ install_workspace_repos_into_env() {
   for entry in "${non_manager_entries[@]}"; do
     repo_path="${entry%%|*}"
     project_name="${entry#*|}"
+    repo_index=$(( repo_index + 1 ))
+    log "Repository install progress [$repo_index/$total_repo_count]: $project_name from $repo_path"
 
     if [[ "$install_mode" == "install" ]] && is_package_installed_in_env "$ENV_NAME" "$project_name"; then
       log "Skipping already installed package '$project_name' from: $repo_path"
       skipped_list+=("$repo_path ($project_name)")
+      repo_result_messages+=("[$repo_index/$total_repo_count] skipped: $project_name")
       continue
     fi
 
-    if ! install_editable_repo_into_env "$repo_path" "$reconcile_mode"; then
-      skipped_list+=("$repo_path ($project_name)")
-      continue
+    install_editable_repo_into_env "$repo_path" "$reconcile_mode"
+    install_rc=$?
+    if [[ "$install_rc" -ne 0 ]]; then
+      case "$install_rc" in
+        10)
+          skipped_list+=("$repo_path ($project_name)")
+          repo_result_messages+=("[$repo_index/$total_repo_count] skipped: $project_name (host has no Ascend runtime)")
+          continue
+          ;;
+        *)
+          fatal_failure_rc="$install_rc"
+          fatal_failure_messages+=("$repo_path ($project_name) failed with rc=$install_rc")
+          repo_result_messages+=("[$repo_index/$total_repo_count] failed: $project_name (rc=$install_rc)")
+          break
+          ;;
+      esac
     fi
     installed_any=1
     installed_list+=("$repo_path ($project_name)")
+    repo_result_messages+=("[$repo_index/$total_repo_count] installed: $project_name")
   done
+
+  if (( fatal_failure_rc != 0 )); then
+    log "Aborting repository installation because a critical setup step failed."
+    local failure_item
+    for failure_item in "${fatal_failure_messages[@]}"; do
+      log "  - $failure_item"
+    done
+    return "$fatal_failure_rc"
+  fi
 
   if install_ascend_plugin_pypi_fallback_with_manager; then
     if ! has_local_ascend_plugin_checkout && should_reconcile_ascend_runtime; then
@@ -2097,6 +2642,14 @@ install_workspace_repos_into_env() {
     done
   fi
 
+  if (( ${#repo_result_messages[@]} > 0 )); then
+    log "Repository install result summary:"
+    local repo_result_message
+    for repo_result_message in "${repo_result_messages[@]}"; do
+      log "  - $repo_result_message"
+    done
+  fi
+
   if [[ "$install_mode" == "install" && ${#skipped_list[@]} -gt 0 ]]; then
     local skipped_item
     log "Skipped already installed repositories:"
@@ -2112,6 +2665,8 @@ install_workspace_repos_into_env() {
   ensure_fastapi_instrumentator_compat
 
   report_vllm_cli_status "$ENV_NAME" || true
+  log_perf_step_end "$perf_description" "$perf_start_epoch" 0
+  return 0
 }
 
 configure_conda_env_library_hooks() {
@@ -2268,6 +2823,9 @@ if [[ -n "${CONDA_PREFIX:-}" && -n "${LD_LIBRARY_PATH:-}" ]]; then
     fi
     case "$_hust_dev_hub_ld_entry" in
       "$CONDA_PREFIX"|"$CONDA_PREFIX"/*)
+        continue
+        ;;
+      */envs/*/lib/python*/site-packages/torch/lib|*/envs/*/lib/python*/site-packages/torch_npu/lib|*/envs/*/lib)
         continue
         ;;
     esac
@@ -2713,6 +3271,9 @@ parse_args() {
       --update-bashrc)
         UPDATE_BASHRC=1
         ;;
+      --perf-timestamps)
+        PERF_TIMESTAMPS=1
+        ;;
       -y|--yes)
         AUTO_YES=1
         ;;
@@ -2743,11 +3304,22 @@ parse_args() {
     echo "无效 Ascend COMPILE_CUSTOM_KERNELS: $ASCEND_COMPILE_CUSTOM_KERNELS_OVERRIDE (应为非负整数)" >&2
     exit 2
   fi
+
+  if [[ "$PERF_TIMESTAMPS" != "0" && "$PERF_TIMESTAMPS" != "1" ]]; then
+    echo "无效性能时间戳开关: $PERF_TIMESTAMPS (应为 0 或 1)" >&2
+    exit 2
+  fi
+
+  if [[ ! "$PERF_SUMMARY_LIMIT" =~ ^[0-9]+$ ]] || (( PERF_SUMMARY_LIMIT <= 0 )); then
+    echo "无效性能汇总条数: $PERF_SUMMARY_LIMIT (应为正整数)" >&2
+    exit 2
+  fi
 }
 
 main() {
   init_quickstart_logging
   parse_args "$@"
+  trap print_perf_summary_on_exit EXIT
 
   if (( DO_CLONE == 0 && DO_CONDA == 0 && DO_INSTALL == 0 )); then
     run_interactive_menu
@@ -2768,11 +3340,16 @@ main() {
   if (( DO_INSTALL == 1 )) && (( DO_CONDA == 0 )); then
     if (( MENU_CONFIRMED == 1 )) || (( AUTO_YES == 1 )) || ask_yes_no "现在执行本地仓库 '$INSTALL_MODE' 安装步骤吗？"; then
       install_workspace_repos_into_env "$INSTALL_MODE" "$INSTALL_SCOPE" "without-runtime-reconcile"
+      local install_rc=$?
+      if [[ "$install_rc" -ne 0 ]]; then
+        return "$install_rc"
+      fi
       maybe_update_bashrc_auto_activate_env
     fi
   fi
 
   log "已完成所选步骤。"
+  print_perf_summary
 }
 
 main "$@"

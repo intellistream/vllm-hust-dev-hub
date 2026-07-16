@@ -111,22 +111,83 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         script_text = QUICKSTART_SCRIPT_PATH.read_text()
 
         self.assertIn('validate_torch_npu_runtime_in_env() {', script_text)
+        self.assertIn('log_torch_npu_runtime_validation_failure_details() {', script_text)
         self.assertIn('remove_conflicting_conda_torch_packages_in_env() {', script_text)
         self.assertIn('force_reinstall_ascend_python_stack_in_env() {', script_text)
         self.assertIn('ensure_ascend_torch_runtime_healthy() {', script_text)
         self.assertIn('Removing conflicting conda torch packages from', script_text)
         self.assertIn('Force reinstalling Ascend Python stack in', script_text)
         self.assertIn('--upgrade --ignore-installed', script_text)
+        self.assertIn("Detailed torch/torch-npu runtime validation traceback for", script_text)
+        self.assertIn('traceback.print_exc()', script_text)
+        self.assertIn('log_torch_npu_runtime_validation_failure_details "$env_name" "initial validation failure" || true', script_text)
+        self.assertIn('log_torch_npu_runtime_validation_failure_details "$env_name" "post-reinstall validation failure" || true', script_text)
         self.assertIn('if ! ensure_ascend_torch_runtime_healthy "$ENV_NAME"; then', script_text)
+
+    def test_quickstart_fails_when_ascend_repo_is_skipped_for_unhealthy_runtime(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        self.assertIn('local fatal_failure_messages=()', script_text)
+        self.assertIn('local fatal_failure_rc=0', script_text)
+        self.assertIn('Aborting repository installation because a critical setup step failed.', script_text)
+        self.assertIn('Conda env \'$ENV_NAME\' setup stopped because repository installation failed (rc=$install_rc)', script_text)
+        self.assertIn('local install_rc=$?', script_text)
+        self.assertIn('if [[ "$install_rc" -ne 0 ]]; then', script_text)
+        self.assertIn('return "$fatal_failure_rc"', script_text)
+        self.assertIn('return "$install_rc"', script_text)
 
     def test_quickstart_installs_vllm_hust_without_build_isolation(self) -> None:
         script_text = QUICKSTART_SCRIPT_PATH.read_text()
 
         self.assertIn('"$repo_path" == "$WORKSPACE_ROOT/vllm-hust"', script_text)
         self.assertIn('ensure_vllm_hust_editable_build_python_packages "$repo_path"', script_text)
+        self.assertIn('ensure_vllm_hust_runtime_python_packages "$repo_path"', script_text)
         self.assertIn('pip_args=(--no-build-isolation "${pip_args[@]}")', script_text)
+        self.assertIn('pip_args=(--no-deps "${pip_args[@]}")', script_text)
         self.assertIn("VLLM_TARGET_DEVICE=empty", script_text)
         self.assertIn("VLLM_USE_PRECOMPILED=0", script_text)
+        self.assertIn("TORCH_DEVICE_BACKEND_AUTOLOAD=0", script_text)
+
+    def test_quickstart_fail_fast_gates_ascend_fallback(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        self.assertIn('local rc_build_python_packages=20', script_text)
+        self.assertIn('local rc_runtime_python_packages=21', script_text)
+        self.assertIn('local rc_catlass_submodule=22', script_text)
+        self.assertIn('local rc_editable_install=23', script_text)
+        self.assertIn('local rc_plugin_validation=24', script_text)
+        self.assertIn('local rc_custom_op_validation=25', script_text)
+        self.assertIn('if ! ensure_ascend_build_python_packages "$repo_path" "$compile_custom_kernels"; then', script_text)
+        self.assertIn('if ! ensure_ascend_runtime_python_packages "$repo_path"; then', script_text)
+        self.assertIn('if ! ensure_ascend_catlass_submodule_ready "$repo_path"; then', script_text)
+        self.assertIn('if ! run_with_heartbeat \\', script_text)
+        self.assertIn('local ascend_install_rc=0', script_text)
+        self.assertIn('install_ascend_repo_into_env "$repo_path" "$compile_custom_kernels"', script_text)
+        self.assertIn('ascend_install_rc=$?', script_text)
+        self.assertIn('if [[ "$ascend_install_rc" -eq 0 ]]; then', script_text)
+        self.assertIn('case "$ascend_install_rc" in', script_text)
+        self.assertIn('23|25)', script_text)
+        self.assertIn('return "$ascend_install_rc"', script_text)
+
+    def test_quickstart_repairs_stale_ascend_cmake_generator_cache(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        self.assertIn('resolve_ascend_expected_cmake_generator() {', script_text)
+        self.assertIn('repair_ascend_cmake_generator_cache() {', script_text)
+        self.assertIn('local cache_file="$build_dir/CMakeCache.txt"', script_text)
+        self.assertIn("printf 'Ninja\\n'", script_text)
+        self.assertIn('Detected stale Ascend CMake generator cache', script_text)
+        self.assertIn('rm -f -- "$cache_file" "$build_dir/Makefile" "$build_dir/build.ninja" "$build_dir/cmake_install.cmake"', script_text)
+        self.assertIn('rm -rf -- "$cmake_files_dir"', script_text)
+        self.assertIn('repair_ascend_cmake_generator_cache "$repo_path"', script_text)
+
+    def test_quickstart_detects_cann9_installation_paths(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        self.assertIn('/usr/local/Ascend/cann-9.0.0/compiler/version.info', script_text)
+        self.assertIn('/usr/local/Ascend/cann-9.0.0/opp/version.info', script_text)
+        self.assertIn('${CONDA_PREFIX:-}/Ascend/cann/compiler/version.info', script_text)
+        self.assertIn('${CONDA_PREFIX:-}/Ascend/cann/opp/version.info', script_text)
 
     def test_quickstart_reads_setup_py_variable_backed_project_name(self) -> None:
         synthetic_setup_py = (
@@ -170,6 +231,46 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         )
 
         self.assertEqual(result.stdout.strip(), "0")
+
+    def test_quickstart_supports_perf_timestamps_toggle(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        self.assertIn('PERF_TIMESTAMPS="${HUST_DEV_HUB_PERF_TIMESTAMPS:-0}"', script_text)
+        self.assertIn('PERF_SUMMARY_LIMIT="${HUST_DEV_HUB_PERF_SUMMARY_LIMIT:-10}"', script_text)
+        self.assertIn('declare -a PERF_SUMMARY_ENTRIES=()', script_text)
+        self.assertIn('--perf-timestamps', script_text)
+        self.assertIn('log_perf_step_start() {', script_text)
+        self.assertIn('log_perf_step_end() {', script_text)
+        self.assertIn('if [[ "$PERF_TIMESTAMPS" != "1" ]]; then', script_text)
+        self.assertIn('log_perf_step_start "$description"', script_text)
+        self.assertIn('duration=%ss | status=%s', script_text)
+        self.assertIn('PERF_SUMMARY_ENTRIES+=("${duration}|${status}|${description}")', script_text)
+        self.assertIn('print_perf_summary() {', script_text)
+        self.assertIn("summary: top %s slowest recorded steps", script_text)
+        self.assertIn('print_perf_summary_on_exit() {', script_text)
+        self.assertIn('trap print_perf_summary_on_exit EXIT', script_text)
+        self.assertIn('log_perf_step_end "$description" "$start_epoch" "$exit_code"', script_text)
+        self.assertIn('local perf_description="clone workspace repositories"', script_text)
+        self.assertIn('perf_description="create conda environment $ENV_NAME"', script_text)
+        self.assertIn('perf_description="update conda environment $ENV_NAME"', script_text)
+        self.assertIn('local perf_description="install workspace repositories into $ENV_NAME (mode=$install_mode, scope=$install_scope)"', script_text)
+        self.assertIn('log_perf_step_end "$perf_description" "$perf_start_epoch" 0', script_text)
+
+    def test_quickstart_perf_timestamps_cli_sets_switch(self) -> None:
+        command = (
+            f"source <(sed '/^main() {{/,$d' {shlex.quote(str(QUICKSTART_SCRIPT_PATH))}); "
+            "parse_args --perf-timestamps; "
+            'printf "%s" "$PERF_TIMESTAMPS"'
+        )
+
+        result = subprocess.run(
+            ["bash", "-lc", command],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        self.assertEqual(result.stdout.strip(), "1")
 
 
 if __name__ == "__main__":
