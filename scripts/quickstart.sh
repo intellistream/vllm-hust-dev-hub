@@ -2074,10 +2074,10 @@ report_vllm_cli_status() {
   local env_name="$1"
   local perf_description="report_vllm_cli_status in $env_name"
   local perf_description_lookup="report_vllm_cli_status lookup in $env_name"
-  local perf_description_help="report_vllm_cli_status vllm --help in $env_name"
+  local perf_description_import="report_vllm_cli_status cli import in $env_name"
   local perf_start_epoch
   local perf_start_epoch_lookup
-  local perf_start_epoch_help
+  local perf_start_epoch_import
 
   perf_start_epoch="$(date +%s)"
   log_perf_step_start "$perf_description"
@@ -2092,17 +2092,25 @@ report_vllm_cli_status() {
   fi
   log_perf_step_end "$perf_description_lookup" "$perf_start_epoch_lookup" 0
 
-  perf_start_epoch_help="$(date +%s)"
-  log_perf_step_start "$perf_description_help"
-  if run_conda_env_cmd "$env_name" env TORCH_DEVICE_BACKEND_AUTOLOAD=0 vllm --help >/dev/null 2>&1; then
+  perf_start_epoch_import="$(date +%s)"
+  log_perf_step_start "$perf_description_import"
+  if run_conda_env_cmd "$env_name" env TORCH_DEVICE_BACKEND_AUTOLOAD=0 python - >/dev/null 2>&1 <<'PY'
+from shutil import which
+
+assert which("vllm-hust") or which("vllm")
+from vllm.entrypoints.cli.main import _resolve_cli_version
+
+print(_resolve_cli_version())
+PY
+  then
     log "Verified: 'vllm' command is available in conda env '$env_name'"
-    log_perf_step_end "$perf_description_help" "$perf_start_epoch_help" 0
+    log_perf_step_end "$perf_description_import" "$perf_start_epoch_import" 0
     log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
   log "Warning: 'vllm' command exists in '$env_name' but runtime validation failed (for example missing backend/runtime libs)."
-  log_perf_step_end "$perf_description_help" "$perf_start_epoch_help" 1
+  log_perf_step_end "$perf_description_import" "$perf_start_epoch_import" 1
   log_perf_step_end "$perf_description" "$perf_start_epoch" 1
   return 1
 }
