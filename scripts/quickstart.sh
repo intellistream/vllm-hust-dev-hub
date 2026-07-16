@@ -118,6 +118,8 @@ PIP_SELECTED_EXTRA_INDEX_URL=""
 PIP_INSTALL_RETRIES=""
 PIP_INSTALL_TIMEOUT=""
 PIP_INSTALL_RESUME_RETRIES=""
+QUICKSTART_START_EPOCH="$(date +%s)"
+QUICKSTART_TOTAL_TIME_PRINTED=0
 PIP_SUPPORTS_RESUME_RETRIES="unknown"
 ASCEND_COMPILE_CUSTOM_KERNELS_OVERRIDE=""
 CONDA_BIN=""
@@ -233,6 +235,15 @@ print_perf_summary() {
 
 print_perf_summary_on_exit() {
   local exit_code="$?"
+  local end_epoch
+  local duration
+
+  if (( QUICKSTART_TOTAL_TIME_PRINTED == 0 )); then
+    QUICKSTART_TOTAL_TIME_PRINTED=1
+    end_epoch="$(date +%s)"
+    duration=$(( end_epoch - QUICKSTART_START_EPOCH ))
+    log "Total elapsed time: ${duration}s"
+  fi
 
   print_perf_summary
   return "$exit_code"
@@ -759,6 +770,8 @@ read_build_requirement_spec_from_pyproject() {
 ensure_ascend_build_python_packages() {
   local repo_path="$1"
   local compile_custom_kernels="$2"
+  local perf_description="Ascend build dependency check in $ENV_NAME"
+  local perf_start_epoch
   local pybind11_spec
   local triton_ascend_spec
   local bootstrap_specs=(
@@ -771,9 +784,18 @@ ensure_ascend_build_python_packages() {
   local batch_specs=()
   local package_spec
   local missing_batch_specs=()
+  local rc=0
+
+  perf_start_epoch="$(date +%s)"
+  log_perf_step_start "$perf_description"
 
   for package_spec in "${bootstrap_specs[@]}"; do
     ensure_pip_package_in_env "$ENV_NAME" "$package_spec"
+    rc=$?
+    if (( rc != 0 )); then
+      log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+      return "$rc"
+    fi
   done
 
   triton_ascend_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "triton-ascend" || true)"
@@ -799,6 +821,7 @@ ensure_ascend_build_python_packages() {
 
   if (( ${#missing_batch_specs[@]} == 0 )); then
     log "Ascend build Python dependencies already satisfied in '$ENV_NAME'"
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
@@ -806,6 +829,13 @@ ensure_ascend_build_python_packages() {
   run_with_heartbeat \
     "installing Ascend build Python dependencies into $ENV_NAME" \
     run_pip_install_in_env "$ENV_NAME" -- "${missing_batch_specs[@]}"
+  rc=$?
+  if (( rc != 0 )); then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+    return "$rc"
+  fi
+
+  log_perf_step_end "$perf_description" "$perf_start_epoch" 0
 }
 
 # Patch triton-ascend's JIT-compiled npu_utils.cpp for CANN 9.0.0+ compatibility.
@@ -922,21 +952,32 @@ ascend_runtime_requirement_is_optional_for_quickstart() {
 
 ensure_ascend_catlass_submodule_ready() {
   local repo_path="$1"
+  local perf_description="Ascend catlass submodule check in $(basename "$repo_path")"
+  local perf_start_epoch
   local submodule_relative_path="csrc/third_party/catlass"
   local submodule_path="$repo_path/$submodule_relative_path"
+  local rc=0
+
+  perf_start_epoch="$(date +%s)"
+  log_perf_step_start "$perf_description"
 
   if [[ -e "$submodule_path/CMakeLists.txt" || -e "$submodule_path/README.md" ]]; then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
   if [[ ! -d "$repo_path/.git" && ! -f "$repo_path/.git" ]]; then
     log "Warning: skipping $submodule_relative_path initialization because '$repo_path' has no git metadata"
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
   log "Initializing Ascend submodule: $submodule_relative_path"
   run_system_command_with_sanitized_ld_library_path \
     git -C "$repo_path" submodule update --init --recursive "$submodule_relative_path"
+  rc=$?
+  log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+  return "$rc"
 }
 
 resolve_ascend_expected_cmake_generator() {
@@ -954,13 +995,19 @@ resolve_ascend_expected_cmake_generator() {
 
 repair_ascend_cmake_generator_cache() {
   local repo_path="$1"
+  local perf_description="Ascend CMake generator cache check in $(basename "$repo_path")"
+  local perf_start_epoch
   local build_dir="$repo_path/csrc/build"
   local cache_file="$build_dir/CMakeCache.txt"
   local cmake_files_dir="$build_dir/CMakeFiles"
   local cached_generator=""
   local expected_generator=""
 
+  perf_start_epoch="$(date +%s)"
+  log_perf_step_start "$perf_description"
+
   if [[ ! -f "$cache_file" ]]; then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
@@ -971,12 +1018,14 @@ repair_ascend_cmake_generator_cache() {
   expected_generator="$(resolve_ascend_expected_cmake_generator || true)"
 
   if [[ -z "$cached_generator" || -z "$expected_generator" || "$cached_generator" == "$expected_generator" ]]; then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
   log "Detected stale Ascend CMake generator cache in '$build_dir' (cached=$cached_generator, expected=$expected_generator); clearing generator metadata"
   rm -f -- "$cache_file" "$build_dir/Makefile" "$build_dir/build.ninja" "$build_dir/cmake_install.cmake"
   rm -rf -- "$cmake_files_dir"
+  log_perf_step_end "$perf_description" "$perf_start_epoch" 0
 }
 
 validate_ascend_custom_op_in_env() {
@@ -1071,8 +1120,14 @@ force_reinstall_ascend_python_stack_in_env() {
 
 ensure_ascend_torch_runtime_healthy() {
   local env_name="$1"
+  local perf_description="Ascend torch runtime health check in $env_name"
+  local perf_start_epoch
+
+  perf_start_epoch="$(date +%s)"
+  log_perf_step_start "$perf_description"
 
   if validate_torch_npu_runtime_in_env "$env_name"; then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
@@ -1082,17 +1137,20 @@ ensure_ascend_torch_runtime_healthy() {
     log "Torch/torch-npu runtime import validation failed in '$env_name'; re-running Ascend Python stack reconciliation"
     reconcile_ascend_runtime_with_manager
     if validate_torch_npu_runtime_in_env "$env_name"; then
+      log_perf_step_end "$perf_description" "$perf_start_epoch" 0
       return 0
     fi
   fi
 
   force_reinstall_ascend_python_stack_in_env "$env_name"
   if validate_torch_npu_runtime_in_env "$env_name"; then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
   log_torch_npu_runtime_validation_failure_details "$env_name" "post-reinstall validation failure" || true
   log "Warning: torch/torch-npu runtime import validation is still failing in '$env_name'"
+  log_perf_step_end "$perf_description" "$perf_start_epoch" 1
   return 1
 }
 
@@ -1153,6 +1211,14 @@ install_ascend_repo_into_env() {
   local rc_editable_install=23
   local rc_plugin_validation=24
   local rc_custom_op_validation=25
+  local perf_description_plugin="Ascend plugin/custom op validation in $ENV_NAME"
+  local perf_description_platform_plugin="Ascend platform plugin validation in $ENV_NAME"
+  local perf_description_custom_op_import="Ascend custom op import validation in $ENV_NAME"
+  local perf_description_custom_op_runpath="Ascend custom op RUNPATH repair in $ENV_NAME"
+  local perf_start_epoch_plugin
+  local perf_start_epoch_platform_plugin
+  local perf_start_epoch_custom_op_import
+  local perf_start_epoch_custom_op_runpath
 
   if ! ensure_ascend_build_python_packages "$repo_path" "$compile_custom_kernels"; then
     log "Warning: failed to prepare Ascend build Python dependencies for '$repo_path'"
@@ -1196,27 +1262,46 @@ install_ascend_repo_into_env() {
     return "$rc_editable_install"
   fi
 
+  perf_start_epoch_plugin="$(date +%s)"
+  log_perf_step_start "$perf_description_plugin"
+  perf_start_epoch_platform_plugin="$(date +%s)"
+  log_perf_step_start "$perf_description_platform_plugin"
   if ! validate_ascend_platform_plugin_in_env "$ENV_NAME"; then
     log "Warning: Ascend platform plugin entry point validation failed in '$ENV_NAME'"
+    log_perf_step_end "$perf_description_platform_plugin" "$perf_start_epoch_platform_plugin" "$rc_plugin_validation"
+    log_perf_step_end "$perf_description_plugin" "$perf_start_epoch_plugin" "$rc_plugin_validation"
     return "$rc_plugin_validation"
   fi
+  log_perf_step_end "$perf_description_platform_plugin" "$perf_start_epoch_platform_plugin" 0
 
   log "Verified Ascend platform plugin entry point in '$ENV_NAME'"
 
   if [[ "$compile_custom_kernels" == "0" ]]; then
+    log_perf_step_end "$perf_description_plugin" "$perf_start_epoch_plugin" 0
     return 0
   fi
 
+  perf_start_epoch_custom_op_import="$(date +%s)"
+  log_perf_step_start "$perf_description_custom_op_import"
   if validate_ascend_custom_op_in_env "$ENV_NAME"; then
     log "Verified Ascend custom op import in '$ENV_NAME'"
+    log_perf_step_end "$perf_description_custom_op_import" "$perf_start_epoch_custom_op_import" 0
+    log_perf_step_end "$perf_description_plugin" "$perf_start_epoch_plugin" 0
     return 0
   fi
+  log_perf_step_end "$perf_description_custom_op_import" "$perf_start_epoch_custom_op_import" 1
 
   log "Ascend custom op validation failed; attempting RUNPATH repair"
+  perf_start_epoch_custom_op_runpath="$(date +%s)"
+  log_perf_step_start "$perf_description_custom_op_runpath"
   if repair_ascend_custom_op_runpath_in_env "$ENV_NAME" && validate_ascend_custom_op_in_env "$ENV_NAME"; then
     log "Verified Ascend custom op import in '$ENV_NAME' after RUNPATH repair"
+    log_perf_step_end "$perf_description_custom_op_runpath" "$perf_start_epoch_custom_op_runpath" 0
+    log_perf_step_end "$perf_description_plugin" "$perf_start_epoch_plugin" 0
     return 0
   fi
+  log_perf_step_end "$perf_description_custom_op_runpath" "$perf_start_epoch_custom_op_runpath" 1
+  log_perf_step_end "$perf_description_plugin" "$perf_start_epoch_plugin" "$rc_custom_op_validation"
 
   log "Warning: Ascend custom op validation is still failing in '$ENV_NAME'"
   return "$rc_custom_op_validation"
@@ -1224,13 +1309,20 @@ install_ascend_repo_into_env() {
 
 ensure_ascend_runtime_python_packages() {
   local repo_path="$1"
+  local perf_description="Ascend runtime dependency check in $ENV_NAME"
+  local perf_start_epoch
   local requirement_specs=()
   local missing_requirement_specs=()
   local requirement_spec
   local required_specs=()
+  local rc=0
+
+  perf_start_epoch="$(date +%s)"
+  log_perf_step_start "$perf_description"
 
   mapfile -t requirement_specs < <(list_requirement_specs_from_requirements_file "$repo_path" || true)
   if (( ${#requirement_specs[@]} == 0 )); then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
@@ -1242,12 +1334,14 @@ ensure_ascend_runtime_python_packages() {
   done
 
   if (( ${#required_specs[@]} == 0 )); then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
   mapfile -t missing_requirement_specs < <(list_missing_pip_requirements_in_env "$ENV_NAME" "${required_specs[@]}" || true)
 
   if (( ${#missing_requirement_specs[@]} == 0 )); then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
@@ -1255,6 +1349,9 @@ ensure_ascend_runtime_python_packages() {
   run_with_heartbeat \
     "installing Ascend runtime Python dependencies into $ENV_NAME" \
     run_pip_install_in_env "$ENV_NAME" -- "${missing_requirement_specs[@]}"
+  rc=$?
+  log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+  return "$rc"
 }
 
 read_positive_int_env_with_fallback() {
@@ -1838,7 +1935,6 @@ create_or_update_conda_env() {
     log "Conda env '$ENV_NAME' setup stopped because repository installation failed (rc=$install_rc)"
     return "$install_rc"
   fi
-  report_vllm_cli_status "$ENV_NAME" || true
 
   configure_bashrc_conda_init
   maybe_update_bashrc_auto_activate_env
@@ -1976,18 +2072,46 @@ has_vllm_cli_in_env() {
 
 report_vllm_cli_status() {
   local env_name="$1"
+  local perf_description="report_vllm_cli_status in $env_name"
+  local perf_description_lookup="report_vllm_cli_status lookup in $env_name"
+  local perf_description_import="report_vllm_cli_status cli import in $env_name"
+  local perf_start_epoch
+  local perf_start_epoch_lookup
+  local perf_start_epoch_import
 
+  perf_start_epoch="$(date +%s)"
+  log_perf_step_start "$perf_description"
+
+  perf_start_epoch_lookup="$(date +%s)"
+  log_perf_step_start "$perf_description_lookup"
   if ! has_vllm_cli_in_env "$env_name"; then
     log "Warning: 'vllm' command is unavailable in conda env '$env_name'"
+    log_perf_step_end "$perf_description_lookup" "$perf_start_epoch_lookup" 1
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 1
     return 1
   fi
+  log_perf_step_end "$perf_description_lookup" "$perf_start_epoch_lookup" 0
 
-  if run_conda_env_cmd "$env_name" env TORCH_DEVICE_BACKEND_AUTOLOAD=0 vllm --help >/dev/null 2>&1; then
+  perf_start_epoch_import="$(date +%s)"
+  log_perf_step_start "$perf_description_import"
+  if run_conda_env_cmd "$env_name" env TORCH_DEVICE_BACKEND_AUTOLOAD=0 python - >/dev/null 2>&1 <<'PY'
+from shutil import which
+
+assert which("vllm-hust") or which("vllm")
+from vllm.entrypoints.cli.main import _resolve_cli_version
+
+print(_resolve_cli_version())
+PY
+  then
     log "Verified: 'vllm' command is available in conda env '$env_name'"
+    log_perf_step_end "$perf_description_import" "$perf_start_epoch_import" 0
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
   log "Warning: 'vllm' command exists in '$env_name' but runtime validation failed (for example missing backend/runtime libs)."
+  log_perf_step_end "$perf_description_import" "$perf_start_epoch_import" 1
+  log_perf_step_end "$perf_description" "$perf_start_epoch" 1
   return 1
 }
 ensure_pip_package_in_env() {
@@ -2087,6 +2211,8 @@ repo_prefers_no_build_isolation() {
 
 ensure_vllm_hust_editable_build_python_packages() {
   local repo_path="$1"
+  local perf_description="vllm-hust requirement check (editable build) in $ENV_NAME"
+  local perf_start_epoch
   local package_name
   local package_spec
   local build_package_specs=()
@@ -2101,6 +2227,10 @@ ensure_vllm_hust_editable_build_python_packages() {
     wheel
     jinja2
   )
+  local rc=0
+
+  perf_start_epoch="$(date +%s)"
+  log_perf_step_start "$perf_description"
 
   for package_name in "${build_packages[@]}"; do
     package_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "$package_name" || true)"
@@ -2115,6 +2245,7 @@ ensure_vllm_hust_editable_build_python_packages() {
 
   if (( ${#missing_package_specs[@]} == 0 )); then
     log "vllm-hust editable build requirements already satisfied in '$ENV_NAME'"
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
@@ -2122,19 +2253,34 @@ ensure_vllm_hust_editable_build_python_packages() {
   log "Installing missing vllm-hust editable build requirements into '$ENV_NAME' (${#missing_package_specs[@]} packages)"
   for package_spec in "${missing_package_specs[@]}"; do
     ensure_pip_package_in_env "$ENV_NAME" "$package_spec"
+    rc=$?
+    if (( rc != 0 )); then
+      log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+      return "$rc"
+    fi
   done
+
+  log_perf_step_end "$perf_description" "$perf_start_epoch" 0
 }
 
 ensure_vllm_hust_runtime_python_packages() {
   local repo_path="$1"
+  local perf_description="vllm-hust requirement check (runtime) in $ENV_NAME"
+  local perf_start_epoch
   local requirements_file="$repo_path/requirements/common.txt"
   local requirement_specs=()
   local missing_requirement_specs=()
+  local rc=0
+
+  perf_start_epoch="$(date +%s)"
+  log_perf_step_start "$perf_description"
 
   if ! mapfile -t requirement_specs < <(list_requirement_specs_from_file "$requirements_file" || true); then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
   if (( ${#requirement_specs[@]} == 0 )); then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
@@ -2143,6 +2289,7 @@ ensure_vllm_hust_runtime_python_packages() {
 
   if (( ${#missing_requirement_specs[@]} == 0 )); then
     log "vllm-hust common runtime Python dependencies already satisfied in '$ENV_NAME'"
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
@@ -2151,6 +2298,13 @@ ensure_vllm_hust_runtime_python_packages() {
   run_with_heartbeat \
     "installing vllm-hust common runtime Python dependencies into $ENV_NAME" \
     run_pip_install_in_env "$ENV_NAME" -- "${missing_requirement_specs[@]}"
+  rc=$?
+  if (( rc != 0 )); then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+    return "$rc"
+  fi
+
+  log_perf_step_end "$perf_description" "$perf_start_epoch" 0
 }
 
 install_editable_repo_into_env() {
@@ -2419,7 +2573,13 @@ ensure_git_safe_directory_for_workspace() {
 # requires starlette <0.51.0 which conflicts with vllm-hust's starlette >=1.0.0 pin.
 # The compatible window is fastapi 0.130.x–0.134.x with starlette 1.0.x–1.2.x.
 ensure_fastapi_instrumentator_compat() {
+  local perf_description="ensure_fastapi_instrumentator_compat in $ENV_NAME"
+  local perf_start_epoch
   local fastapi_version=""
+  local rc=0
+
+  perf_start_epoch="$(date +%s)"
+  log_perf_step_start "$perf_description"
 
   fastapi_version="$(run_conda_env_cmd "$ENV_NAME" python -c 'import fastapi; print(fastapi.__version__)' 2>/dev/null || true)"
 
@@ -2427,6 +2587,12 @@ ensure_fastapi_instrumentator_compat() {
   if [[ -z "$fastapi_version" ]]; then
     log "Installing fastapi and prometheus-fastapi-instrumentator (compatible set)"
     run_pip_install_in_env "$ENV_NAME" -- "fastapi>=0.130.0,<0.135.0" "prometheus-fastapi-instrumentator>=7.0.0"
+    rc=$?
+    if (( rc != 0 )); then
+      log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+      return "$rc"
+    fi
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
@@ -2436,6 +2602,12 @@ ensure_fastapi_instrumentator_compat() {
   if (( minor >= 135 )); then
     log "Pinning fastapi from $fastapi_version to <0.135.0 for instrumentator compatibility"
     run_pip_install_in_env "$ENV_NAME" -- "fastapi>=0.130.0,<0.135.0" "prometheus-fastapi-instrumentator>=7.0.0"
+    rc=$?
+    if (( rc != 0 )); then
+      log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+      return "$rc"
+    fi
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
@@ -2443,10 +2615,17 @@ ensure_fastapi_instrumentator_compat() {
   if ! is_package_installed_in_env "$ENV_NAME" "prometheus-fastapi-instrumentator"; then
     log "Installing prometheus-fastapi-instrumentator (fastapi $fastapi_version is compatible)"
     run_pip_install_in_env "$ENV_NAME" -- "prometheus-fastapi-instrumentator>=7.0.0"
+    rc=$?
+    if (( rc != 0 )); then
+      log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+      return "$rc"
+    fi
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
   log "FastAPI/instrumentator compatibility: OK (fastapi=$fastapi_version)"
+  log_perf_step_end "$perf_description" "$perf_start_epoch" 0
 }
 
 install_workspace_repos_into_env() {
