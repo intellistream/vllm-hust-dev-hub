@@ -118,6 +118,8 @@ PIP_SELECTED_EXTRA_INDEX_URL=""
 PIP_INSTALL_RETRIES=""
 PIP_INSTALL_TIMEOUT=""
 PIP_INSTALL_RESUME_RETRIES=""
+QUICKSTART_START_EPOCH="$(date +%s)"
+QUICKSTART_TOTAL_TIME_PRINTED=0
 PIP_SUPPORTS_RESUME_RETRIES="unknown"
 ASCEND_COMPILE_CUSTOM_KERNELS_OVERRIDE=""
 CONDA_BIN=""
@@ -233,6 +235,15 @@ print_perf_summary() {
 
 print_perf_summary_on_exit() {
   local exit_code="$?"
+  local end_epoch
+  local duration
+
+  if (( QUICKSTART_TOTAL_TIME_PRINTED == 0 )); then
+    QUICKSTART_TOTAL_TIME_PRINTED=1
+    end_epoch="$(date +%s)"
+    duration=$(( end_epoch - QUICKSTART_START_EPOCH ))
+    log "Total elapsed time: ${duration}s"
+  fi
 
   print_perf_summary
   return "$exit_code"
@@ -1201,7 +1212,13 @@ install_ascend_repo_into_env() {
   local rc_plugin_validation=24
   local rc_custom_op_validation=25
   local perf_description_plugin="Ascend plugin/custom op validation in $ENV_NAME"
+  local perf_description_platform_plugin="Ascend platform plugin validation in $ENV_NAME"
+  local perf_description_custom_op_import="Ascend custom op import validation in $ENV_NAME"
+  local perf_description_custom_op_runpath="Ascend custom op RUNPATH repair in $ENV_NAME"
   local perf_start_epoch_plugin
+  local perf_start_epoch_platform_plugin
+  local perf_start_epoch_custom_op_import
+  local perf_start_epoch_custom_op_runpath
 
   if ! ensure_ascend_build_python_packages "$repo_path" "$compile_custom_kernels"; then
     log "Warning: failed to prepare Ascend build Python dependencies for '$repo_path'"
@@ -1247,30 +1264,43 @@ install_ascend_repo_into_env() {
 
   perf_start_epoch_plugin="$(date +%s)"
   log_perf_step_start "$perf_description_plugin"
+  perf_start_epoch_platform_plugin="$(date +%s)"
+  log_perf_step_start "$perf_description_platform_plugin"
   if ! validate_ascend_platform_plugin_in_env "$ENV_NAME"; then
     log "Warning: Ascend platform plugin entry point validation failed in '$ENV_NAME'"
+    log_perf_step_end "$perf_description_platform_plugin" "$perf_start_epoch_platform_plugin" "$rc_plugin_validation"
     log_perf_step_end "$perf_description_plugin" "$perf_start_epoch_plugin" "$rc_plugin_validation"
     return "$rc_plugin_validation"
   fi
+  log_perf_step_end "$perf_description_platform_plugin" "$perf_start_epoch_platform_plugin" 0
 
   log "Verified Ascend platform plugin entry point in '$ENV_NAME'"
 
   if [[ "$compile_custom_kernels" == "0" ]]; then
+    log_perf_step_end "$perf_description_plugin" "$perf_start_epoch_plugin" 0
     return 0
   fi
 
+  perf_start_epoch_custom_op_import="$(date +%s)"
+  log_perf_step_start "$perf_description_custom_op_import"
   if validate_ascend_custom_op_in_env "$ENV_NAME"; then
     log "Verified Ascend custom op import in '$ENV_NAME'"
+    log_perf_step_end "$perf_description_custom_op_import" "$perf_start_epoch_custom_op_import" 0
     log_perf_step_end "$perf_description_plugin" "$perf_start_epoch_plugin" 0
     return 0
   fi
+  log_perf_step_end "$perf_description_custom_op_import" "$perf_start_epoch_custom_op_import" 1
 
   log "Ascend custom op validation failed; attempting RUNPATH repair"
+  perf_start_epoch_custom_op_runpath="$(date +%s)"
+  log_perf_step_start "$perf_description_custom_op_runpath"
   if repair_ascend_custom_op_runpath_in_env "$ENV_NAME" && validate_ascend_custom_op_in_env "$ENV_NAME"; then
     log "Verified Ascend custom op import in '$ENV_NAME' after RUNPATH repair"
+    log_perf_step_end "$perf_description_custom_op_runpath" "$perf_start_epoch_custom_op_runpath" 0
     log_perf_step_end "$perf_description_plugin" "$perf_start_epoch_plugin" 0
     return 0
   fi
+  log_perf_step_end "$perf_description_custom_op_runpath" "$perf_start_epoch_custom_op_runpath" 1
   log_perf_step_end "$perf_description_plugin" "$perf_start_epoch_plugin" "$rc_custom_op_validation"
 
   log "Warning: Ascend custom op validation is still failing in '$ENV_NAME'"
@@ -2043,24 +2073,36 @@ has_vllm_cli_in_env() {
 report_vllm_cli_status() {
   local env_name="$1"
   local perf_description="report_vllm_cli_status in $env_name"
+  local perf_description_lookup="report_vllm_cli_status lookup in $env_name"
+  local perf_description_help="report_vllm_cli_status vllm --help in $env_name"
   local perf_start_epoch
+  local perf_start_epoch_lookup
+  local perf_start_epoch_help
 
   perf_start_epoch="$(date +%s)"
   log_perf_step_start "$perf_description"
 
+  perf_start_epoch_lookup="$(date +%s)"
+  log_perf_step_start "$perf_description_lookup"
   if ! has_vllm_cli_in_env "$env_name"; then
     log "Warning: 'vllm' command is unavailable in conda env '$env_name'"
+    log_perf_step_end "$perf_description_lookup" "$perf_start_epoch_lookup" 1
     log_perf_step_end "$perf_description" "$perf_start_epoch" 1
     return 1
   fi
+  log_perf_step_end "$perf_description_lookup" "$perf_start_epoch_lookup" 0
 
+  perf_start_epoch_help="$(date +%s)"
+  log_perf_step_start "$perf_description_help"
   if run_conda_env_cmd "$env_name" env TORCH_DEVICE_BACKEND_AUTOLOAD=0 vllm --help >/dev/null 2>&1; then
     log "Verified: 'vllm' command is available in conda env '$env_name'"
+    log_perf_step_end "$perf_description_help" "$perf_start_epoch_help" 0
     log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
   log "Warning: 'vllm' command exists in '$env_name' but runtime validation failed (for example missing backend/runtime libs)."
+  log_perf_step_end "$perf_description_help" "$perf_start_epoch_help" 1
   log_perf_step_end "$perf_description" "$perf_start_epoch" 1
   return 1
 }
