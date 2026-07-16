@@ -941,21 +941,32 @@ ascend_runtime_requirement_is_optional_for_quickstart() {
 
 ensure_ascend_catlass_submodule_ready() {
   local repo_path="$1"
+  local perf_description="Ascend catlass submodule check in $(basename "$repo_path")"
+  local perf_start_epoch
   local submodule_relative_path="csrc/third_party/catlass"
   local submodule_path="$repo_path/$submodule_relative_path"
+  local rc=0
+
+  perf_start_epoch="$(date +%s)"
+  log_perf_step_start "$perf_description"
 
   if [[ -e "$submodule_path/CMakeLists.txt" || -e "$submodule_path/README.md" ]]; then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
   if [[ ! -d "$repo_path/.git" && ! -f "$repo_path/.git" ]]; then
     log "Warning: skipping $submodule_relative_path initialization because '$repo_path' has no git metadata"
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
   log "Initializing Ascend submodule: $submodule_relative_path"
   run_system_command_with_sanitized_ld_library_path \
     git -C "$repo_path" submodule update --init --recursive "$submodule_relative_path"
+  rc=$?
+  log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+  return "$rc"
 }
 
 resolve_ascend_expected_cmake_generator() {
@@ -973,13 +984,19 @@ resolve_ascend_expected_cmake_generator() {
 
 repair_ascend_cmake_generator_cache() {
   local repo_path="$1"
+  local perf_description="Ascend CMake generator cache check in $(basename "$repo_path")"
+  local perf_start_epoch
   local build_dir="$repo_path/csrc/build"
   local cache_file="$build_dir/CMakeCache.txt"
   local cmake_files_dir="$build_dir/CMakeFiles"
   local cached_generator=""
   local expected_generator=""
 
+  perf_start_epoch="$(date +%s)"
+  log_perf_step_start "$perf_description"
+
   if [[ ! -f "$cache_file" ]]; then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
@@ -990,12 +1007,14 @@ repair_ascend_cmake_generator_cache() {
   expected_generator="$(resolve_ascend_expected_cmake_generator || true)"
 
   if [[ -z "$cached_generator" || -z "$expected_generator" || "$cached_generator" == "$expected_generator" ]]; then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
   log "Detected stale Ascend CMake generator cache in '$build_dir' (cached=$cached_generator, expected=$expected_generator); clearing generator metadata"
   rm -f -- "$cache_file" "$build_dir/Makefile" "$build_dir/build.ninja" "$build_dir/cmake_install.cmake"
   rm -rf -- "$cmake_files_dir"
+  log_perf_step_end "$perf_description" "$perf_start_epoch" 0
 }
 
 validate_ascend_custom_op_in_env() {
@@ -1090,8 +1109,14 @@ force_reinstall_ascend_python_stack_in_env() {
 
 ensure_ascend_torch_runtime_healthy() {
   local env_name="$1"
+  local perf_description="Ascend torch runtime health check in $env_name"
+  local perf_start_epoch
+
+  perf_start_epoch="$(date +%s)"
+  log_perf_step_start "$perf_description"
 
   if validate_torch_npu_runtime_in_env "$env_name"; then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
@@ -1101,17 +1126,20 @@ ensure_ascend_torch_runtime_healthy() {
     log "Torch/torch-npu runtime import validation failed in '$env_name'; re-running Ascend Python stack reconciliation"
     reconcile_ascend_runtime_with_manager
     if validate_torch_npu_runtime_in_env "$env_name"; then
+      log_perf_step_end "$perf_description" "$perf_start_epoch" 0
       return 0
     fi
   fi
 
   force_reinstall_ascend_python_stack_in_env "$env_name"
   if validate_torch_npu_runtime_in_env "$env_name"; then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
   log_torch_npu_runtime_validation_failure_details "$env_name" "post-reinstall validation failure" || true
   log "Warning: torch/torch-npu runtime import validation is still failing in '$env_name'"
+  log_perf_step_end "$perf_description" "$perf_start_epoch" 1
   return 1
 }
 
@@ -1251,13 +1279,20 @@ install_ascend_repo_into_env() {
 
 ensure_ascend_runtime_python_packages() {
   local repo_path="$1"
+  local perf_description="Ascend runtime dependency check in $ENV_NAME"
+  local perf_start_epoch
   local requirement_specs=()
   local missing_requirement_specs=()
   local requirement_spec
   local required_specs=()
+  local rc=0
+
+  perf_start_epoch="$(date +%s)"
+  log_perf_step_start "$perf_description"
 
   mapfile -t requirement_specs < <(list_requirement_specs_from_requirements_file "$repo_path" || true)
   if (( ${#requirement_specs[@]} == 0 )); then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
@@ -1269,12 +1304,14 @@ ensure_ascend_runtime_python_packages() {
   done
 
   if (( ${#required_specs[@]} == 0 )); then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
   mapfile -t missing_requirement_specs < <(list_missing_pip_requirements_in_env "$ENV_NAME" "${required_specs[@]}" || true)
 
   if (( ${#missing_requirement_specs[@]} == 0 )); then
+    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
     return 0
   fi
 
@@ -1282,6 +1319,9 @@ ensure_ascend_runtime_python_packages() {
   run_with_heartbeat \
     "installing Ascend runtime Python dependencies into $ENV_NAME" \
     run_pip_install_in_env "$ENV_NAME" -- "${missing_requirement_specs[@]}"
+  rc=$?
+  log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+  return "$rc"
 }
 
 read_positive_int_env_with_fallback() {
@@ -1865,7 +1905,6 @@ create_or_update_conda_env() {
     log "Conda env '$ENV_NAME' setup stopped because repository installation failed (rc=$install_rc)"
     return "$install_rc"
   fi
-  report_vllm_cli_status "$ENV_NAME" || true
 
   configure_bashrc_conda_init
   maybe_update_bashrc_auto_activate_env
