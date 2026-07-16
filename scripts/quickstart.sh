@@ -795,11 +795,7 @@ ensure_ascend_build_python_packages() {
     batch_specs+=("cmake" "nanobind>=2.4")
   fi
 
-  for package_spec in "${batch_specs[@]}"; do
-    if ! pip_requirement_satisfied_in_env "$ENV_NAME" "$package_spec"; then
-      missing_batch_specs+=("$package_spec")
-    fi
-  done
+  mapfile -t missing_batch_specs < <(list_missing_pip_requirements_in_env "$ENV_NAME" "${batch_specs[@]}" || true)
 
   if (( ${#missing_batch_specs[@]} == 0 )); then
     log "Ascend build Python dependencies already satisfied in '$ENV_NAME'"
@@ -1231,6 +1227,7 @@ ensure_ascend_runtime_python_packages() {
   local requirement_specs=()
   local missing_requirement_specs=()
   local requirement_spec
+  local required_specs=()
 
   mapfile -t requirement_specs < <(list_requirement_specs_from_requirements_file "$repo_path" || true)
   if (( ${#requirement_specs[@]} == 0 )); then
@@ -1241,11 +1238,14 @@ ensure_ascend_runtime_python_packages() {
     if ascend_runtime_requirement_is_optional_for_quickstart "$requirement_spec"; then
       continue
     fi
-
-    if ! pip_requirement_satisfied_in_env "$ENV_NAME" "$requirement_spec"; then
-      missing_requirement_specs+=("$requirement_spec")
-    fi
+    required_specs+=("$requirement_spec")
   done
+
+  if (( ${#required_specs[@]} == 0 )); then
+    return 0
+  fi
+
+  mapfile -t missing_requirement_specs < <(list_missing_pip_requirements_in_env "$ENV_NAME" "${required_specs[@]}" || true)
 
   if (( ${#missing_requirement_specs[@]} == 0 )); then
     return 0
@@ -2034,6 +2034,41 @@ raise SystemExit(0)
 PY
 }
 
+list_missing_pip_requirements_in_env() {
+  local env_name="$1"
+  shift
+  local requirement_specs=("$@")
+
+  if (( ${#requirement_specs[@]} == 0 )); then
+    return 0
+  fi
+
+  run_conda_env_cmd "$env_name" python - "${requirement_specs[@]}" <<'PY'
+import sys
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    from packaging.requirements import Requirement
+except ImportError:
+    raise SystemExit(1)
+
+for raw_spec in sys.argv[1:]:
+    requirement = Requirement(raw_spec)
+
+    if requirement.marker and not requirement.marker.evaluate():
+        continue
+
+    try:
+        installed_version = version(requirement.name)
+    except PackageNotFoundError:
+        print(raw_spec)
+        continue
+
+    if requirement.specifier and not requirement.specifier.contains(installed_version, prereleases=True):
+        print(raw_spec)
+PY
+}
+
 repo_requires_ascend_runtime() {
   local repo_path="$1"
 
@@ -2076,11 +2111,7 @@ ensure_vllm_hust_editable_build_python_packages() {
   done
 
   log "Checking vllm-hust editable build requirements in '$ENV_NAME' (${#build_package_specs[@]} packages)"
-  for package_spec in "${build_package_specs[@]}"; do
-    if ! pip_requirement_satisfied_in_env "$ENV_NAME" "$package_spec"; then
-      missing_package_specs+=("$package_spec")
-    fi
-  done
+  mapfile -t missing_package_specs < <(list_missing_pip_requirements_in_env "$ENV_NAME" "${build_package_specs[@]}" || true)
 
   if (( ${#missing_package_specs[@]} == 0 )); then
     log "vllm-hust editable build requirements already satisfied in '$ENV_NAME'"
@@ -2099,7 +2130,6 @@ ensure_vllm_hust_runtime_python_packages() {
   local requirements_file="$repo_path/requirements/common.txt"
   local requirement_specs=()
   local missing_requirement_specs=()
-  local requirement_spec
 
   if ! mapfile -t requirement_specs < <(list_requirement_specs_from_file "$requirements_file" || true); then
     return 0
@@ -2109,11 +2139,7 @@ ensure_vllm_hust_runtime_python_packages() {
   fi
 
   log "Checking vllm-hust common runtime Python dependencies in '$ENV_NAME' (${#requirement_specs[@]} packages)"
-  for requirement_spec in "${requirement_specs[@]}"; do
-    if ! pip_requirement_satisfied_in_env "$ENV_NAME" "$requirement_spec"; then
-      missing_requirement_specs+=("$requirement_spec")
-    fi
-  done
+  mapfile -t missing_requirement_specs < <(list_missing_pip_requirements_in_env "$ENV_NAME" "${requirement_specs[@]}" || true)
 
   if (( ${#missing_requirement_specs[@]} == 0 )); then
     log "vllm-hust common runtime Python dependencies already satisfied in '$ENV_NAME'"
