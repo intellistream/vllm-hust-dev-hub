@@ -107,284 +107,158 @@ CLI --config > state.env > --profile > env > 内置默认值
 
 ## 4. 使用方式
 
-### 4.1 快速入门
+### 4.1 五层命令速查
+
+| 层级 | 命令 | 前置条件 | 输出 |
+|------|------|---------|------|
+| **L1** 服务监控 | `profile --kind engine --label smoke --duration 30 --interval 2` | engine 已运行 | `*.prom` 快照 + `npu-smi.csv` |
+| **L2** 基准测试 | `benchmark --label bench --num-prompts 200 --concurrency 8` | engine 已运行 | `bench.json` (TTFT/TPOT/ITL) |
+| **L3** 框架级 Profiling | `profile --kind torch --label torch --requests 8` | engine 已运行 | `*.pt.trace.json.gz` |
+| **L4** 硬件级 Profiling | `profile --kind msprof --label msprof --duration 30` | **先 stop**（独占 NPU） | `PROF_*/sqlite/*.db` + CSV |
+| **L5** 长稳测试 | `benchmark` 循环执行 | engine 已运行 | 多次 `bench.json` 对比 |
+
+### 4.2 快速入门
 
 ```bash
 # 1. 启动 engine
-VLLM_HUST_API_KEY=testkey123 \
-  bash scripts/manage-container.sh start
+VLLM_HUST_API_KEY=testkey123 bash scripts/manage-container.sh start
 
-# 2. 快速健康检查（L1）
-VLLM_HUST_API_KEY=testkey123 \
-bash scripts/manage-container.sh profile --kind engine \
-  --label smoke --duration 20 --interval 2 --traffic-requests 10
+# 2. L1 — 服务指标采集（30s，带流量）
+VLLM_HUST_API_KEY=testkey123 bash scripts/manage-container.sh profile --kind engine \
+  --label smoke --duration 30 --interval 2 --traffic-requests 10
 
-# 3. 服务级基准测试（L2）
-VLLM_HUST_API_KEY=testkey123 \
-bash scripts/manage-container.sh benchmark \
-  --label quick-bench --num-prompts 200 --concurrency 8
+# 3. L2 — 基准测试（200 请求，4 并发）
+VLLM_HUST_API_KEY=testkey123 bash scripts/manage-container.sh benchmark \
+  --label quick-bench --num-prompts 200 --concurrency 4
 
-# 4. 框架级 Profiling（L3）
-VLLM_HUST_API_KEY=testkey123 \
-bash scripts/manage-container.sh profile --kind torch \
+# 4. L3 — PyTorch Profiler（8 请求）
+VLLM_HUST_API_KEY=testkey123 bash scripts/manage-container.sh profile --kind torch \
   --label torch-test --requests 8
 
-# 5. 硬件级 Profiling（L4，需先 stop engine）
+# 5. L4 — CANN msprof（先 stop，独占 NPU）
 bash scripts/manage-container.sh stop
-
-VLLM_HUST_API_KEY=testkey123 \
-bash scripts/manage-container.sh profile --kind msprof \
+VLLM_HUST_API_KEY=testkey123 bash scripts/manage-container.sh profile --kind msprof \
   --label msprof-test --duration 30 --requests 16
 
 # 6. 恢复 engine
-VLLM_HUST_API_KEY=testkey123 \
-bash scripts/manage-container.sh start
+VLLM_HUST_API_KEY=testkey123 bash scripts/manage-container.sh start
 ```
 
-### 4.2 benchmark 命令参考
+### 4.3 benchmark 常用变体
 
 ```bash
-# 基本用法（默认 200 请求，random 数据集）
+# 默认（200 请求，random 数据集，4 并发）
 bash scripts/manage-container.sh benchmark
 
-# 完整参数
-bash scripts/manage-container.sh benchmark \
-  --label my-test            # 结果目录标签
-  --num-prompts 500          # 请求数
-  --concurrency 16           # 最大并发数
-  --rate inf                 # 请求速率（inf=全速）
-  --input-len 128            # 输入长度（random 数据集）
-  --output-len 64            # 输出 token 数
-  --dataset random           # 数据集类型
-  --dataset-path /data/x.jsonl  # 数据集路径（sonnet/sharegpt 必须）
-  --backend vllm             # 后端类型
+# 大负载（500 请求，16 并发）
+bash scripts/manage-container.sh benchmark --label stress --num-prompts 500 --concurrency 16
 
-# 真实数据集测试
-bash scripts/manage-container.sh benchmark \
-  --label sharegpt \
-  --dataset sharegpt \
-  --dataset-path /data/sharegpt.jsonl \
-  --num-prompts 200 \
-  --rate 2 \
-  --concurrency 8
+# 真实数据集（sharegpt）
+bash scripts/manage-container.sh benchmark --label sharegpt \
+  --dataset sharegpt --dataset-path /data/sharegpt.jsonl \
+  --num-prompts 200 --rate 2 --concurrency 8
 
 # 节流测试
-bash scripts/manage-container.sh benchmark \
-  --label rate-limited \
-  --num-prompts 300 \
-  --rate 10 \
-  --concurrency 32
+bash scripts/manage-container.sh benchmark --label rate-limited \
+  --num-prompts 300 --rate 10 --concurrency 32
 ```
 
-### 4.3 组合测试场景
+### 4.4 profile 模式详解
+
+#### P3 — profile --kind engine（Prometheus 指标）
 
 ```bash
-# 场景：完整性能评估（benchmark + engine profile 同时运行）
-# Step 1: 启动 engine
-VLLM_HUST_API_KEY=testkey123 bash scripts/manage-container.sh start
+# 基础（无流量，仅 idle 指标）
+VLLM_HUST_API_KEY=testkey123 bash scripts/manage-container.sh profile --kind engine \
+  --label idle --duration 8 --interval 2
 
-# Step 2: 后台运行 benchmark
-bash scripts/manage-container.sh benchmark \
-  --label full-eval --num-prompts 500 --concurrency 16 &
-BENCH_PID=$!
+# 带流量（urllib 后端，零依赖）
+VLLM_HUST_API_KEY=testkey123 bash scripts/manage-container.sh profile --kind engine \
+  --label load --duration 30 --interval 2 --traffic-requests 30 --traffic-concurrency 4
 
-# Step 3: 同时采集 engine 指标
-bash scripts/manage-container.sh profile --kind engine \
-  --label full-eval-metrics --duration 120 --interval 2
-
-wait $BENCH_PID
-
-# Step 4: 查看结果
-echo "Benchmark results:"
-ls /tmp/vllm-hust-manager/profile/benchmark/full-eval-*/
-echo "Metrics results:"
-ls /tmp/vllm-hust-manager/profile/engine/full-eval-metrics-*/
+# 带流量（bench 后端，更可靠，适合大负载）
+VLLM_HUST_API_KEY=testkey123 bash scripts/manage-container.sh profile --kind engine \
+  --label bench-load --duration 30 --interval 2 \
+  --traffic-requests 30 --traffic-concurrency 4 --traffic-backend bench
 ```
 
-### 4.4 profile 命令详解（来自 manage-container.md）
-
-本节详细说明 3 种 profile 模式的具体命令、预期输出和产物解读。
-
-#### P3 — profile --kind engine（Prometheus 快照）
-
-```bash
-# 基础（无流量，抓 idle engine 指标）
-VLLM_HUST_API_KEY=testkey123 \
-  bash scripts/manage-container.sh profile --kind engine \
-    --label engine-smoke --duration 8 --interval 2
-```
-
-预期：4 个 `NNNN-HHMMSS.prom` 快照（每 ~2s 一个），`failed: 0`，`summary.txt` 摘出关键 `vllm:*` 指标。
-
-**带流量（让 metrics 真正动起来）：**
-
-```bash
-# urllib 后端（零依赖）
-VLLM_HUST_API_KEY=testkey123 \
-  bash scripts/manage-container.sh profile --kind engine \
-    --label engine-load --duration 30 --interval 2 \
-    --traffic-requests 30 --traffic-concurrency 4
-
-# bench 后端（更可靠，适合大负载）
-VLLM_HUST_API_KEY=testkey123 \
-  bash scripts/manage-container.sh profile --kind engine \
-    --label engine-bench --duration 30 --interval 2 \
-    --traffic-requests 30 --traffic-concurrency 4 --traffic-backend bench \
-    --traffic-input-len 128 --traffic-dataset random
-```
-
-**traffic generator flags：**
-
-| flag | 说明 | 默认值 |
-|------|------|--------|
+| traffic flag | 说明 | 默认值 |
+|-------------|------|--------|
 | `--traffic-backend <b>` | `urllib` \| `bench` | `urllib` |
-| `--traffic-requests N` | 期间发 N 个请求 | `0`（不发） |
+| `--traffic-requests N` | 请求数 | `0`（不发） |
 | `--traffic-concurrency C` | 并发数 | `4` |
 | `--traffic-rate R` | 节流 R req/s（`0`=全速） | `0` |
 | `--traffic-max-tokens N` | 每请求最大 token | `64` |
 | `--traffic-input-len N` | 输入长度（bench 后端） | `128` |
 | `--traffic-dataset <d>` | `random` \| `sonnet` \| `sharegpt` | `random` |
-| `--traffic-dataset-path <p>` | sonnet/sharegpt 本地路径 | — |
+| `--traffic-dataset-path <p>` | 数据集本地路径 | — |
 
-#### P4 — profile --kind torch（PyTorch profiler）
+#### P4 — profile --kind torch（PyTorch Profiler）
 
 ```bash
-VLLM_HUST_API_KEY=testkey123 \
-  bash scripts/manage-container.sh profile --kind torch \
-    --label torch-smoke --requests 3
+VLLM_HUST_API_KEY=testkey123 bash scripts/manage-container.sh profile --kind torch \
+  --label torch-smoke --requests 3
 ```
 
-预期：
-- engine healthy in ~60s
-- `POST /start_profile` → 200，发 3 个 chat 请求 → `chat: ok=3 fail=0`
-- `POST /stop_profile` → 200
-- 1 个 `train05_<pid>.async_llm.<ts>.pt.trace.json.gz`（~1.5 MB）+ 1 个 `rank*_<pid>_<ts>_ascend_pt/` 目录（CANN 原始 trace）
-- 测完自动 stop profile-mode engine 并恢复原 engine（除非 `--keep-engine-running`）
-- `chrome://tracing` → Load → 选 `*.pt.trace.json.gz` 可视化
-
-**torch flags：**
+预期产物：`*.pt.trace.json.gz`（~1.5 MB），`chrome://tracing` → Load 可视化。
 
 | flag | 说明 | 默认值 |
 |------|------|--------|
-| `--requests N` | 期间发的 chat 请求数 | `8` |
+| `--requests N` | chat 请求数 | `8` |
 | `--with-stack / --no-stack` | 是否带 stack trace | `with` |
-| `--keep-engine-running` | 测完不自动恢复原 engine | 关闭 |
-| `--no-autostart` | 引擎没起时不要自动 start | 关闭 |
+| `--keep-engine-running` | 测完不恢复原 engine | 关闭 |
 
 #### P5 — profile --kind msprof（CANN kernel profiler）
 
-> **独占 NPU**：msprof 必须独占 NPU 和 port；跑前先 `bash scripts/manage-container.sh stop`。
+> **独占 NPU**：跑前必须 `bash scripts/manage-container.sh stop`。
 
 ```bash
-VLLM_HUST_API_KEY=testkey123 \
-  bash scripts/manage-container.sh profile --kind msprof \
-    --label msprof-smoke --duration 12 --requests 3 \
-    --config VLLM_ENGINE_PORT=18105 \
-    --config VLLM_ENGINE_NPU_DEVICES=3 \
-    --config ASCEND_RT_VISIBLE_DEVICES=3 \
-    --config ASCEND_VISIBLE_DEVICES=3
+VLLM_HUST_API_KEY=testkey123 bash scripts/manage-container.sh profile --kind msprof \
+  --label msprof-smoke --duration 12 --requests 3 \
+  --config VLLM_ENGINE_PORT=18105 --config VLLM_ENGINE_NPU_DEVICES=3 \
+  --config ASCEND_RT_VISIBLE_DEVICES=3 --config ASCEND_VISIBLE_DEVICES=3
 ```
 
-预期：
-- engine healthy in ~60s
-- 3 个 chat request 全部 ok（`chat: ok=3 fail=0`）
-- msprof `--duration` 到点自动停 + 5s 收尾 + SIGTERM 兜底
-- 自动 export 出：
-  - `PROF_<id>/mindstudio_profiler_output/op_summary_<ts>.csv`（~13 MB）
-  - `PROF_<id>/mindstudio_profiler_output/task_time_<ts>.csv`（~5.5 MB）
-  - `PROF_<id>/mindstudio_profiler_output/op_statistic_<ts>.csv` + `api_statistic_<ts>.csv`
-  - `PROF_<id>/mindstudio_profiler_output/msprof_<ts>.json`（~126 MB）
-- `summary.txt` 记录 `prof_dir` 路径，用 **MindStudio Insight** → Import Project 选 `PROF_*` 目录可视化
-
-**msprof flags：**
+预期产物：`PROF_*/mindstudio_profiler_output/*.csv` + `msprof_*.json`，用 MindStudio Insight 导入。
 
 | flag | 说明 | 默认值 |
 |------|------|--------|
 | `--duration <sec>` | 采集时长 | `30s` |
-| `--requests N` | 期间发的 chat 请求数 | `8` |
+| `--requests N` | chat 请求数 | `8` |
 | `--aic-metrics <list>` | `\|` 分隔的 aic metrics | （空） |
-| `--task-memory on\|off` | `--task-memory=` 参数 | `off` |
-| `--sys-profiling on\|off` | `--sys-profiling=` 参数 | `off` |
+| `--task-memory on\|off` | task memory 参数 | `off` |
+| `--sys-profiling on\|off` | sys profiling 参数 | `off` |
 | `--msprof-bin <path>` | 覆盖 msprof 路径 | 自动检测 |
 
-合法 `--aic-metrics` 值：`ArithmeticUtilization` \| `PipeUtilization` \| `Memory` \| `MemoryL0` \| `MemoryUB` \| `L2Cache` \| `ResourceConflictRatio` \| `MemoryAccess`
+合法 `--aic-metrics`：`ArithmeticUtilization` \| `PipeUtilization` \| `Memory` \| `MemoryL0` \| `MemoryUB` \| `L2Cache` \| `ResourceConflictRatio` \| `MemoryAccess`
 
-**注意**：`msprof` 不支持 `--no-autostart`（它必须自己 fork vllm）。
-
-### 4.5 一次性跑 P3 + P4 + P5
+### 4.5 组合测试：一次跑完 L1-L4
 
 ```bash
 SCRIPT=scripts/manage-container.sh
-PROFILE=profiles/inplace-qwen2.5-0.5b-npu1.env
-export VLLM_HUST_API_KEY=testkey123
-export VLLM_ENGINE_PORT=18105
-export VLLM_ENGINE_NPU_DEVICES=3
-export ASCEND_RT_VISIBLE_DEVICES=3
-export ASCEND_VISIBLE_DEVICES=3
+export VLLM_HUST_API_KEY=testkey123 VLLM_ENGINE_PORT=18105
+export VLLM_ENGINE_NPU_DEVICES=3 ASCEND_RT_VISIBLE_DEVICES=3 ASCEND_VISIBLE_DEVICES=3
 
 bash $SCRIPT stop || true
-bash $SCRIPT start --profile "$PROFILE"
-bash $SCRIPT profile --kind engine --label p3 --duration 8 --interval 2
-bash $SCRIPT profile --kind torch  --label p4 --requests 3
+bash $SCRIPT start --profile profiles/inplace-qwen2.5-0.5b-npu1.env
+bash $SCRIPT profile --kind engine --label l1 --duration 30 --interval 2 --traffic-requests 10
+bash $SCRIPT benchmark --label l2 --num-prompts 200 --concurrency 4
+bash $SCRIPT profile --kind torch --label l3 --requests 8
 bash $SCRIPT stop
-bash $SCRIPT profile --kind msprof --label p5 --duration 12 --requests 3
+bash $SCRIPT profile --kind msprof --label l4 --duration 30 --requests 16
 ```
 
-### 4.6 profile --kind engine 带流量生成器详解
-
-#### 两种 traffic 后端
-
-| 后端 | flag | 客户端 | 优点 | 限制 |
-| --- | --- | --- | --- | --- |
-| `urllib`（默认） | `--traffic-backend urllib` | Python `urllib.request` | 零依赖，不需 model 文件 | vllm-hust keep-alive 偶发挂死；并发 >8 时可能部分请求 hang |
-| `bench` | `--traffic-backend bench` | `vllm bench serve`（aiohttp） | 30 req 0 fail；标准 bench 工具；输出 TTFT/TPOT/ITL percentile | 需要 model 文件在磁盘上（加载 tokenizer）；需 conda env |
-
-**bench 后端**会在模型文件不存在时**自动降级到 urllib**并打印警告。
-
-#### urllib 后端示例
+### 4.6 组合测试：benchmark + engine profile 同时
 
 ```bash
-# 随机文本压测
-VLLM_HUST_API_KEY=testkey123 \
-  bash scripts/manage-container.sh profile --kind engine \
-    --label bench-vs-random --duration 30 --interval 2 \
-    --traffic-backend bench \
-    --traffic-requests 60 --traffic-concurrency 8 --traffic-rate 0 \
-    --traffic-max-tokens 128 \
-    --traffic-dataset random --traffic-input-len 550
-
-# sonnet 真实文本
-VLLM_HUST_API_KEY=testkey123 \
-  bash scripts/manage-container.sh profile --kind engine \
-    --label bench-sonnet --duration 30 --interval 2 \
-    --traffic-requests 60 --traffic-concurrency 8 --traffic-rate 0 \
-    --traffic-backend bench --traffic-dataset sonnet
-
-# sharegpt chat 真实 workload
-VLLM_HUST_API_KEY=testkey123 \
-  bash scripts/manage-container.sh profile --kind engine \
-    --label bench-sharegpt --duration 30 --interval 2 \
-    --traffic-requests 100 --traffic-concurrency 16 --traffic-rate 0 \
-    --traffic-backend bench --traffic-dataset sharegpt
+VLLM_HUST_API_KEY=testkey123 bash scripts/manage-container.sh start
+bash scripts/manage-container.sh benchmark --label full-eval --num-prompts 500 --concurrency 16 &
+BENCH_PID=$!
+bash scripts/manage-container.sh profile --kind engine --label full-eval-metrics --duration 120 --interval 2
+wait $BENCH_PID
+ls /tmp/vllm-hust-manager/profile/benchmark/full-eval-*/
+ls /tmp/vllm-hust-manager/profile/engine/full-eval-metrics-*/
 ```
-
-#### summary.txt 产物
-
-summary 自动包含三段（视后端而定）：
-
-1. **traffic / bench result** — throughput、latency p50/p90/p99、in/out tok/s
-2. **metrics delta (snap 1 → final)** — profile 期间 counter 的变化量：
-
-   ```
-   --- metrics delta (snap 1 → final) ---
-     prompt_tokens_total            3968 → 4360  (+392)
-     generation_tokens_total         992 → 1120  (+128)
-     request_success{length}           31 → 39    (+8)
-     e2e_latency_count                 31 → 39    (+8)
-   ```
-
-   差值应与 traffic log 的 in_tokens / out_tokens / 请求数一致。
-3. **last snapshot: key vllm:\* metrics** — final 时刻的绝对值
 
 ---
 
