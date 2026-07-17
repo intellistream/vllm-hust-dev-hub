@@ -523,19 +523,14 @@ msprof_bin_resolve() {
 # 把 VLLM_ARGS 数组拼成单字符串（msprof --application= 接受）
 # 同时 export msprof 必需的 CANN profiling env（HCCL_OP_EXPANSION_MODE 等）
 build_msprof_command() {
-  local msprof_bin="$1"
-  local app_str
-  # VLLM_ARGS 是 build_vllm_args 输出的全局数组
-  printf -v app_str '%q ' "${VLLM_ARGS[@]}"
-  app_str="${app_str% }"
+  local msprof_bin="$1" out_dir="$2" duration="$3"
 
   # aic-metrics 是单值，重复 --aic-metrics=... 才能多选（msprof 行为）
   # 用户传 'ArithmeticUtilization|PipeUtilization|Memory|L2Cache' 这种 | 分隔串
   local aic_metrics_esc="$PROFILE_MSPROF_AIC_METRICS"
   aic_metrics_esc="${aic_metrics_esc//,/ }"   # 兼容逗号分隔输入
   aic_metrics_esc="${aic_metrics_esc// /}"
-  local aic_flags
-  aic_flags=""
+  local aic_flags=""
   local m
   # 注：脚本顶 IFS=$'\n\t' 禁了按空格 word-split。临时 IFS=$' \n\t' 让 read 按空白拆。
   local -a m_arr
@@ -546,23 +541,40 @@ build_msprof_command() {
   done
   aic_flags="${aic_flags%$'\n'}"
 
+  # 新版 msprof 不再支持 --application=...，改用 msprof [flags] <app> [app args]
+  # 参考：https://www.hiascend.com/document/detail/zh/canncommercial/601/profiling/profiling_0003.html
+  # 此处用 printf '%q ' 把 VLLM_ARGS 数组拼成引用安全的字符串追加到 msprof flags 后面
+  local app_str
+  printf -v app_str '%q ' "${VLLM_ARGS[@]}"
+  app_str="${app_str% }"
+
+  # msprof 脚本启动时 conda 和 ascend env 尚未激活，需在 exec 前 source
   cat <<EOF
 # msprof-required env (CANN)
 export HCCL_OP_EXPANSION_MODE="\${HCCL_OP_EXPANSION_MODE:-AIV}"
 export PROFILING_MODE="\${PROFILING_MODE:-0}"
 export MSPROF_HOST_PORT="\${MSPROF_HOST_PORT:-64451}"
 export ASCEND_PROFILER_MODE=off
+
+# 激活 conda 环境（确保 vllm-hust 能找到 cuda/torch 依赖）
+source "$DEFAULT_MINICONDA" 2>/dev/null || true
+conda activate "$CONDA_ENV" 2>/dev/null || true
+
+# 激活 Ascend 环境
+[[ -f "$DEFAULT_ASCEND_TOOLKIT" ]] && source "$DEFAULT_ASCEND_TOOLKIT" 2>/dev/null || true
+[[ -f "$DEFAULT_ATB_SET_ENV" ]] && source "$DEFAULT_ATB_SET_ENV" 2>/dev/null || true
+
 exec "$msprof_bin" \\
-  --application="$app_str" \\
-  --output="$2" \\
-  --duration=$3 \\
+  --output="$out_dir" \\
+  --duration=$duration \\
   --task-time=on \\
 ${aic_flags}
   --runtime-api=on \\
   --ascendcl=on \\
   --ge-api=off \\
   --task-memory=$PROFILE_MSPROF_TASK_MEMORY \\
-  --sys-profiling=$PROFILE_MSPROF_SYS_PROFILING
+  --sys-profiling=$PROFILE_MSPROF_SYS_PROFILING \\
+  $app_str
 EOF
 }
 
@@ -599,7 +611,7 @@ build_vllm_args() {
   [[ -z "$vllm_bin" ]] && { log_err "vllm/vllm-hust not on PATH (after conda activate)"; return 1; }
   VLLM_BIN="$vllm_bin"
 
-  VLLM_ARGS=("$VLLM_BIN" serve "$MODEL_PATH"
+  VLLM_ARGS=("${ENGINE_PYTHON:-python3}" -m vllm.entrypoints.cli.main serve "$MODEL_PATH"
     --served-model-name "$SERVED_MODEL_NAME"
     --host "$HOST" --port "$PORT"
     --tensor-parallel-size "$TP_SIZE"
@@ -1896,7 +1908,9 @@ profile_msprof() {
   # 临时保留脚本方便诊断（profile_msprof 末尾不删）
 
   # 启动 msprof 包住 vllm serve
-  bash "$msprof_script" >> "$msprof_log" 2>&1 &
+  # 注意：必须用 setsid 完全脱离终端，否则非交互 bash 的 job control
+  # 会在后台进程尝试读取 tty 时将其挂起（SIGTTIN）。
+  setsid bash "$msprof_script" < /dev/null >> "$msprof_log" 2>&1 &
   local msprof_pid=$!
   echo "$msprof_pid" > "$msprof_pid_file"
   disown 2>/dev/null || true
