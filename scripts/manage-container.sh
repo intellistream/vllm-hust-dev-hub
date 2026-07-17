@@ -56,6 +56,16 @@ DEFAULT_PROFILE_MSPROF_TASK_MEMORY="off"
 DEFAULT_PROFILE_MSPROF_SYS_PROFILING="off"
 # 默认 msprof 二进制路径（按 cann-9.0.0 推断；找不到时 profile_msprof 会再探测）
 DEFAULT_PROFILE_MSPROF_BIN="/usr/local/Ascend/cann-9.0.0/bin/msprof"
+# benchmark
+DEFAULT_BENCH_NUM_PROMPTS=200
+DEFAULT_BENCH_CONCURRENCY=8
+DEFAULT_BENCH_RATE="inf"
+DEFAULT_BENCH_INPUT_LEN=128
+DEFAULT_BENCH_OUTPUT_LEN=64
+DEFAULT_BENCH_DATASET="random"
+DEFAULT_BENCH_DATASET_PATH=""
+DEFAULT_BENCH_BACKEND="vllm"
+
 # traffic generator (P6: bench backend)
 DEFAULT_TRAFFIC_BACKEND="urllib"
 DEFAULT_TRAFFIC_INPUT_LEN=128
@@ -94,11 +104,9 @@ Actions (v0.2):
   foreground    前台启动（调试用）
   profile --kind engine   周期性抓 /metrics（Prometheus 快照）
   profile --kind torch    vllm 内置 PyTorch profiler（*.pt.trace.json.gz）
-  profile --kind msprof   CANN msprof（kernel 级，PROF_*/ 目录）
+  profile --kind msprof   CANN msprof（kernel 级，PROF_*/ 目录，自动 TraceLoom 分析）
+  benchmark      在线服务基准测试（vllm bench serve 封装）
   help          显示本帮助
-
-Not in v0.2 (planned):
-  benchmark (P2)
 
 Common flags:
   --profile <path>          profile 文件路径（覆盖 \$VLLM_ENGINE_ENV_FILE）
@@ -120,6 +128,17 @@ profile --kind torch/msprof 额外 flags:
   --sys-profiling on|off    msprof：--sys-profiling 参数
   --msprof-bin <path>       msprof 可执行文件路径
 
+benchmark flags:
+  --label <text>            标签（输出目录名后缀）
+  --num-prompts N           请求数（默认 200）
+  --concurrency C           最大并发数（默认 8）
+  --rate R                  请求速率，inf=全速（默认 inf）
+  --input-len N             prompt 输入长度（仅 random 数据集，默认 128）
+  --output-len N            输出 token 数（默认 64）
+  --dataset <d>             random|sonnet|sharegpt（默认 random）
+  --dataset-path <p>        sonnet/sharegpt 数据集本地路径
+  --backend <b>             vllm（默认 vllm）
+
 Examples:
   VLLM_HUST_API_KEY=testkey123 \\
     bash $SCRIPT_NAME start --profile profiles/inplace-qwen2.5-0.5b-npu1.env
@@ -128,6 +147,8 @@ Examples:
   bash $SCRIPT_NAME profile --kind engine --label smoke --duration 30
   bash $SCRIPT_NAME profile --kind torch  --label torch-smoke --requests 8
   bash $SCRIPT_NAME profile --kind msprof --label msprof-smoke --duration 30
+  bash $SCRIPT_NAME benchmark --label bench-smoke --num-prompts 100 --concurrency 4
+  bash $SCRIPT_NAME benchmark --label sharegpt-test --dataset sharegpt --dataset-path /data/sharegpt.jsonl --num-prompts 200 --rate 2
   bash $SCRIPT_NAME stop
 
 EOF
@@ -155,10 +176,10 @@ parse_args() {
   JSON_OUTPUT="false"
   CLI_OVERRIDES=()
   REST_ARGS=()
+  HAS_HELP="false"
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      -h|--help) usage; exit 0 ;;
       --no-color) NO_COLOR=1 ;;
       --json) JSON_OUTPUT="true" ;;
       --profile) PROFILE_FILE="$2"; shift ;;
@@ -166,6 +187,7 @@ parse_args() {
         [[ "$2" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || {
           log_err "bad --config '$2' (expect KEY=VALUE)"; exit 2; }
         CLI_OVERRIDES+=("${BASH_REMATCH[1]}=${BASH_REMATCH[2]}"); shift ;;
+      -h|--help) HAS_HELP="true"; REST_ARGS+=("$1") ;;
       start|stop|restart|status|health|logs|config|profile|benchmark|foreground|help)
         ACTION="$1" ;;
       *) REST_ARGS+=("$1") ;;
@@ -174,6 +196,9 @@ parse_args() {
   done
 
   if [[ -z "$ACTION" ]]; then
+    if [[ "$HAS_HELP" == "true" ]]; then
+      usage; exit 0
+    fi
     log_err "no action specified"
     usage >&2
     exit 1
@@ -265,6 +290,16 @@ resolve_config() {
   PROFILE_MSPROF_SYS_PROFILING="${VLLM_PROFILE_MSPROF_SYS_PROFILING:-$DEFAULT_PROFILE_MSPROF_SYS_PROFILING}"
   PROFILE_MSPROF_BIN="${VLLM_PROFILE_MSPROF_BIN:-$DEFAULT_PROFILE_MSPROF_BIN}"
 
+  # Benchmark 级
+  BENCH_NUM_PROMPTS="${VLLM_BENCH_NUM_PROMPTS:-$DEFAULT_BENCH_NUM_PROMPTS}"
+  BENCH_CONCURRENCY="${VLLM_BENCH_CONCURRENCY:-$DEFAULT_BENCH_CONCURRENCY}"
+  BENCH_RATE="${VLLM_BENCH_RATE:-$DEFAULT_BENCH_RATE}"
+  BENCH_INPUT_LEN="${VLLM_BENCH_INPUT_LEN:-$DEFAULT_BENCH_INPUT_LEN}"
+  BENCH_OUTPUT_LEN="${VLLM_BENCH_OUTPUT_LEN:-$DEFAULT_BENCH_OUTPUT_LEN}"
+  BENCH_DATASET="${VLLM_BENCH_DATASET:-$DEFAULT_BENCH_DATASET}"
+  BENCH_DATASET_PATH="${VLLM_BENCH_DATASET_PATH:-$DEFAULT_BENCH_DATASET_PATH}"
+  BENCH_BACKEND="${VLLM_BENCH_BACKEND:-$DEFAULT_BENCH_BACKEND}"
+
   # 校验
   [[ -z "$MODEL_PATH" ]] && { log_err "VLLM_ENGINE_MODEL_PATH is required"; exit 1; }
   [[ -z "$SERVED_MODEL_NAME" ]] && SERVED_MODEL_NAME="$(basename "$MODEL_PATH")"
@@ -311,7 +346,10 @@ save_state() {
       VLLM_PROFILE_TORCH_REQUESTS VLLM_PROFILE_TORCH_WITH_STACK VLLM_PROFILE_TORCH_KEEP \
       VLLM_PROFILE_MSPROF_DURATION_SEC VLLM_PROFILE_MSPROF_REQUESTS \
       VLLM_PROFILE_MSPROF_AIC_METRICS VLLM_PROFILE_MSPROF_TASK_MEMORY \
-      VLLM_PROFILE_MSPROF_SYS_PROFILING VLLM_PROFILE_MSPROF_BIN; do
+      VLLM_PROFILE_MSPROF_SYS_PROFILING VLLM_PROFILE_MSPROF_BIN \
+      VLLM_BENCH_NUM_PROMPTS VLLM_BENCH_CONCURRENCY VLLM_BENCH_RATE \
+      VLLM_BENCH_INPUT_LEN VLLM_BENCH_OUTPUT_LEN VLLM_BENCH_DATASET \
+      VLLM_BENCH_DATASET_PATH VLLM_BENCH_BACKEND; do
       val="${!key:-}"
       [[ -z "$val" ]] && continue
       # 防御：任何带 KEY/TOKEN/SECRET 字样的 key 一律不写
@@ -808,7 +846,13 @@ cmd_config() {
   "plugins": "$PLUGINS",
   "compilation_config": "${COMPILATION_CONFIG:-}",
   "quantization": "${QUANTIZATION:-}",
-  "autostart": $([[ $AUTOSTART == 1 ]] && echo true || echo false)
+  "autostart": $([[ $AUTOSTART == 1 ]] && echo true || echo false),
+  "bench_num_prompts": $BENCH_NUM_PROMPTS,
+  "bench_concurrency": $BENCH_CONCURRENCY,
+  "bench_rate": "$BENCH_RATE",
+  "bench_input_len": $BENCH_INPUT_LEN,
+  "bench_output_len": $BENCH_OUTPUT_LEN,
+  "bench_dataset": "$BENCH_DATASET"
 }
 JSON
   else
@@ -849,12 +893,181 @@ cmd_foreground() {
   exec "${VLLM_ARGS[@]}"
 }
 
+# ===== benchmark action（vllm bench serve 封装）=====
+cmd_benchmark() {
+  local label="" num_prompts="" concurrency="" rate="" input_len="" output_len=""
+  local dataset="" dataset_path="" backend=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --label) label="$2"; shift ;;
+      --num-prompts) num_prompts="$2"; shift ;;
+      --concurrency) concurrency="$2"; shift ;;
+      --rate) rate="$2"; shift ;;
+      --input-len) input_len="$2"; shift ;;
+      --output-len) output_len="$2"; shift ;;
+      --dataset) dataset="$2"; shift ;;
+      --dataset-path) dataset_path="$2"; shift ;;
+      --backend) backend="$2"; shift ;;
+      --json) ;;
+      -h|--help)
+        cat <<EOF
+benchmark — 在线服务基准测试（vllm bench serve 封装）
+
+Flags:
+  --label <text>          标签，纳入产物目录名（默认 manual-<ts>）
+  --num-prompts N         请求数（默认 200）
+  --concurrency C         最大并发数（默认 8）
+  --rate R                请求速率，inf=全速（默认 inf）
+  --input-len N           prompt 输入长度（仅 random 数据集，默认 128）
+  --output-len N          输出 token 数（默认 64）
+  --dataset <d>           random|sonnet|sharegpt（默认 random）
+  --dataset-path <p>      sonnet/sharegpt 数据集本地路径（必须）
+  --backend <b>           vllm（默认 vllm）
+
+Examples:
+  $SCRIPT_NAME benchmark
+  $SCRIPT_NAME benchmark --label my-test --num-prompts 500 --concurrency 16 --rate inf
+  $SCRIPT_NAME benchmark --label sharegpt --dataset sharegpt --dataset-path /data/sharegpt.jsonl
+EOF
+        return 0 ;;
+      *) log_err "unknown benchmark flag: $1"; exit 1 ;;
+    esac
+    shift
+  done
+
+  resolve_config
+  [[ -n "$label"       ]] || label="$PROFILE_LABEL"
+  [[ -n "$num_prompts" ]] || num_prompts="$BENCH_NUM_PROMPTS"
+  [[ -n "$concurrency" ]] || concurrency="$BENCH_CONCURRENCY"
+  [[ -n "$rate"        ]] || rate="$BENCH_RATE"
+  [[ -n "$input_len"   ]] || input_len="$BENCH_INPUT_LEN"
+  [[ -n "$output_len"  ]] || output_len="$BENCH_OUTPUT_LEN"
+  [[ -n "$dataset"     ]] || dataset="$BENCH_DATASET"
+  [[ -n "$dataset_path" ]] || dataset_path="$BENCH_DATASET_PATH"
+  [[ -n "$backend"     ]] || backend="$BENCH_BACKEND"
+
+  require_api_key "benchmark"
+  activate_envs
+
+  # 确保 engine 在运行
+  if ! is_engine_running; then
+    if [[ "$AUTOSTART" != "1" ]]; then
+      log_err "engine not running; start it first or set VLLM_MANAGER_AUTOSTART=1"
+      exit 1
+    fi
+    log_info "engine not running; autostarting..."
+    cmd_start
+  fi
+
+  local ts; ts="$(date +%Y%m%d-%H%M%S)"
+  local out_dir="$PROFILE_OUTPUT_DIR/benchmark/${label}-${ts}"
+  mkdir -p "$out_dir"
+
+  # 数据集校验：sonnet/sharegpt 必须传 --dataset-path
+  if [[ "$dataset" != "random" && -z "$dataset_path" ]]; then
+    log_err "--dataset $dataset requires --dataset-path <path>"
+    exit 1
+  fi
+
+  echo
+  echo -e "${C_BLU}=== benchmark ===${C_RST}"
+  echo "  label:         $label"
+  echo "  num_prompts:   $num_prompts"
+  echo "  concurrency:   $concurrency"
+  echo "  rate:          $rate"
+  echo "  dataset:       $dataset"
+  echo "  input_len:     $input_len"
+  echo "  output_len:    $output_len"
+  echo "  output:        $out_dir"
+  echo
+
+  local bench_args=(
+    vllm bench serve
+    --backend "$backend"
+    --model "$SERVED_MODEL_NAME"
+    --served-model-name "$SERVED_MODEL_NAME"
+    --tokenizer "$MODEL_PATH"
+    --tokenizer-mode auto
+    --host 127.0.0.1 --port "$PORT"
+    --header "Authorization=Bearer $API_KEY"
+    --dataset-name "$dataset"
+    --num-prompts "$num_prompts"
+    --max-concurrency "$concurrency"
+    --request-rate "$rate"
+    --save-result --result-dir "$out_dir"
+    --result-filename bench.json
+    --label "${label}-bench"
+    --seed 0
+  )
+
+  if [[ "$dataset" == "random" ]]; then
+    bench_args+=(--random-input-len "$input_len" --random-output-len "$output_len")
+  else
+    bench_args+=(--dataset-path "$dataset_path")
+  fi
+
+  local bench_log="$out_dir/bench.log"
+  log_info "starting benchmark (this may take a while)..."
+  env HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+    "${bench_args[@]}" > "$bench_log" 2>&1
+
+  # 生成摘要
+  local summary="$out_dir/summary.txt"
+  {
+    echo "=== benchmark summary ($label @ $ts) ==="
+    echo "num_prompts:   $num_prompts"
+    echo "concurrency:   $concurrency"
+    echo "rate:          $rate"
+    echo "dataset:       $dataset"
+    echo "input_len:     $input_len"
+    echo "output_len:    $output_len"
+    echo "output_dir:    $out_dir"
+    echo
+    echo "--- bench result ---"
+    if [[ -f "$out_dir/bench.json" ]]; then
+      python3 -c "
+import json
+d = json.load(open('$out_dir/bench.json'))
+for k in ['num_prompts','completed','failed','duration',
+          'request_throughput','output_throughput','total_token_throughput',
+          'mean_ttft_ms','p99_ttft_ms','mean_tpot_ms','p99_tpot_ms',
+          'mean_itl_ms','p99_itl_ms','max_concurrency','max_concurrent_requests',
+          'total_input_tokens','total_output_tokens']:
+    v = d.get(k, '?')
+    print(f'  {k:30s} = {v}')
+"
+    else
+      echo "  (bench.json not found; check $bench_log)"
+    fi
+    echo
+    echo "--- bench log tail ---"
+    tail -20 "$bench_log" 2>/dev/null
+  } > "$summary"
+
+  # 也输出到终端
+  log_ok "benchmark complete"
+  if [[ -f "$out_dir/bench.json" ]]; then
+    python3 -c "
+import json
+d = json.load(open('$out_dir/bench.json'))
+def fmt(v): return f'{v:>8.2f}' if isinstance(v, (int, float)) else f'{str(v):>8}'
+print(f'  throughput:  {fmt(d.get(\"request_throughput\",\"?\"))} req/s  |  {fmt(d.get(\"output_throughput\",\"?\"))} tok/s')
+print(f'  ttft:        {fmt(d.get(\"mean_ttft_ms\",\"?\"))} ms (p99: {fmt(d.get(\"p99_ttft_ms\",\"?\"))} ms)')
+print(f'  tpot:        {fmt(d.get(\"mean_tpot_ms\",\"?\"))} ms (p99: {fmt(d.get(\"p99_tpot_ms\",\"?\"))} ms)')
+print(f'  itl:         {fmt(d.get(\"mean_itl_ms\",\"?\"))} ms (p99: {fmt(d.get(\"p99_itl_ms\",\"?\"))} ms)')
+print(f'  completed:   {d.get(\"completed\",\"?\")} / {d.get(\"num_prompts\",\"?\")}  fail: {d.get(\"failed\",\"?\")}')
+"
+  fi
+  log_ok "summary: $summary"
+  log_ok "output:  $out_dir"
+}
+
 # ===== profile (v0.2: --kind {engine|torch|msprof}) =====
 cmd_profile() {
   local kind="" label="" duration="" interval="" requests="" no_autostart="false"
   local with_stack="" keep_engine="" aic_metrics="" task_memory="" sys_profiling="" msprof_bin=""
   local traffic_requests="" traffic_concurrency="" traffic_rate="" traffic_prompt="" traffic_max_tokens=""
-  local traffic_backend="" traffic_input_len="" traffic_dataset=""
+  local traffic_backend="" traffic_input_len="" traffic_dataset="" traffic_dataset_path=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --kind) kind="$2"; shift ;;
@@ -878,6 +1091,7 @@ cmd_profile() {
       --traffic-backend)     traffic_backend="$2"; shift ;;
       --traffic-input-len)   traffic_input_len="$2"; shift ;;
       --traffic-dataset)     traffic_dataset="$2"; shift ;;
+      --traffic-dataset-path) traffic_dataset_path="$2"; shift ;;
       --json) ;;  # 暂未用
       -h|--help)
         cat <<EOF
@@ -903,8 +1117,10 @@ Traffic generator (profile --kind engine 自动发请求让 metrics 有意义):
   --traffic-prompt "text"    请求内容（默认中文 prompt，仅 urllib 后端）
   --traffic-max-tokens N     每请求最大 token（默认 64）
   --traffic-backend <b>      urllib | bench（默认 urllib）
-  --traffic-input-len N      prompt 输入长度（仅 bench，默认 128）
+  --traffic-input-len N      prompt 输入长度（仅 bench+random，默认 128）
   --traffic-dataset <d>      random | sonnet | sharegpt（仅 bench，默认 random）
+  --traffic-dataset-path <p>  sonnet/sharegpt 数据集本地文件路径（默认空；
+                              不传时自动 fallback 到 random 并打印 warning）
 EOF
         return 0 ;;
       *) log_err "unknown profile flag: $1"; exit 1 ;;
@@ -943,7 +1159,8 @@ EOF
         "${traffic_max_tokens:-64}" \
         "${traffic_backend:-$DEFAULT_TRAFFIC_BACKEND}" \
         "${traffic_input_len:-$DEFAULT_TRAFFIC_INPUT_LEN}" \
-        "${traffic_dataset:-$DEFAULT_TRAFFIC_DATASET}"
+        "${traffic_dataset:-$DEFAULT_TRAFFIC_DATASET}" \
+        "${traffic_dataset_path:-}"
       ;;
     torch)   profile_torch   "$label" "$requests" "$no_autostart" ;;
     msprof)  profile_msprof  "$label" "$duration" "$requests" "$no_autostart" ;;
@@ -954,7 +1171,7 @@ EOF
 }
 
 # v1: 周期性抓 /metrics；可选在期间发 chat 请求让 metrics 有意义
-# 用法：profile_engine <label> <duration> <interval> [traffic-requests] [traffic-concurrency] [traffic-rate] [traffic-prompt] [traffic-max-tokens] [traffic-backend] [traffic-input-len] [traffic-dataset]
+# 用法：profile_engine <label> <duration> <interval> [traffic-requests] [traffic-concurrency] [traffic-rate] [traffic-prompt] [traffic-max-tokens] [traffic-backend] [traffic-input-len] [traffic-dataset] [traffic-dataset-path]
 profile_engine() {
   local label="$1" duration="$2" interval="$3"
   local traffic_requests="${4:-0}"
@@ -965,6 +1182,7 @@ profile_engine() {
   local traffic_backend="${9:-$DEFAULT_TRAFFIC_BACKEND}"
   local traffic_input_len="${10:-$DEFAULT_TRAFFIC_INPUT_LEN}"
   local traffic_dataset="${11:-$DEFAULT_TRAFFIC_DATASET}"
+  local traffic_dataset_path="${12:-}"
   # traffic generator 会真发 chat 请求；只要开了 --traffic-requests N (N>0) 就强制要 API_KEY
   if (( traffic_requests > 0 )); then
     require_api_key "profile --kind engine --traffic-requests"
@@ -1047,6 +1265,13 @@ PY
       log_warn "bench backend requires local tokenizer; falling back to urllib"
       traffic_backend="urllib"
     else
+      # P7: sonnet/sharegpt 必须传 --dataset-path，否则 vllm bench serve 会 raise
+      #   "dataset_path must be provided"。不传则 fallback 到 random。
+      if [[ "$traffic_dataset" != "random" && -z "$traffic_dataset_path" ]]; then
+        log_warn "--traffic-dataset=$traffic_dataset requires --traffic-dataset-path <file>"
+        log_warn "no dataset path given; falling back to --traffic-dataset=random"
+        traffic_dataset="random"
+      fi
       # bench 需要 conda env 里的 vllm CLI
       activate_envs
       local bench_rate="inf"
@@ -1074,6 +1299,8 @@ PY
       )
       if [[ "$traffic_dataset" == "random" ]]; then
         bench_args+=(--random-input-len "$traffic_input_len" --random-output-len "$traffic_max_tokens")
+      else
+        bench_args+=(--dataset-path "$traffic_dataset_path")
       fi
       log_info "starting vllm bench serve (requests=$traffic_requests, concurrency=$traffic_concurrency, dataset=$traffic_dataset)"
       # env 显式注入 offline 模式，避免 activate_envs 的 source 脚本覆盖
@@ -1239,6 +1466,43 @@ PY
       failed=$((failed + 1))
       printf "  [%s] snap %04d  FAILED\n" "$(date +%H:%M:%S)" "$snap_idx"
     fi
+
+    # 采集 npu-smi 指标（温度、功耗、利用率、HBM）
+    local npu_csv="$out_dir/npu-smi.csv"
+    if [[ ! -f "$npu_csv" ]]; then
+      echo "timestamp,temp_c,power_w,util_pct,hbm_gb" > "$npu_csv"
+    fi
+    if command -v npu-smi >/dev/null 2>&1; then
+      local npu_line
+      npu_line=$(python3 -c "
+import subprocess, sys, re
+dev = '${NPU_DEVICES:-0}'
+try:
+    def get_val(cmd, patterns):
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
+        for pat in patterns:
+            for l in r.stdout.split('\n'):
+                m = re.search(pat, l)
+                if m: return m.group(1)
+        return 'N/A'
+
+    t = get_val(['npu-smi','info','-t','temp','-i',dev], [r'Temperature\s*:\s*(\d+)', r'Temperature\s*\(C\)\s*:\s*(\d+)'])
+    p = get_val(['npu-smi','info','-t','power','-i',dev], [r'Power\s*\(W\)\s*:\s*([\d.]+)'])
+    u = get_val(['npu-smi','info','-t','usages','-i',dev], [r'Aicore Usage.*:\s*(\d+)', r'Utilization.*:\s*(\d+)'])
+    r2 = subprocess.run(['npu-smi','info','-t','usages','-i',dev], capture_output=True, text=True, timeout=3)
+    hbm_cap = hbm_pct = 0
+    for l in r2.stdout.split('\n'):
+        if 'HBM Capacity' in l:   hbm_cap = float(re.search(r'(\d+)', l.split(':')[-1]).group(1))
+        if 'HBM Usage Rate' in l: hbm_pct = float(re.search(r'(\d+)', l.split(':')[-1]).group(1))
+    h = round(hbm_cap * hbm_pct / 100, 1) if hbm_cap > 0 else 'N/A'
+    print(f'{t},{p},{u},{h}')
+except Exception as e:
+    print(f'N/A,N/A,N/A,N/A')
+    sys.stderr.write(f'npu-smi err: {e}\\n')
+" 2>/dev/null || echo "N/A,N/A,N/A,N/A")
+      echo "$(date +%Y%m%d-%H%M%S),$npu_line" >> "$npu_csv"
+    fi
+
     sleep "$interval"
   done
 
@@ -1709,6 +1973,22 @@ profile_msprof() {
     echo "View: open MindStudio Insight, import PROF_* dir as project."
   } > "$summary"
 
+  # 自动调用 TraceLoom 分析（如果可用）
+  local prof_dir_for_tl
+  prof_dir_for_tl="$(find "$out_dir" -maxdepth 2 -type d -name 'PROF_*' | head -1 || true)"
+  if [[ -n "$prof_dir_for_tl" ]] && command -v traceloom >/dev/null 2>&1; then
+    local traceloom_out="$out_dir/traceloom"
+    log_info "running TraceLoom analysis on $prof_dir_for_tl ..."
+    mkdir -p "$traceloom_out"
+    if traceloom analysis "$prof_dir_for_tl" --out-dir "$traceloom_out" >> "$out_dir/traceloom.log" 2>&1; then
+      log_ok "TraceLoom analysis complete: $traceloom_out/summary.md"
+    else
+      log_warn "TraceLoom analysis failed (rc=$?); see $out_dir/traceloom.log"
+    fi
+  elif [[ -n "$prof_dir_for_tl" ]]; then
+    log_dim "traceloom not on PATH; skip post-msprof analysis (install: pip install traceloom)"
+  fi
+
   echo
   log_ok "done. summary: $summary"
   log_ok "output_dir:  $out_dir"
@@ -1727,10 +2007,8 @@ main() {
     config)     cmd_config ;;
     foreground) cmd_foreground ;;
     profile)    cmd_profile "${REST_ARGS[@]}" ;;
+    benchmark)  cmd_benchmark "${REST_ARGS[@]}" ;;
     help|-h|--help) usage ;;
-    benchmark)
-      log_err "benchmark not implemented in v1 (planned P2)"
-      exit 1 ;;
     *) usage; exit 1 ;;
   esac
 }
