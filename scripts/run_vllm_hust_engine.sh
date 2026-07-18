@@ -127,7 +127,12 @@ extra_prefixes = tuple(
 keys = []
 for key in os.environ:
     upper = key.upper()
-    if "KEY" in upper or "TOKEN" in upper or "SECRET" in upper:
+    # Preserve the explicit forwarding allowlist control variable. Actual
+    # credential-like variables remain filtered below unless they are handled
+    # through a dedicated redacted path.
+    if key != "VLLM_ENGINE_EXTRA_ENV_KEYS" and (
+        "KEY" in upper or "TOKEN" in upper or "SECRET" in upper
+    ):
         continue
     if (
         key in explicit

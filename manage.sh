@@ -137,7 +137,11 @@ extra_prefixes = tuple(
 keys = []
 for key in os.environ:
     upper = key.upper()
-    if "KEY" in upper or "TOKEN" in upper or "SECRET" in upper:
+    # This control variable names the explicit non-secret forwarding allowlist;
+    # it is not itself a credential despite containing the substring "KEY".
+    if key != "VLLM_ENGINE_EXTRA_ENV_KEYS" and (
+        "KEY" in upper or "TOKEN" in upper or "SECRET" in upper
+    ):
         continue
     if (
         key.startswith(prefixes)

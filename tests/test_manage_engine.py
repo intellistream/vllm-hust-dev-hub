@@ -88,6 +88,11 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertNotIn('HCCL_OP_EXPANSION_MODE="${HCCL_OP_EXPANSION_MODE:-AIV}"', script)
         manage = MANAGE_SCRIPT.read_text()
         self.assertIn("VLLM_ENGINE_EXTRA_ENV_KEYS", manage)
+        self.assertIn('key != "VLLM_ENGINE_EXTRA_ENV_KEYS"', manage)
+        self.assertIn(
+            'key != "VLLM_ENGINE_EXTRA_ENV_KEYS"',
+            script,
+        )
         self.assertIn("VLLM_ENGINE_EXTRA_ENV_PREFIXES", manage)
         self.assertIn("VLLM_OPTIMIZATION_", manage)
         self.assertIn("TORCH_DEVICE_BACKEND_AUTOLOAD", manage)
