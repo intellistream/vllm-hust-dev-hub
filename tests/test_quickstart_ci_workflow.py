@@ -93,7 +93,10 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         self.assertIn('ascend_runtime_requirement_is_optional_for_quickstart()', script_text)
         self.assertIn('mapfile -t requirement_specs < <(list_requirement_specs_from_requirements_file "$repo_path" || true)', script_text)
         self.assertIn('if ascend_runtime_requirement_is_optional_for_quickstart "$requirement_spec"; then', script_text)
-        self.assertIn('if ! pip_requirement_satisfied_in_env "$ENV_NAME" "$requirement_spec"; then', script_text)
+        self.assertIn(
+            'mapfile -t missing_requirement_specs < <(list_missing_pip_requirements_in_env "$ENV_NAME" "${required_specs[@]}" || true)',
+            script_text,
+        )
         self.assertIn('Installing missing or incompatible Ascend runtime Python dependencies', script_text)
         self.assertIn('run_pip_install_in_env "$ENV_NAME" -- "${missing_requirement_specs[@]}"', script_text)
 
@@ -147,6 +150,14 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         self.assertIn("VLLM_TARGET_DEVICE=empty", script_text)
         self.assertIn("VLLM_USE_PRECOMPILED=0", script_text)
         self.assertIn("TORCH_DEVICE_BACKEND_AUTOLOAD=0", script_text)
+
+    def test_quickstart_prefers_local_triton_ascend_checkout(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        self.assertIn("resolve_local_triton_ascend_repo()", script_text)
+        self.assertIn('"${HUST_TRITON_ASCEND_REPO:-}"', script_text)
+        self.assertIn('"$WORKSPACE_ROOT/triton-ascend-hust"', script_text)
+        self.assertIn('--no-build-isolation -v -e "$triton_ascend_repo"', script_text)
 
     def test_quickstart_fail_fast_gates_ascend_fallback(self) -> None:
         script_text = QUICKSTART_SCRIPT_PATH.read_text()

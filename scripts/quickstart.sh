@@ -767,12 +767,26 @@ read_build_requirement_spec_from_pyproject() {
   ' "$repo_path/pyproject.toml"
 }
 
+resolve_local_triton_ascend_repo() {
+  local candidate
+
+  for candidate in "${HUST_TRITON_ASCEND_REPO:-}" "$WORKSPACE_ROOT/triton-ascend-hust"; do
+    if [[ -n "$candidate" && -f "$candidate/pyproject.toml" && -f "$candidate/setup.py" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 ensure_ascend_build_python_packages() {
   local repo_path="$1"
   local compile_custom_kernels="$2"
   local perf_description="Ascend build dependency check in $ENV_NAME"
   local perf_start_epoch
   local pybind11_spec
+  local triton_ascend_repo
   local triton_ascend_spec
   local bootstrap_specs=(
     "setuptools-scm>=8"
@@ -798,8 +812,23 @@ ensure_ascend_build_python_packages() {
     fi
   done
 
-  triton_ascend_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "triton-ascend" || true)"
-  batch_specs+=("${triton_ascend_spec:-triton-ascend}")
+  if triton_ascend_repo="$(resolve_local_triton_ascend_repo)"; then
+    log "Installing triton-ascend from local HUST source: $triton_ascend_repo"
+    run_with_heartbeat \
+      "installing local triton-ascend from $triton_ascend_repo" \
+      run_pip_install_in_env "$ENV_NAME" \
+        "TRITON_WHEEL_NAME=triton-ascend" \
+        "MAX_JOBS=${HUST_TRITON_ASCEND_MAX_JOBS:-32}" \
+        -- --no-build-isolation -v -e "$triton_ascend_repo"
+    rc=$?
+    if (( rc != 0 )); then
+      log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+      return "$rc"
+    fi
+  else
+    triton_ascend_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "triton-ascend" || true)"
+    batch_specs+=("${triton_ascend_spec:-triton-ascend}")
+  fi
   batch_specs+=("${companion_specs[@]}")
 
   # pybind11 is a runtime dependency of triton-ascend's Ascend backend

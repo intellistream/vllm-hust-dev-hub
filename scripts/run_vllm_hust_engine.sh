@@ -24,7 +24,9 @@ load_dotenv() {
   done < "$env_file"
 }
 
-load_dotenv "$repo_root/.env"
+if [[ "${VLLM_ENGINE_LOAD_REPO_ENV:-true}" != "false" && "${VLLM_ENGINE_LOAD_REPO_ENV:-true}" != "0" ]]; then
+  load_dotenv "$repo_root/.env"
+fi
 if [[ -n "${VLLM_ENGINE_ENV_FILE:-}" ]]; then
   load_dotenv "$VLLM_ENGINE_ENV_FILE" true
 fi
