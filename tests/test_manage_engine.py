@@ -101,6 +101,12 @@ class ManageEngineGuardTests(unittest.TestCase):
             manage.index('unit_name="${VLLM_ENGINE_SYSTEMD_UNIT'),
         )
 
+    def test_engine_launcher_can_skip_repo_env(self) -> None:
+        script = ENGINE_SCRIPT.read_text()
+
+        self.assertIn("VLLM_ENGINE_LOAD_REPO_ENV", script)
+        self.assertIn('load_dotenv "$repo_root/.env"', script)
+
     def test_container_runtime_can_keep_alive_without_ssh_env(self) -> None:
         runtime = (REPO_ROOT / "scripts" / "ascend-container-runtime.sh").read_text()
 
