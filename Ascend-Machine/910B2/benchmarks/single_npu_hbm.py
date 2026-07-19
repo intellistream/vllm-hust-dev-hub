@@ -15,6 +15,11 @@ from pathlib import Path
 
 GIB = 2**30
 MIB = 2**20
+DEVICE_SELECTION_ENV_VARS = (
+    "ASCEND_RT_VISIBLE_DEVICES",
+    "ASCEND_VISIBLE_DEVICES",
+    "SOURCE_DEV_NPU_DEVICES",
+)
 
 
 def parse_sizes(raw: str) -> list[int]:
@@ -55,6 +60,15 @@ def measure(torch, operation, *, warmup: int, iterations: int, repeats: int) -> 
 
 def bandwidth_gbps(traffic_bytes: int, milliseconds: float) -> float:
     return traffic_bytes / (milliseconds / 1000) / 1e9
+
+
+def physical_device_selection() -> str | None:
+    """Return the first configured physical-device mapping."""
+    for variable in DEVICE_SELECTION_ENV_VARS:
+        value = os.getenv(variable)
+        if value:
+            return value
+    return None
 
 
 def make_record(
@@ -114,10 +128,10 @@ def main() -> int:
         output = torch.empty_like(a)
 
         cases = (
-            ("copy", 2, lambda: output.copy_(a)),
-            ("add", 3, lambda: torch.add(a, b, out=output)),
+            ("copy", 2, 1.0, lambda: output.copy_(a)),
+            ("add", 3, 3.0, lambda: torch.add(a, b, out=output)),
         )
-        for name, traffic_factor, operation in cases:
+        for name, traffic_factor, expected_value, operation in cases:
             iterations = iterations_for(tensor_bytes, traffic_factor, args.target_traffic_gib)
             event_samples, wall_samples = measure(
                 torch,
@@ -135,6 +149,11 @@ def main() -> int:
                 iterations=iterations,
             )
             records.append(record)
+            actual_value = float(output[0].cpu())
+            if actual_value != expected_value:
+                raise RuntimeError(
+                    f"{name} produced {actual_value}, expected {expected_value}"
+                )
             print(
                 f"{name:4s} {size_mib:4d} MiB: "
                 f"median={record['estimated_HBM_traffic_GBps_median']:.2f} GB/s "
@@ -142,8 +161,6 @@ def main() -> int:
                 flush=True,
             )
 
-        if float(output[0].cpu()) not in (1.0, 3.0):
-            raise RuntimeError("unexpected output value")
         del a, b, output
         torch.npu.empty_cache()
 
@@ -154,9 +171,8 @@ def main() -> int:
         "hostname": platform.node(),
         "torch_version": torch.__version__,
         "torch_npu_version": getattr(torch_npu, "__version__", "unknown"),
-        "device_properties": repr(torch.npu.get_device_properties(0)),
         "logical_device": 0,
-        "physical_device_selection": os.getenv("SOURCE_DEV_NPU_DEVICES"),
+        "physical_device_selection": physical_device_selection(),
         "method_note": (
             "GB/s uses decimal bytes. HBM traffic is an algorithmic estimate: copy counts "
             "one tensor read plus one write; add counts two reads plus one write."
