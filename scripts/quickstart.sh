@@ -9,6 +9,16 @@ WORKSPACE_ROOT="$(cd -- "$HUB_ROOT/.." && pwd)"
 CLONE_SCRIPT="$SCRIPT_DIR/clone-workspace-repos.sh"
 MINICONDA_INSTALL_SCRIPT="$SCRIPT_DIR/install-miniconda.sh"
 MANAGER_REPO="$WORKSPACE_ROOT/ascend-runtime-manager"
+CONTAINER_NAME_SCRIPT="$SCRIPT_DIR/container-name.sh"
+if [[ ! -f "$CONTAINER_NAME_SCRIPT" ]] && command -v git >/dev/null 2>&1; then
+  QUICKSTART_GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  if [[ -n "$QUICKSTART_GIT_ROOT" && -f "$QUICKSTART_GIT_ROOT/scripts/container-name.sh" ]]; then
+    CONTAINER_NAME_SCRIPT="$QUICKSTART_GIT_ROOT/scripts/container-name.sh"
+  fi
+fi
+
+# shellcheck source=scripts/container-name.sh
+source "$CONTAINER_NAME_SCRIPT"
 
 # ── CANN version detection ────────────────────────────────────────────────────
 # Detects the installed CANN toolkit major version (8 or 9) by reading
@@ -112,6 +122,7 @@ QUICKSTART_LOG_FILE="${HUST_DEV_HUB_QUICKSTART_LOG_FILE:-}"
 QUICKSTART_LOGGING_INITIALIZED=0
 CONDA_RUN_STREAM_FLAG=""
 CONTAINER_EXTRA_AUTH_KEYS_FILE="$WORKSPACE_ROOT/.ssh/vllm-ascend-extra-authorized_keys"
+DEFAULT_ASCEND_CONTAINER_IMAGE="quay.io/ascend/vllm-ascend:v0.17.0rc1"
 PIP_DEFAULTS_INITIALIZED=0
 PIP_SELECTED_INDEX_URL=""
 PIP_SELECTED_EXTRA_INDEX_URL=""
@@ -383,6 +394,28 @@ prompt_and_store_container_public_key() {
     fi
 
     echo "[quickstart] 输入看起来不是有效的 SSH 公钥，请重新粘贴。" >&2
+  done
+}
+
+prompt_for_ascend_container_name() {
+  local configured_name=""
+  local default_name
+  local selected_name=""
+
+  if configured_name="$(configured_vllm_engine_container_name)"; then
+    validate_docker_container_name "$configured_name"
+    printf '%s\n' "$configured_name"
+    return 0
+  fi
+
+  default_name="$(container_name_from_image_and_user "${IMAGE:-$DEFAULT_ASCEND_CONTAINER_IMAGE}" "$CURRENT_USER_NAME")"
+  while true; do
+    read -r -p "容器名称 [$default_name]: " selected_name
+    selected_name="${selected_name:-$default_name}"
+    if validate_docker_container_name "$selected_name"; then
+      printf '%s\n' "$selected_name"
+      return 0
+    fi
   done
 }
 
@@ -3402,14 +3435,17 @@ EOF
       MENU_CONFIRMED=1
       ;;
     6)
+      local container_name
+      container_name="$(prompt_for_ascend_container_name)"
       prompt_and_store_container_public_key
       if [[ -x "$SCRIPT_DIR/ascend-official-container.sh" ]]; then
-        bash "$SCRIPT_DIR/ascend-official-container.sh" start
+        VLLM_ENGINE_CONTAINER_NAME="$container_name" \
+          bash "$SCRIPT_DIR/ascend-official-container.sh" start
       else
         log "未找到容器脚本: $SCRIPT_DIR/ascend-official-container.sh"
         exit 2
       fi
-      log "容器已启动或已复用。可执行: bash scripts/ascend-official-container.sh shell"
+      log "容器 '$container_name' 已启动或已复用。后续可执行: VLLM_ENGINE_CONTAINER_NAME='$container_name' bash scripts/ascend-official-container.sh shell"
       if [[ -f "$CONTAINER_EXTRA_AUTH_KEYS_FILE" ]]; then
         log "已配置额外容器 SSH 公钥来源: $CONTAINER_EXTRA_AUTH_KEYS_FILE"
       fi

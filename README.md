@@ -186,7 +186,12 @@ Container behavior:
 - Uses `docker` directly when available, otherwise falls back to `sudo -n docker`.
 - Mounts the whole workspace parent directory into `/workspace`.
 - Mounts resolved external symlink targets under the workspace root.
-- Reuses a persistent container named `vllm-ascend-dev` by default.
+- Menu option 6 prompts for a container name. Pressing Enter uses the image
+  basename/tag plus the current login username, normalized for Docker (for
+  example, `vllm-ascend-v0.17.0rc1-gcw`).
+- `VLLM_ENGINE_CONTAINER_NAME` selects the container for later helper and
+  engine commands. The old `VLLM_ENGINE_CONTAINER` variable remains available
+  as a deprecated compatibility alias.
 - Sources Ascend toolkit and ATB environment scripts before shell or command
   execution.
 - Can auto-configure container SSH using host `authorized_keys`, discovered
@@ -278,7 +283,7 @@ Start and inspect the service:
 Common `.env` knobs:
 
 ```bash
-VLLM_ENGINE_CONTAINER=vllm-ascend-dev
+VLLM_ENGINE_CONTAINER_NAME=vllm-ascend-dev
 VLLM_ENGINE_AUTO_CREATE_CONTAINER=true
 VLLM_ENGINE_ENV_FILE=profiles/smoke-qwen2.5-7b-npu1.env
 VLLM_ENGINE_MODEL_PATH=/data/shared_models/modelscope_cache/Qwen/Qwen3-32B
@@ -304,7 +309,7 @@ For an optimization repository mounted at `/workspace/<repo-name>` inside the
 container:
 
 ```bash
-export VLLM_ENGINE_CONTAINER=<unique-container-name>
+export VLLM_ENGINE_CONTAINER_NAME=<unique-container-name>
 export VLLM_ENGINE_SYSTEMD_UNIT=<unique-unit-name>.service
 export VLLM_ENGINE_PORT=<free-port>
 export VLLM_ENGINE_NPU_DEVICES=<dedicated-npus>

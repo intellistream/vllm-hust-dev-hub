@@ -44,7 +44,7 @@ class ManageEngineGuardTests(unittest.TestCase):
     def test_env_template_exposes_host_managed_docker_knobs(self) -> None:
         template = ENV_TEMPLATE.read_text()
 
-        self.assertIn("VLLM_ENGINE_CONTAINER=vllm-ascend-dev", template)
+        self.assertIn("VLLM_ENGINE_CONTAINER_NAME=vllm-ascend-dev", template)
         self.assertIn("VLLM_ENGINE_AUTO_CREATE_CONTAINER=true", template)
         self.assertIn("VLLM_ENGINE_ENV_FILE=profiles/smoke-qwen2.5-7b-npu1.env", template)
         self.assertIn("VLLM_ENGINE_IMAGE=quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler", template)

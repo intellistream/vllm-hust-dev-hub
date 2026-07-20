@@ -19,12 +19,12 @@ load_dotenv() {
 
 load_dotenv "$repo_root/.env"
 
-if [[ -z "${VLLM_ENGINE_CONTAINER:-${DOCKER_CONTAINER:-}}" || -z "${VLLM_ENGINE_PORT:-${PORT:-}}" ]]; then
-  echo "ERROR: cleanup requires VLLM_ENGINE_CONTAINER and VLLM_ENGINE_PORT, either in .env or the caller environment." >&2
+if [[ -z "${VLLM_ENGINE_CONTAINER_NAME:-${VLLM_ENGINE_CONTAINER:-${DOCKER_CONTAINER:-}}}" || -z "${VLLM_ENGINE_PORT:-${PORT:-}}" ]]; then
+  echo "ERROR: cleanup requires VLLM_ENGINE_CONTAINER_NAME and VLLM_ENGINE_PORT, either in .env or the caller environment." >&2
   exit 2
 fi
 
-container="${VLLM_ENGINE_CONTAINER:-${DOCKER_CONTAINER:-}}"
+container="${VLLM_ENGINE_CONTAINER_NAME:-${VLLM_ENGINE_CONTAINER:-${DOCKER_CONTAINER:-}}}"
 port="${VLLM_ENGINE_PORT:-${PORT:-}}"
 docker_bin="${DOCKER_BIN:-docker}"
 docker_cmd=("$docker_bin")

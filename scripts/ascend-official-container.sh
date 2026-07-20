@@ -7,9 +7,16 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 HUB_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 WORKSPACE_ROOT="$(cd -- "$HUB_ROOT/.." && pwd)"
 MANAGER_SRC="${HUST_ASCEND_MANAGER_SRC:-$WORKSPACE_ROOT/ascend-runtime-manager/src}"
+CONTAINER_NAME_SCRIPT="$SCRIPT_DIR/container-name.sh"
+
+# shellcheck source=scripts/container-name.sh
+source "$CONTAINER_NAME_SCRIPT"
 
 IMAGE="${IMAGE:-}"
-CONTAINER_NAME="${CONTAINER_NAME:-vllm-ascend-dev}"
+if ! CONTAINER_NAME="$(configured_vllm_engine_container_name)"; then
+  CONTAINER_NAME="$(container_name_from_image_and_user "${IMAGE:-quay.io/ascend/vllm-ascend:v0.17.0rc1}" "$(id -un 2>/dev/null || printf '%s' "${USER:-user}")")"
+fi
+validate_docker_container_name "$CONTAINER_NAME"
 HOST_WORKSPACE_ROOT="${HOST_WORKSPACE_ROOT:-$WORKSPACE_ROOT}"
 CONTAINER_WORKSPACE_ROOT="${CONTAINER_WORKSPACE_ROOT:-/workspace}"
 CONTAINER_WORKDIR="${CONTAINER_WORKDIR:-$CONTAINER_WORKSPACE_ROOT/vllm-hust-dev-hub}"
