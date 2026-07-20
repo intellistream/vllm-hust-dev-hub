@@ -412,7 +412,7 @@ prompt_for_ascend_container_name() {
 
   default_name="$(container_name_from_image_and_user "${IMAGE:-$DEFAULT_ASCEND_CONTAINER_IMAGE}" "$CURRENT_USER_NAME")"
   while true; do
-    read -r -p "容器名称 [$default_name]: " selected_name
+    read -r -p "Press Enter to use the default [$default_name], or input a container name: " selected_name
     selected_name="${selected_name:-$default_name}"
     if validate_docker_container_name "$selected_name"; then
       printf '%s\n' "$selected_name"

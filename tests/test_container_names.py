@@ -115,6 +115,10 @@ class ContainerNameTests(unittest.TestCase):
         script = QUICKSTART_SCRIPT.read_text(encoding="utf-8")
 
         self.assertIn('container_name="$(prompt_for_ascend_container_name)"', script)
+        self.assertIn(
+            "Press Enter to use the default [$default_name], or input a container name:",
+            script,
+        )
         self.assertIn("ensure_ascend_container_manager_source", script)
         self.assertIn('VLLM_ENGINE_CONTAINER_NAME="$container_name"', script)
 
