@@ -47,11 +47,13 @@ class ContainerNameTests(unittest.TestCase):
         result = self.run_name_shell(
             "name=\"$(container_name_from_image_and_user "
             "'registry.example/'\"$(printf 'a%.0s' {1..300})\"':tag' 'user')\"; "
-            'validate_docker_container_name "$name"; printf "%s" "${#name}"'
+            'validate_docker_container_name "$name"; printf "%s\\n%s" "${#name}" "$name"'
         )
 
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, "255")
+        length, name = result.stdout.splitlines()
+        self.assertEqual(length, "255")
+        self.assertTrue(name.endswith("-user"))
 
     def test_canonical_name_wins_and_legacy_name_remains_compatible(self) -> None:
         canonical = self.run_name_shell(

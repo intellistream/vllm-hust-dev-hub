@@ -12,7 +12,9 @@ container_name_from_image_and_user() {
   local login_user="$2"
   local image_name
   local normalized_user
-  local candidate
+  local max_name_length=255
+  local max_user_length
+  local max_image_length
 
   image_name="${image##*/}"
   image_name="${image_name%%@*}"
@@ -21,8 +23,14 @@ container_name_from_image_and_user() {
 
   [[ -n "$image_name" ]] || image_name="vllm-ascend"
   [[ -n "$normalized_user" ]] || normalized_user="user"
-  candidate="$image_name-$normalized_user"
-  printf '%s\n' "${candidate:0:255}"
+
+  # Keep the login suffix even when unusually long registry/image components
+  # need truncation; the suffix is what differentiates per-user defaults.
+  max_user_length=$((max_name_length - 2))
+  normalized_user="${normalized_user:0:max_user_length}"
+  max_image_length=$((max_name_length - ${#normalized_user} - 1))
+  image_name="${image_name:0:max_image_length}"
+  printf '%s-%s\n' "$image_name" "$normalized_user"
 }
 
 configured_vllm_engine_container_name() {
