@@ -189,6 +189,8 @@ Container behavior:
 - Menu option 6 prompts for a container name. Pressing Enter uses the image
   basename/tag plus the current login username, normalized for Docker (for
   example, `vllm-ascend-v0.17.0rc1-gcw`).
+- If `ascend-runtime-manager` is missing, menu option 6 clones that dependency
+  on demand (SSH first, then HTTPS fallback).
 - `VLLM_ENGINE_CONTAINER_NAME` selects the container for later helper and
   engine commands. The old `VLLM_ENGINE_CONTAINER` variable remains available
   as a deprecated compatibility alias.

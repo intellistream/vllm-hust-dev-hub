@@ -115,7 +115,35 @@ class ContainerNameTests(unittest.TestCase):
         script = QUICKSTART_SCRIPT.read_text(encoding="utf-8")
 
         self.assertIn('container_name="$(prompt_for_ascend_container_name)"', script)
+        self.assertIn("ensure_ascend_container_manager_source", script)
         self.assertIn('VLLM_ENGINE_CONTAINER_NAME="$container_name"', script)
+
+    def test_container_helper_reports_missing_manager_source(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            fake_python = temp / "python3"
+            fake_python.write_text("#!/usr/bin/env bash\nexit 1\n", encoding="utf-8")
+            fake_python.chmod(fake_python.stat().st_mode | stat.S_IXUSR)
+            env = os.environ.copy()
+            env.update(
+                {
+                    "PATH": f"{temp}:{env['PATH']}",
+                    "HUST_ASCEND_MANAGER_SRC": str(temp / "missing-manager-src"),
+                }
+            )
+
+            result = subprocess.run(
+                [str(CONTAINER_SCRIPT), "status"],
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("找不到 hust_ascend_manager", result.stderr)
+            self.assertIn("HUST_ASCEND_MANAGER_SRC", result.stderr)
 
 
 if __name__ == "__main__":

@@ -9,6 +9,8 @@ WORKSPACE_ROOT="$(cd -- "$HUB_ROOT/.." && pwd)"
 CLONE_SCRIPT="$SCRIPT_DIR/clone-workspace-repos.sh"
 MINICONDA_INSTALL_SCRIPT="$SCRIPT_DIR/install-miniconda.sh"
 MANAGER_REPO="$WORKSPACE_ROOT/ascend-runtime-manager"
+MANAGER_REPO_SSH_URL="git@github.com:vLLM-HUST/ascend-runtime-manager.git"
+MANAGER_REPO_HTTPS_URL="https://github.com/vLLM-HUST/ascend-runtime-manager.git"
 CONTAINER_NAME_SCRIPT="$SCRIPT_DIR/container-name.sh"
 if [[ ! -f "$CONTAINER_NAME_SCRIPT" ]] && command -v git >/dev/null 2>&1; then
   QUICKSTART_GIT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
@@ -417,6 +419,37 @@ prompt_for_ascend_container_name() {
       return 0
     fi
   done
+}
+
+ensure_ascend_container_manager_source() {
+  local manager_module="$MANAGER_REPO/src/hust_ascend_manager/cli.py"
+
+  if [[ -f "$manager_module" ]]; then
+    return 0
+  fi
+
+  if [[ -e "$MANAGER_REPO" ]]; then
+    echo "[quickstart] $MANAGER_REPO 已存在，但缺少 $manager_module。请修复或移走该目录后重试。" >&2
+    return 1
+  fi
+
+  if ! command -v git >/dev/null 2>&1; then
+    echo "[quickstart] 选项 6 需要 ascend-runtime-manager，但系统中未找到 git。" >&2
+    return 1
+  fi
+
+  log "未检测到 ascend-runtime-manager，正在克隆容器管理依赖。"
+  if env -u LD_LIBRARY_PATH git clone "$MANAGER_REPO_SSH_URL" "$MANAGER_REPO"; then
+    return 0
+  fi
+
+  log "SSH 克隆失败，改用 HTTPS 重试。"
+  if env -u LD_LIBRARY_PATH git clone "$MANAGER_REPO_HTTPS_URL" "$MANAGER_REPO"; then
+    return 0
+  fi
+
+  echo "[quickstart] 无法克隆 ascend-runtime-manager；请检查 GitHub 网络或 SSH 凭据后重试。" >&2
+  return 1
 }
 
 run_conda_cmd() {
@@ -3437,6 +3470,7 @@ EOF
     6)
       local container_name
       container_name="$(prompt_for_ascend_container_name)"
+      ensure_ascend_container_manager_source
       prompt_and_store_container_public_key
       if [[ -x "$SCRIPT_DIR/ascend-official-container.sh" ]]; then
         VLLM_ENGINE_CONTAINER_NAME="$container_name" \

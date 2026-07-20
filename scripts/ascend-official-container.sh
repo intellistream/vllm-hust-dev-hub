@@ -50,6 +50,22 @@ find_python() {
   return 1
 }
 
+ensure_manager_module_available() {
+  local python_bin="$1"
+
+  if PYTHONPATH="$MANAGER_SRC${PYTHONPATH:+:$PYTHONPATH}" \
+    "$python_bin" -c 'import hust_ascend_manager.cli' >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ -f "$MANAGER_SRC/hust_ascend_manager/cli.py" ]]; then
+    fail "无法使用 $python_bin 导入 hust_ascend_manager；该管理器需要 Python 3.10+。请激活 quickstart 创建的 conda 环境后重试。"
+    return 1
+  fi
+
+  fail "找不到 hust_ascend_manager；预期源码位于 $MANAGER_SRC。请先运行 quickstart 选项 6，或设置 HUST_ASCEND_MANAGER_SRC。"
+}
+
 resolve_docker_cmd() {
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     printf 'docker\n'
@@ -343,6 +359,7 @@ main() {
   local -a manager_cmd
 
   python_bin="$(find_python)"
+  ensure_manager_module_available "$python_bin"
 
   case "$action" in
     help|-h|--help)
