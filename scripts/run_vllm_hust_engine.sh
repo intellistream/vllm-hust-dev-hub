@@ -563,11 +563,17 @@ trap cleanup EXIT
 
 printf '#!/usr/bin/env bash\n%s\n' "$inner_script" > "$tmp_host_script"
 chmod +x "$tmp_host_script"
+script_uid_gid="$(stat -c '%u:%g' "$tmp_host_script")"
+if [[ ! "$script_uid_gid" =~ ^[0-9]+:[0-9]+$ ]]; then
+  echo "ERROR: cannot resolve the generated engine script uid:gid." >&2
+  exit 1
+fi
 
 container_script="/tmp/$(basename "$tmp_host_script")"
 "${docker_cmd[@]}" cp "$tmp_host_script" "$container:$container_script"
 
 exec "${docker_cmd[@]}" exec \
+  --user "$script_uid_gid" \
   --env "VLLM_TARGET_DEVICE=$target_device" \
   --env "ASCEND_RT_VISIBLE_DEVICES=$npu_devices" \
   --env "ASCEND_VISIBLE_DEVICES=$npu_devices" \
