@@ -19,12 +19,12 @@ class ManageEngineGuardTests(unittest.TestCase):
             self.assertTrue(mode & stat.S_IXUSR, f"{script} should be executable")
             subprocess.run(["bash", "-n", str(script)], check=True)
 
-    def test_empty_api_key_fails_before_docker_access(self) -> None:
+    def test_plaintext_api_key_env_fails_before_docker_access(self) -> None:
         env = os.environ.copy()
         env.update(
             {
                 "VLLM_ENGINE_CONTAINER": "dummy-container",
-                "VLLM_HUST_API_KEY": "EMPTY",
+                "VLLM_HUST_API_KEY": "fake-test-marker-that-must-never-reach-docker",
             }
         )
         result = subprocess.run(
@@ -37,7 +37,7 @@ class ManageEngineGuardTests(unittest.TestCase):
         )
 
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("real API key", result.stderr)
+        self.assertIn("plaintext API-key environment variables are forbidden", result.stderr)
         self.assertNotIn("Docker container", result.stderr)
 
     def test_env_template_exposes_host_managed_docker_knobs(self) -> None:
@@ -83,6 +83,9 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("tee -a", script)
         self.assertIn("<redacted>", script)
         self.assertIn("api_key[^[]*", script)
+        self.assertIn("VLLM_ENGINE_AUTH_CREDENTIAL_FILE", script)
+        self.assertIn("VLLM_API_KEY", script)
+        self.assertNotIn('--api-key "__API_KEY__"', script)
         self.assertIn("__EXTRA_ENV_EXPORTS__", script)
         self.assertIn("TORCH_DEVICE_BACKEND_AUTOLOAD", script)
         self.assertIn("torch_npu_preflight", script)

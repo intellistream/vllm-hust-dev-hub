@@ -54,8 +54,8 @@ Actions:
 Flags:
   --json       JSON output for status/health
 
-Required .env:
-  VLLM_HUST_API_KEY=<real non-EMPTY key>
+Required launch environment:
+  VLLM_ENGINE_AUTH_CREDENTIAL_FILE=<mode-0600 per-run token file>
 
 Common .env knobs:
   VLLM_ENGINE_CONTAINER=vllm-ascend-dev

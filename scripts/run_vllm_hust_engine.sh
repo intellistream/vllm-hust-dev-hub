@@ -47,7 +47,11 @@ vllm_script="${VLLM_ENGINE_SCRIPT:-}"
 conda_prefix="${VLLM_ENGINE_CONDA_PREFIX:-}"
 conda_env="${VLLM_ENGINE_CONDA_ENV:-${CONDA_ENV:-vllm-hust-dev}}"
 engine_python="${VLLM_ENGINE_PYTHON:-}"
-api_key="${VLLM_HUST_API_KEY:-${VLLM_ENGINE_API_KEY:-}}"
+auth_credential_file="${VLLM_ENGINE_AUTH_CREDENTIAL_FILE:-}"
+auth_helper="$repo_root/scripts/secure_api_credential.py"
+container_auth_dir="/run/vllm-hust"
+container_auth_file="$container_auth_dir/api-key.credential"
+container_auth_helper="$container_auth_dir/secure_api_credential.py"
 replace_existing="${VLLM_ENGINE_REPLACE_EXISTING:-true}"
 enable_prefix_caching="${VLLM_ENGINE_ENABLE_PREFIX_CACHING:-1}"
 enable_chunked_prefill="${VLLM_ENGINE_ENABLE_CHUNKED_PREFILL:-1}"
@@ -142,11 +146,24 @@ PY
 
 extra_env_exports="$(container_extra_env_exports)"
 
-if [[ -z "$api_key" || "$api_key" == "EMPTY" ]]; then
-  echo "ERROR: vLLM-HUST must be started with a real API key." >&2
-  echo "Set VLLM_HUST_API_KEY in .env; never use EMPTY." >&2
+if [[ -n "${VLLM_HUST_API_KEY:-}" || -n "${VLLM_ENGINE_API_KEY:-}" ]]; then
+  echo "ERROR: plaintext API-key environment variables are forbidden in the managed launcher." >&2
+  echo "Use VLLM_ENGINE_AUTH_CREDENTIAL_FILE with a per-run mode-0600 file." >&2
   exit 1
 fi
+if [[ -z "$auth_credential_file" ]]; then
+  echo "ERROR: VLLM_ENGINE_AUTH_CREDENTIAL_FILE is required." >&2
+  exit 1
+fi
+if [[ ! -x "$auth_helper" ]]; then
+  echo "ERROR: secure credential helper is missing or not executable: $auth_helper" >&2
+  exit 1
+fi
+credential_digest="$(
+  python3 "$auth_helper" validate \
+    --path "$auth_credential_file" \
+    --expected-uid "$(id -u)"
+)"
 
 if (( max_num_batched_tokens < max_model_len )); then
   max_num_batched_tokens="$max_model_len"
@@ -221,6 +238,65 @@ ensure_container_ready() {
 
 ensure_container_ready
 
+tmp_host_credential="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/vllm-hust-api-credential.XXXXXX")"
+chmod 0600 "$tmp_host_credential"
+tmp_host_script=""
+container_credential_staged=0
+source_credential_deleted=0
+cleanup() {
+  local cleanup_status=$?
+  set +e
+  if [[ "$container_credential_staged" == "1" ]]; then
+    "${docker_cmd[@]}" exec "$container" rm -f \
+      "$container_auth_file" "$container_auth_helper" >/dev/null 2>&1 || true
+  fi
+  if [[ "$source_credential_deleted" != "1" && -e "$auth_credential_file" ]]; then
+    python3 "$auth_helper" delete \
+      --path "$auth_credential_file" \
+      --expected-uid "$(id -u)" \
+      --expected-sha256 "$credential_digest" >/dev/null 2>&1 || true
+  fi
+  [[ -z "$tmp_host_script" ]] || rm -f "$tmp_host_script"
+  rm -f "$tmp_host_credential"
+  return "$cleanup_status"
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+snapshot_digest="$(
+  python3 "$auth_helper" snapshot \
+    --source "$auth_credential_file" \
+    --destination "$tmp_host_credential" \
+    --expected-uid "$(id -u)"
+)"
+if [[ "$snapshot_digest" != "$credential_digest" ]]; then
+  echo "ERROR: credential digest changed while staging." >&2
+  exit 1
+fi
+"${docker_cmd[@]}" exec "$container" install -d -m 0700 "$container_auth_dir"
+container_credential_staged=1
+"${docker_cmd[@]}" cp "$auth_helper" "$container:$container_auth_helper"
+"${docker_cmd[@]}" cp "$tmp_host_credential" "$container:$container_auth_file"
+"${docker_cmd[@]}" exec "$container" \
+  chown 0:0 "$container_auth_file" "$container_auth_helper"
+"${docker_cmd[@]}" exec "$container" \
+  chmod 0600 "$container_auth_file" "$container_auth_helper"
+container_digest="$(
+  "${docker_cmd[@]}" exec "$container" python3 "$container_auth_helper" validate \
+    --path "$container_auth_file" --expected-uid 0
+)"
+if [[ "$container_digest" != "$credential_digest" ]]; then
+  echo "ERROR: container credential digest does not match the admitted source." >&2
+  exit 1
+fi
+python3 "$auth_helper" delete \
+  --path "$auth_credential_file" \
+  --expected-uid "$(id -u)" \
+  --expected-sha256 "$credential_digest" >/dev/null
+source_credential_deleted=1
+
 echo "[vllm-hust] container        = $container"
 echo "[vllm-hust] image            = ${container_image:-auto-detect official Ascend image}"
 echo "[vllm-hust] model_path       = $model_path"
@@ -292,6 +368,18 @@ if [[ -n "$CONTAINER_LOG_FILE" ]]; then
   mkdir -p "$(dirname "$CONTAINER_LOG_FILE")"
   exec > >(sed -E 's/sk-[A-Za-z0-9._-]+/<redacted>/g; s/(api-key[ =])[^ ]+/\1<redacted>/Ig; s/(api_key[^[]*\[[^A-Za-z0-9]*)[A-Za-z0-9._~+\/-]+([^]]*\])/\1<redacted>\2/Ig; s/(Bearer )[A-Za-z0-9._~+\/-]+/\1<redacted>/g; s/([A-Za-z_]*(KEY|TOKEN|SECRET)[A-Za-z_]*=)[^ ]+/\1<redacted>/g' | tee -a "$CONTAINER_LOG_FILE") 2>&1
 fi
+
+AUTH_CREDENTIAL_FILE="__AUTH_CREDENTIAL_FILE__"
+AUTH_CREDENTIAL_HELPER="__AUTH_CREDENTIAL_HELPER__"
+VLLM_API_KEY="$(
+  python3 "$AUTH_CREDENTIAL_HELPER" consume \
+    --path "$AUTH_CREDENTIAL_FILE" --expected-uid 0
+)"
+if [[ -z "$VLLM_API_KEY" ]]; then
+  echo "ERROR: secure API credential was empty after admission." >&2
+  exit 1
+fi
+export VLLM_API_KEY
 
 CONDA_ENV="__CONDA_ENV__"
 CONDA_PREFIX_OVERRIDE="__CONDA_PREFIX__"
@@ -441,7 +529,6 @@ args+=(
   --load-format "__LOAD_FORMAT__"
   --trust-remote-code
   --max-num-seqs "__MAX_NUM_SEQS__"
-  --api-key "__API_KEY__"
 )
 
 if [[ "__ENABLE_PREFIX_CACHING__" == "1" ]]; then
@@ -493,6 +580,8 @@ replace "__CONDA_PREFIX__" "$conda_prefix"
 replace "__ENGINE_PYTHON__" "$engine_python"
 replace "__EXTRA_ENV_EXPORTS__" "$extra_env_exports"
 replace "__CONTAINER_LOG_FILE__" "$container_log_file"
+replace "__AUTH_CREDENTIAL_FILE__" "$container_auth_file"
+replace "__AUTH_CREDENTIAL_HELPER__" "$container_auth_helper"
 replace "__TARGET_DEVICE__" "$target_device"
 replace "__NPU_DEVICES__" "$npu_devices"
 replace "__PLUGINS__" "$plugins"
@@ -512,7 +601,6 @@ replace "__GPU_MEM_UTIL__" "$gpu_mem_util"
 replace "__DTYPE__" "$dtype"
 replace "__LOAD_FORMAT__" "$load_format"
 replace "__MAX_NUM_SEQS__" "$max_num_seqs"
-replace "__API_KEY__" "$api_key"
 replace "__ENABLE_PREFIX_CACHING__" "$enable_prefix_caching"
 replace "__ENABLE_CHUNKED_PREFILL__" "$enable_chunked_prefill"
 replace "__ENFORCE_EAGER__" "$enforce_eager"
@@ -520,10 +608,6 @@ replace "__EXPERT_PARALLEL__" "$expert_parallel"
 replace "__QUANTIZATION__" "$quantization"
 
 tmp_host_script="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/vllm-hust-engine.XXXXXX.sh")"
-cleanup() {
-  rm -f "$tmp_host_script"
-}
-trap cleanup EXIT
 
 printf '#!/usr/bin/env bash\n%s\n' "$inner_script" > "$tmp_host_script"
 chmod +x "$tmp_host_script"
@@ -542,4 +626,10 @@ if [ -n "${VLLM_USE_SIMPLE_KV_OFFLOAD+x}" ] && [ -n "${VLLM_USE_SIMPLE_KV_OFFLOA
   docker_exec_env+=(--env "VLLM_USE_SIMPLE_KV_OFFLOAD=${VLLM_USE_SIMPLE_KV_OFFLOAD}")
 fi
 
-exec "${docker_cmd[@]}" exec "${docker_exec_env[@]}" "$container" bash "$container_script"
+set +e
+"${docker_cmd[@]}" exec "${docker_exec_env[@]}" "$container" bash "$container_script"
+engine_status=$?
+set -e
+cleanup
+trap - EXIT HUP INT TERM
+exit "$engine_status"
