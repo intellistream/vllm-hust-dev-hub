@@ -1,7 +1,10 @@
 from pathlib import Path
+import json
 import os
 import stat
 import subprocess
+import tempfile
+import textwrap
 import unittest
 
 
@@ -90,8 +93,12 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn('chmod 600 "$tmp_host_script"', script)
         self.assertIn('chmod 700 "$tmp_host_script"', script)
         self.assertNotIn('chmod +x "$tmp_host_script"', script)
-        self.assertIn("script_uid_gid=", script)
-        self.assertIn('--user "$script_uid_gid"', script)
+        self.assertIn("tar --numeric-owner --owner=0 --group=0 --mode=0700", script)
+        self.assertIn("container_script_stat=", script)
+        self.assertIn('"0:0:700"', script)
+        self.assertIn("container_default_user=", script)
+        self.assertNotIn("script_uid_gid=", script)
+        self.assertNotIn('--user "$script_uid_gid"', script)
         self.assertNotIn('HCCL_OP_EXPANSION_MODE="${HCCL_OP_EXPANSION_MODE:-AIV}"', script)
         manage = MANAGE_SCRIPT.read_text()
         self.assertIn("VLLM_ENGINE_EXTRA_ENV_KEYS", manage)
@@ -108,6 +115,93 @@ class ManageEngineGuardTests(unittest.TestCase):
             manage.index('load_dotenv "$repo_root/.env"'),
             manage.index('unit_name="${VLLM_ENGINE_SYSTEMD_UNIT'),
         )
+
+    def test_engine_script_is_root_owned_0700_without_secret_in_argv(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            log_path = tmp_path / "docker-calls.jsonl"
+            copy_meta_path = tmp_path / "copy-meta.json"
+            fake_docker = tmp_path / "docker"
+            fake_docker.write_text(textwrap.dedent(
+                """\
+                #!/usr/bin/env python3
+                import io
+                import json
+                import os
+                import sys
+                import tarfile
+
+                args = sys.argv[1:]
+                with open(os.environ["FAKE_DOCKER_LOG"], "a") as handle:
+                    handle.write(json.dumps(args) + "\\n")
+                if args == ["info"]:
+                    raise SystemExit(0)
+                if args[:3] == ["inspect", "-f", "{{.State.Running}}"]:
+                    print("true")
+                    raise SystemExit(0)
+                if args[:3] == ["inspect", "--format", "{{.Config.User}}"]:
+                    print("")
+                    raise SystemExit(0)
+                if args and args[0] == "cp":
+                    payload = sys.stdin.buffer.read()
+                    with tarfile.open(fileobj=io.BytesIO(payload), mode="r:") as archive:
+                        members = archive.getmembers()
+                        assert len(members) == 1
+                        member = members[0]
+                        content = archive.extractfile(member).read()
+                    with open(os.environ["FAKE_COPY_META"], "w") as handle:
+                        json.dump({
+                            "uid": member.uid,
+                            "gid": member.gid,
+                            "mode": oct(member.mode),
+                            "contains_secret": os.environ["FIXTURE_SECRET"].encode() in content,
+                        }, handle)
+                    raise SystemExit(0)
+                if args[:2] == ["exec", "fixture-container"] and "stat" in args:
+                    print("0:0:700")
+                    raise SystemExit(0)
+                if args and args[0] == "exec":
+                    raise SystemExit(0)
+                raise SystemExit(f"unexpected fake docker call: {args}")
+                """
+            ))
+            fake_docker.chmod(0o700)
+            secret = "fixture-secret-must-not-enter-argv"
+            env = os.environ.copy()
+            env.update({
+                "PATH": f"{tmp_path}:{env['PATH']}",
+                "FAKE_DOCKER_LOG": str(log_path),
+                "FAKE_COPY_META": str(copy_meta_path),
+                "FIXTURE_SECRET": secret,
+                "VLLM_ENGINE_CONTAINER": "fixture-container",
+                "VLLM_ENGINE_REPLACE_EXISTING": "false",
+                "VLLM_HUST_API_KEY": secret,
+                "VLLM_ENGINE_REQUIRE_EXPLICIT_DEVICE_SECURITY": "1",
+                "VLLM_ENGINE_CONTAINER_SECURITY_PROFILE": "explicit-devices-nonprivileged-v1",
+                "VLLM_ENGINE_ASCEND_MANAGER_EXPECTED_COMMIT": "f" * 40,
+                "VLLM_ENGINE_ASCEND_MANAGER_PYTHON": "/bin/true",
+            })
+            result = subprocess.run(
+                [str(ENGINE_SCRIPT)], cwd=REPO_ROOT, env=env, text=True,
+                capture_output=True, check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = [json.loads(line) for line in log_path.read_text().splitlines()]
+            flattened = json.dumps(calls)
+            self.assertNotIn(secret, flattened)
+            final_exec = calls[-1]
+            self.assertEqual(final_exec[0], "exec")
+            self.assertNotIn("--user", final_exec)
+            self.assertEqual(final_exec[-2], "bash")
+            self.assertTrue(final_exec[-1].startswith("/tmp/vllm-hust-engine."))
+            copy_meta = json.loads(copy_meta_path.read_text())
+            self.assertEqual(copy_meta["uid"], 0)
+            self.assertEqual(copy_meta["gid"], 0)
+            self.assertEqual(copy_meta["mode"], "0o700")
+            self.assertTrue(copy_meta["contains_secret"])
+            launcher = ENGINE_SCRIPT.read_text()
+            self.assertIn("HUST_ASCEND_MANAGER_CONTAINER_SECURITY_PROFILE", launcher)
+            self.assertIn("HUST_ASCEND_MANAGER_EXPECTED_COMMIT", launcher)
 
     def test_container_runtime_can_keep_alive_without_ssh_env(self) -> None:
         runtime = (REPO_ROOT / "scripts" / "ascend-container-runtime.sh").read_text()
