@@ -352,6 +352,49 @@ maybe_enable_container_ssh() {
 
 main() {
   local action="${1:-install}"
+
+  case "$action" in
+    help|-h|--help)
+      cat <<'USAGE'
+Usage: ascend-official-container.sh [ACTION] [OPTIONS]
+
+Start, reuse, and enter the official Ascend vLLM container.
+
+Actions:
+  install     Pull image, create container, and enter shell (default)
+  start       Start an existing stopped container and enter shell
+  shell       Enter a running container
+  exec        Execute a command in the container
+  status      Show container status
+  stop        Stop the container
+  rm          Remove the container
+  pull        Pull the container image
+  ssh-enable  Enable SSH in the container
+  ssh-deploy  Deploy SSH keys and enable SSH
+  help        Show this help message
+
+Environment:
+  IMAGE                          Docker image (default:
+                                 quay.io/ascend/vllm-ascend:v0.17.0rc1)
+  VLLM_ENGINE_CONTAINER_NAME     Custom container name
+  VLLM_ENGINE_CONTAINER          (deprecated) Custom container name
+  CONTAINER_NAME                 Fallback container name
+  HOST_WORKSPACE_ROOT            Host workspace root
+  CONTAINER_WORKSPACE_ROOT       Container workspace root (default: /workspace)
+  CONTAINER_WORKDIR              Container working directory
+  HOST_CACHE_DIR                 Host cache directory (default: ~/.cache)
+  SHM_SIZE                       Shared memory size (default: 16g)
+  HUST_ASCEND_MANAGER_SRC        Path to hust_ascend_manager source
+  VLLM_HUST_AUTO_RELOCATE_DOCKER Auto-relocate Docker data root (default: 0)
+  VLLM_HUST_AUTO_ENABLE_CONTAINER_SSH
+                                 Auto-enable container SSH (default: 1)
+  DEFAULT_CONTAINER_SSH_USER     SSH user (default: shuhao)
+  DEFAULT_CONTAINER_SSH_PORT     SSH port (default: 2222)
+USAGE
+      return 0
+      ;;
+  esac
+
   local effective_action
   local suggested_private_key=""
   local python_bin
@@ -360,14 +403,6 @@ main() {
 
   python_bin="$(find_python)"
   ensure_manager_module_available "$python_bin"
-
-  case "$action" in
-    help|-h|--help)
-      PYTHONPATH="$MANAGER_SRC${PYTHONPATH:+:$PYTHONPATH}" \
-        "$python_bin" -m hust_ascend_manager.cli container -h
-      return 0
-      ;;
-  esac
 
   maybe_relocate_docker_data_root "$python_bin" "$action"
   effective_action="$(maybe_enable_container_ssh "$action")"
