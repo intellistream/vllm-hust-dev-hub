@@ -357,6 +357,7 @@ export VLLM_PLUGINS="${VLLM_PLUGINS:-__PLUGINS__}"
 export VLLM_ASCEND_ENABLE_FLASHCOMM1="${VLLM_ASCEND_ENABLE_FLASHCOMM1:-__FLASHCOMM1__}"
 export VLLM_ASCEND_ENABLE_FUSED_MC2="${VLLM_ASCEND_ENABLE_FUSED_MC2:-__FUSED_MC2__}"
 export VLLM_ASCEND_TORCH_PREFLIGHT="${VLLM_ASCEND_TORCH_PREFLIGHT:-0}"
+export VLLM_API_KEY="__API_KEY__"
 export COMPILE_CUSTOM_KERNELS="${COMPILE_CUSTOM_KERNELS:-1}"
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
@@ -449,7 +450,6 @@ args+=(
   --load-format "__LOAD_FORMAT__"
   --trust-remote-code
   --max-num-seqs "__MAX_NUM_SEQS__"
-  --api-key "__API_KEY__"
 )
 
 if [[ "__ENABLE_PREFIX_CACHING__" == "1" ]]; then
@@ -530,6 +530,7 @@ replace "__PIP_INSTALL__" "$pip_install"
 replace "__IMPORT_PREFLIGHT__" "$import_preflight"
 
 tmp_host_script="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/vllm-hust-engine.XXXXXX.sh")"
+chmod 600 "$tmp_host_script"
 cleanup() {
   rm -f "$tmp_host_script"
 }
