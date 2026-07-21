@@ -31,6 +31,14 @@ fail() {
 }
 
 find_python() {
+  if [[ -n "${HUST_ASCEND_MANAGER_PYTHON:-}" ]]; then
+    if [[ "$HUST_ASCEND_MANAGER_PYTHON" != /* || ! -x "$HUST_ASCEND_MANAGER_PYTHON" ]]; then
+      echo "HUST_ASCEND_MANAGER_PYTHON must be an absolute executable" >&2
+      return 1
+    fi
+    printf '%s\n' "$HUST_ASCEND_MANAGER_PYTHON"
+    return 0
+  fi
   if command -v python3 >/dev/null 2>&1; then
     command -v python3
     return 0
@@ -336,6 +344,14 @@ main() {
   local -a manager_cmd
 
   python_bin="$(find_python)"
+  if [[ "${HUST_ASCEND_MANAGER_CONTAINER_SECURITY_PROFILE:-}" == "explicit-devices-nonprivileged-v1" ]]; then
+    if [[ -z "${HUST_ASCEND_MANAGER_EXPECTED_COMMIT:-}" ]]; then
+      echo "ERROR: explicit-device profile lacks pinned manager commit." >&2
+      return 1
+    fi
+    export HUST_ASCEND_MANAGER_EXPECTED_MODULE_ROOT="$MANAGER_SRC"
+    export HUST_ASCEND_MANAGER_EXPECTED_PYTHON="$python_bin"
+  fi
 
   case "$action" in
     help|-h|--help)

@@ -135,6 +135,19 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("engine_base_pythonpath", script)
         self.assertIn('plugins="${plugins},${optimization_plugin}"', script)
 
+    def test_exact_device_security_crosses_systemd_via_vllm_engine_carrier(self) -> None:
+        manage = MANAGE_SCRIPT.read_text()
+        launcher = ENGINE_SCRIPT.read_text()
+        container = (REPO_ROOT / "scripts" / "ascend-official-container.sh").read_text()
+
+        self.assertIn('prefixes = ("VLLM_ENGINE_",', manage)
+        self.assertIn("VLLM_ENGINE_REQUIRE_EXPLICIT_DEVICE_SECURITY", launcher)
+        self.assertIn("VLLM_ENGINE_CONTAINER_SECURITY_PROFILE", launcher)
+        self.assertIn("HUST_ASCEND_MANAGER_CONTAINER_SECURITY_PROFILE", launcher)
+        self.assertIn("HUST_ASCEND_MANAGER_EXPECTED_COMMIT", launcher)
+        self.assertIn("HUST_ASCEND_MANAGER_EXPECTED_MODULE_ROOT", container)
+        self.assertIn("HUST_ASCEND_MANAGER_PYTHON", container)
+
 
 if __name__ == "__main__":
     unittest.main()

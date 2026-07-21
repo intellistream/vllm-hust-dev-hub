@@ -89,6 +89,12 @@ if [[ -n "$optimization_env_prefix" && -z "${VLLM_ENGINE_EXTRA_ENV_PREFIXES:-}" 
 fi
 target_device="${VLLM_TARGET_DEVICE:-npu}"
 container_log_file="${VLLM_ENGINE_CONTAINER_LOG_FILE:-}"
+require_explicit_device_security="${VLLM_ENGINE_REQUIRE_EXPLICIT_DEVICE_SECURITY:-0}"
+container_security_profile="${VLLM_ENGINE_CONTAINER_SECURITY_PROFILE:-}"
+ascend_manager_expected_commit="${VLLM_ENGINE_ASCEND_MANAGER_EXPECTED_COMMIT:-}"
+ascend_manager_python="${VLLM_ENGINE_ASCEND_MANAGER_PYTHON:-}"
+ascend_manager_provenance_receipt="${VLLM_ENGINE_ASCEND_MANAGER_PROVENANCE_RECEIPT:-}"
+ascend_manager_device_discovery_root="${VLLM_ENGINE_ASCEND_MANAGER_DEVICE_DISCOVERY_ROOT:-}"
 
 container_extra_env_exports() {
   python3 - <<'PY'
@@ -167,6 +173,20 @@ if [[ -z "$npu_devices" ]]; then
     npu_devices="0"
   fi
 fi
+if [[ "$require_explicit_device_security" == "1" ]]; then
+  if [[ "$container_security_profile" != "explicit-devices-nonprivileged-v1" ]]; then
+    echo "ERROR: exact-device launch requires explicit-devices-nonprivileged-v1." >&2
+    exit 1
+  fi
+  if [[ ! "$ascend_manager_expected_commit" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "ERROR: exact-device launch requires a pinned ascend-runtime-manager commit." >&2
+    exit 1
+  fi
+  if [[ -z "$ascend_manager_python" || "$ascend_manager_python" != /* || ! -x "$ascend_manager_python" ]]; then
+    echo "ERROR: exact-device launch requires an absolute executable manager Python." >&2
+    exit 1
+  fi
+fi
 docker_cmd=(docker)
 if ! command -v docker >/dev/null 2>&1; then
   echo "ERROR: docker not found on PATH." >&2
@@ -217,6 +237,11 @@ ensure_container_ready() {
   CONTAINER_NAME="$container" \
   IMAGE="$container_image" \
   HUST_ASCEND_MANAGER_VISIBLE_DEVICES="$npu_devices" \
+  HUST_ASCEND_MANAGER_CONTAINER_SECURITY_PROFILE="$container_security_profile" \
+  HUST_ASCEND_MANAGER_EXPECTED_COMMIT="$ascend_manager_expected_commit" \
+  HUST_ASCEND_MANAGER_PYTHON="$ascend_manager_python" \
+  HUST_ASCEND_MANAGER_PROVENANCE_RECEIPT="$ascend_manager_provenance_receipt" \
+  HUST_ASCEND_MANAGER_DEVICE_DISCOVERY_ROOT="$ascend_manager_device_discovery_root" \
   VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE="$container_non_interactive" \
     "$repo_root/scripts/ascend-official-container.sh" start
 
