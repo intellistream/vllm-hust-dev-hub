@@ -562,7 +562,7 @@ cleanup() {
 trap cleanup EXIT
 
 printf '#!/usr/bin/env bash\n%s\n' "$inner_script" > "$tmp_host_script"
-chmod +x "$tmp_host_script"
+chmod 700 "$tmp_host_script"
 script_uid_gid="$(stat -c '%u:%g' "$tmp_host_script")"
 if [[ ! "$script_uid_gid" =~ ^[0-9]+:[0-9]+$ ]]; then
   echo "ERROR: cannot resolve the generated engine script uid:gid." >&2
