@@ -82,6 +82,7 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("VLLM_ENGINE_CONTAINER_LOG_FILE", script)
         self.assertIn("tee -a", script)
         self.assertIn("<redacted>", script)
+        self.assertIn("api_key[^[]*", script)
         self.assertIn("__EXTRA_ENV_EXPORTS__", script)
         self.assertIn("TORCH_DEVICE_BACKEND_AUTOLOAD", script)
         self.assertIn("torch_npu_preflight", script)

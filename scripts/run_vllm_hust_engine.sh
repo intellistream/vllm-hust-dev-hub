@@ -290,7 +290,7 @@ __EXTRA_ENV_EXPORTS__
 CONTAINER_LOG_FILE="__CONTAINER_LOG_FILE__"
 if [[ -n "$CONTAINER_LOG_FILE" ]]; then
   mkdir -p "$(dirname "$CONTAINER_LOG_FILE")"
-  exec > >(sed -E 's/sk-[A-Za-z0-9._-]+/<redacted>/g; s/(api-key[ =])[^ ]+/\1<redacted>/Ig; s/(Bearer )[A-Za-z0-9._~+\/-]+/\1<redacted>/g; s/([A-Za-z_]*(KEY|TOKEN|SECRET)[A-Za-z_]*=)[^ ]+/\1<redacted>/g' | tee -a "$CONTAINER_LOG_FILE") 2>&1
+  exec > >(sed -E 's/sk-[A-Za-z0-9._-]+/<redacted>/g; s/(api-key[ =])[^ ]+/\1<redacted>/Ig; s/(api_key[^[]*\[[^A-Za-z0-9]*)[A-Za-z0-9._~+\/-]+([^]]*\])/\1<redacted>\2/Ig; s/(Bearer )[A-Za-z0-9._~+\/-]+/\1<redacted>/g; s/([A-Za-z_]*(KEY|TOKEN|SECRET)[A-Za-z_]*=)[^ ]+/\1<redacted>/g' | tee -a "$CONTAINER_LOG_FILE") 2>&1
 fi
 
 CONDA_ENV="__CONDA_ENV__"
