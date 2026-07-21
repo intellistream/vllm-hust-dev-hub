@@ -148,6 +148,25 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("HUST_ASCEND_MANAGER_EXPECTED_MODULE_ROOT", container)
         self.assertIn("HUST_ASCEND_MANAGER_PYTHON", container)
 
+    def test_required_exact_device_profile_rejects_default_before_docker(self) -> None:
+        env = os.environ.copy()
+        env.update(
+            {
+                "VLLM_HUST_API_KEY": "host-free-fixture",
+                "VLLM_ENGINE_REQUIRE_EXPLICIT_DEVICE_SECURITY": "1",
+                "VLLM_ENGINE_CONTAINER_SECURITY_PROFILE": "default",
+                "VLLM_ENGINE_ASCEND_MANAGER_EXPECTED_COMMIT": "f" * 40,
+                "VLLM_ENGINE_ASCEND_MANAGER_PYTHON": "/bin/false",
+            }
+        )
+        result = subprocess.run(
+            [str(ENGINE_SCRIPT)], cwd=REPO_ROOT, env=env, text=True,
+            capture_output=True, check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("requires explicit-devices-nonprivileged-v1", result.stderr)
+        self.assertNotIn("Docker container", result.stderr)
+
 
 if __name__ == "__main__":
     unittest.main()
