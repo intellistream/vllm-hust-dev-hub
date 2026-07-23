@@ -118,6 +118,49 @@ class ManageEngineGuardTests(unittest.TestCase):
             manage.index('unit_name="${VLLM_ENGINE_SYSTEMD_UNIT'),
         )
 
+    def test_managed_unit_defaults_to_no_restart_and_journal_is_bounded_redacted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            fake_bin = tmp_path / "bin"
+            fake_bin.mkdir()
+            systemctl = fake_bin / "systemctl"
+            systemctl.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            systemctl.chmod(0o700)
+            journalctl = fake_bin / "journalctl"
+            journalctl.write_text(
+                "#!/bin/sh\n"
+                "printf '%s\\n' \"fixture --api-key=$VLLM_HUST_API_KEY\"\n"
+                "printf '%s\\n' \"$*\" >&2\n",
+                encoding="utf-8",
+            )
+            journalctl.chmod(0o700)
+            xdg = tmp_path / "xdg"
+            secret = "fixture-journal-secret"
+            env = {
+                **os.environ,
+                "PATH": f"{fake_bin}:{os.environ['PATH']}",
+                "XDG_CONFIG_HOME": str(xdg),
+                "VLLM_ENGINE_SYSTEMD_UNIT": "fixture-no-retry.service",
+                "VLLM_HUST_API_KEY": secret,
+            }
+            installed = subprocess.run(
+                [str(MANAGE_SCRIPT), "install"], cwd=REPO_ROOT, env=env,
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            unit = xdg / "systemd/user/fixture-no-retry.service"
+            self.assertIn("Restart=no", unit.read_text(encoding="utf-8"))
+            self.assertNotIn("Restart=on-failure", unit.read_text(encoding="utf-8"))
+
+            snapshot = subprocess.run(
+                [str(MANAGE_SCRIPT), "journal-snapshot"], cwd=REPO_ROOT, env=env,
+                text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(snapshot.returncode, 0, snapshot.stderr)
+            self.assertIn("fixture --api-key=<redacted>", snapshot.stdout)
+            self.assertNotIn(secret, snapshot.stdout + snapshot.stderr)
+            self.assertIn("--lines 200", snapshot.stdout)
+
     def test_engine_script_is_root_owned_0700_without_secret_in_argv(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)

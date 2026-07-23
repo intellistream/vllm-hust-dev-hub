@@ -24,7 +24,7 @@ load_dotenv() {
 load_dotenv "$repo_root/.env"
 
 unit_name="${VLLM_ENGINE_SYSTEMD_UNIT:-vllm-hust-dev-hub-engine.service}"
-unit_restart="${VLLM_ENGINE_SYSTEMD_RESTART:-on-failure}"
+unit_restart="${VLLM_ENGINE_SYSTEMD_RESTART:-no}"
 unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 unit_path="$unit_dir/$unit_name"
 unit_env_path="$unit_path.env"
@@ -40,7 +40,7 @@ fi
 
 usage() {
   cat <<EOF
-Usage: ./manage.sh <status|install|start|stop|restart|logs|health|foreground> [flags]
+Usage: ./manage.sh <status|install|start|stop|restart|logs|journal-snapshot|health|foreground> [flags]
 
 Actions:
   install      Install/update the user systemd unit only
@@ -49,6 +49,8 @@ Actions:
   restart      Install/update the unit and restart vLLM-HUST
   status       Show systemd status
   logs         Follow service logs
+  journal-snapshot
+               Print a bounded, redacted startup-journal snapshot
   health       Check http://127.0.0.1:\${VLLM_ENGINE_PORT:-8000}/health
   foreground   Run the engine launcher directly in the current terminal
 
@@ -190,6 +192,32 @@ require_unit() {
   fi
 }
 
+bounded_redacted_journal() {
+  local journal_lines="${VLLM_ENGINE_JOURNAL_LINES:-200}"
+  if [[ ! "$journal_lines" =~ ^[0-9]+$ ]] || (( journal_lines < 1 || journal_lines > 1000 )); then
+    echo "VLLM_ENGINE_JOURNAL_LINES must be an integer in [1, 1000]" >&2
+    return 2
+  fi
+  journalctl --user -u "$unit_name" --no-pager --output=short-iso \
+    --lines "$journal_lines" 2>&1 | python3 -c '
+import os
+import re
+import sys
+
+secret = os.environ.get("VLLM_HUST_API_KEY", "")
+patterns = (
+    re.compile(r"(?i)(--api-key(?:=|\s+))\S+"),
+    re.compile(r"(?i)((?:api[_-]?key|token|secret)\s*[=:]\s*)\S+"),
+)
+for line in sys.stdin:
+    if secret:
+        line = line.replace(secret, "<redacted>")
+    for pattern in patterns:
+        line = pattern.sub(r"\1<redacted>", line)
+    sys.stdout.write(line)
+'
+}
+
 service_state_json() {
   local active sub result main_pid
   active="$(systemctl --user show "$unit_name" --property=ActiveState --value 2>/dev/null || true)"
@@ -244,6 +272,10 @@ case "$action" in
   logs)
     require_unit
     exec journalctl --user -u "$unit_name" -f
+    ;;
+  journal-snapshot)
+    require_unit
+    bounded_redacted_journal
     ;;
   health)
     if curl -fsS -m 5 "$health_url" >/dev/null; then
