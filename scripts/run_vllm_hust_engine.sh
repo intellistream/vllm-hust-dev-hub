@@ -343,10 +343,7 @@ set -euo pipefail
 __EXTRA_ENV_EXPORTS__
 
 CONTAINER_LOG_FILE="__CONTAINER_LOG_FILE__"
-if [[ -n "$CONTAINER_LOG_FILE" ]]; then
-  mkdir -p "$(dirname "$CONTAINER_LOG_FILE")"
-  exec > >(sed -E 's/sk-[A-Za-z0-9._-]+/<redacted>/g; s/(api-key[ =])[^ ]+/\1<redacted>/Ig; s/(Bearer )[A-Za-z0-9._~+\/-]+/\1<redacted>/g; s/([A-Za-z_]*(KEY|TOKEN|SECRET)[A-Za-z_]*=)[^ ]+/\1<redacted>/g' | tee -a "$CONTAINER_LOG_FILE") 2>&1
-fi
+LOG_SUPERVISOR="__LOG_SUPERVISOR__"
 
 CONDA_ENV="__CONDA_ENV__"
 CONDA_PREFIX_OVERRIDE="__CONDA_PREFIX__"
@@ -522,6 +519,12 @@ PY
   args+=("${extra_args[@]}")
 fi
 
+if [[ -n "$CONTAINER_LOG_FILE" ]]; then
+  exec "$ENGINE_PYTHON" "$LOG_SUPERVISOR" \
+    --log-file "$CONTAINER_LOG_FILE" \
+    --partial-tail-file "${CONTAINER_LOG_FILE}.partial-tail" \
+    -- "${args[@]}"
+fi
 exec "${args[@]}"
 BASH
 )
@@ -537,6 +540,7 @@ replace "__CONDA_PREFIX__" "$conda_prefix"
 replace "__ENGINE_PYTHON__" "$engine_python"
 replace "__EXTRA_ENV_EXPORTS__" "$extra_env_exports"
 replace "__CONTAINER_LOG_FILE__" "$container_log_file"
+replace "__LOG_SUPERVISOR__" "/tmp/vllm-hust-supervise-redacted-engine.py"
 replace "__TARGET_DEVICE__" "$target_device"
 replace "__NPU_DEVICES__" "$npu_devices"
 replace "__PLUGINS__" "$plugins"
@@ -574,6 +578,13 @@ chmod +x "$tmp_host_script"
 
 container_script="/tmp/$(basename "$tmp_host_script")"
 "${docker_cmd[@]}" cp "$tmp_host_script" "$container:$container_script"
+supervisor_host="$repo_root/scripts/supervise_redacted_engine.py"
+if [[ ! -f "$supervisor_host" || -L "$supervisor_host" ]]; then
+  echo "ERROR: missing regular log supervisor: $supervisor_host" >&2
+  exit 1
+fi
+"${docker_cmd[@]}" cp \
+  "$supervisor_host" "$container:/tmp/vllm-hust-supervise-redacted-engine.py"
 
 docker_exec_args=(
   exec

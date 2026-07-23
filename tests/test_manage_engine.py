@@ -1,4 +1,6 @@
 from pathlib import Path
+import importlib.util
+import io
 import os
 import stat
 import subprocess
@@ -10,16 +12,20 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANAGE_SCRIPT = REPO_ROOT / "manage.sh"
 ENGINE_SCRIPT = REPO_ROOT / "scripts" / "run_vllm_hust_engine.sh"
+LOG_SUPERVISOR = REPO_ROOT / "scripts" / "supervise_redacted_engine.py"
 ENV_TEMPLATE = REPO_ROOT / ".env.template"
 README = REPO_ROOT / "README.md"
 
 
 class ManageEngineGuardTests(unittest.TestCase):
     def test_management_scripts_are_executable_and_syntax_valid(self) -> None:
-        for script in (MANAGE_SCRIPT, ENGINE_SCRIPT):
+        for script in (MANAGE_SCRIPT, ENGINE_SCRIPT, LOG_SUPERVISOR):
             mode = script.stat().st_mode
             self.assertTrue(mode & stat.S_IXUSR, f"{script} should be executable")
-            subprocess.run(["bash", "-n", str(script)], check=True)
+            if script.suffix == ".py":
+                subprocess.run([sys.executable, "-m", "py_compile", str(script)], check=True)
+            else:
+                subprocess.run(["bash", "-n", str(script)], check=True)
 
     def test_empty_api_key_fails_before_docker_access(self) -> None:
         env = os.environ.copy()
@@ -165,8 +171,10 @@ class ManageEngineGuardTests(unittest.TestCase):
             script,
         )
         self.assertIn("VLLM_ENGINE_CONTAINER_LOG_FILE", script)
-        self.assertIn("tee -a", script)
-        self.assertIn("<redacted>", script)
+        self.assertNotIn("tee -a", script)
+        self.assertIn("supervise_redacted_engine.py", script)
+        self.assertIn("--partial-tail-file", script)
+        self.assertIn("<redacted>", LOG_SUPERVISOR.read_text())
         self.assertIn("__EXTRA_ENV_EXPORTS__", script)
         self.assertIn("TORCH_DEVICE_BACKEND_AUTOLOAD", script)
         self.assertIn("torch_npu_preflight", script)
@@ -215,6 +223,58 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("optimization_src_subdir", script)
         self.assertIn("engine_base_pythonpath", script)
         self.assertIn('plugins="${plugins},${optimization_plugin}"', script)
+
+    def test_log_supervisor_redacts_and_seals_partial_tail(self) -> None:
+        spec = importlib.util.spec_from_file_location("log_supervisor", LOG_SUPERVISOR)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            log = root / "engine.log"
+            tail = root / "partial-tail.log"
+            output = io.BytesIO()
+            code = (
+                "import sys; "
+                "sys.stdout.write('Bearer fixture-secret\\n'); "
+                "sys.stdout.write('partial TOKEN=value'); "
+                "sys.stdout.flush(); raise SystemExit(3)"
+            )
+            status = module.supervise(
+                [sys.executable, "-c", code],
+                log_path=log.resolve(),
+                partial_tail_path=tail.resolve(),
+                output=output,
+            )
+            self.assertEqual(status, 3)
+            self.assertNotIn(b"fixture-secret", log.read_bytes())
+            self.assertNotIn(b"TOKEN=value", log.read_bytes())
+            self.assertEqual(tail.read_bytes(), b"partial TOKEN=<redacted>")
+
+    def test_log_supervisor_consumer_exit_fails_closed_without_restart(self) -> None:
+        spec = importlib.util.spec_from_file_location("log_supervisor", LOG_SUPERVISOR)
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        class FailedConsumer(io.BytesIO):
+            def write(self, value: bytes) -> int:
+                raise BrokenPipeError
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            status = module.supervise(
+                [
+                    sys.executable,
+                    "-c",
+                    "import time; print('one child', flush=True); time.sleep(30)",
+                ],
+                log_path=(root / "engine.log").resolve(),
+                partial_tail_path=(root / "partial-tail.log").resolve(),
+                output=FailedConsumer(),
+            )
+            self.assertEqual(status, 75)
+            self.assertEqual((root / "engine.log").read_text(), "one child\n")
 
 
 if __name__ == "__main__":
