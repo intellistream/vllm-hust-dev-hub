@@ -813,18 +813,16 @@ ensure_ascend_build_python_packages() {
   done
 
   if triton_ascend_repo="$(resolve_local_triton_ascend_repo)"; then
-    log "Installing triton-ascend from local HUST source: $triton_ascend_repo"
-    run_with_heartbeat \
-      "installing local triton-ascend from $triton_ascend_repo" \
-      run_pip_install_in_env "$ENV_NAME" \
-        "TRITON_WHEEL_NAME=triton-ascend" \
-        "MAX_JOBS=${HUST_TRITON_ASCEND_MAX_JOBS:-32}" \
-        -- --no-build-isolation -v -e "$triton_ascend_repo"
-    rc=$?
-    if (( rc != 0 )); then
-      log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
-      return "$rc"
-    fi
+    # Local editable installs use --no-build-isolation, so every requirement
+    # from the local project's build-system.requires must already be present.
+    # In particular, setup.py imports pybind11 while pip is only preparing
+    # editable metadata; installing it in the batch below would be too late.
+    for package_spec in cmake ninja pybind11 nanobind; do
+      package_spec="$(read_build_requirement_spec_from_pyproject "$triton_ascend_repo" "$package_spec" || true)"
+      if [[ -n "$package_spec" ]]; then
+        batch_specs+=("$package_spec")
+      fi
+    done
   else
     triton_ascend_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "triton-ascend" || true)"
     batch_specs+=("${triton_ascend_spec:-triton-ascend}")
@@ -837,10 +835,12 @@ ensure_ascend_build_python_packages() {
   # False, which silently disables all triton-ascend kernels including
   # the fused qkv_rmsnorm_rope op. Must be installed unconditionally
   # regardless of whether we're compiling custom C++ kernels.
-  pybind11_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "pybind11" || true)"
-  batch_specs+=("${pybind11_spec:-pybind11}")
+  if [[ -z "$triton_ascend_repo" ]]; then
+    pybind11_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "pybind11" || true)"
+    batch_specs+=("${pybind11_spec:-pybind11}")
+  fi
 
-  if [[ "$compile_custom_kernels" == "0" ]]; then
+  if [[ "$compile_custom_kernels" == "0" || -n "$triton_ascend_repo" ]]; then
     :
   else
     batch_specs+=("cmake" "nanobind>=2.4")
@@ -850,18 +850,31 @@ ensure_ascend_build_python_packages() {
 
   if (( ${#missing_batch_specs[@]} == 0 )); then
     log "Ascend build Python dependencies already satisfied in '$ENV_NAME'"
-    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
-    return 0
+  else
+    log "Installing missing or incompatible Ascend build Python dependencies into '$ENV_NAME': ${missing_batch_specs[*]}"
+    run_with_heartbeat \
+      "installing Ascend build Python dependencies into $ENV_NAME" \
+      run_pip_install_in_env "$ENV_NAME" -- "${missing_batch_specs[@]}"
+    rc=$?
+    if (( rc != 0 )); then
+      log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+      return "$rc"
+    fi
   fi
 
-  log "Installing missing or incompatible Ascend build Python dependencies into '$ENV_NAME': ${missing_batch_specs[*]}"
-  run_with_heartbeat \
-    "installing Ascend build Python dependencies into $ENV_NAME" \
-    run_pip_install_in_env "$ENV_NAME" -- "${missing_batch_specs[@]}"
-  rc=$?
-  if (( rc != 0 )); then
-    log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
-    return "$rc"
+  if [[ -n "$triton_ascend_repo" ]]; then
+    log "Installing triton-ascend from local HUST source: $triton_ascend_repo"
+    run_with_heartbeat \
+      "installing local triton-ascend from $triton_ascend_repo" \
+      run_pip_install_in_env "$ENV_NAME" \
+        "TRITON_WHEEL_NAME=triton-ascend" \
+        "MAX_JOBS=${HUST_TRITON_ASCEND_MAX_JOBS:-32}" \
+        -- --no-build-isolation -v -e "$triton_ascend_repo"
+    rc=$?
+    if (( rc != 0 )); then
+      log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+      return "$rc"
+    fi
   fi
 
   log_perf_step_end "$perf_description" "$perf_start_epoch" 0

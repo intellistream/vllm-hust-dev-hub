@@ -159,6 +159,20 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         self.assertIn('"$WORKSPACE_ROOT/triton-ascend-hust"', script_text)
         self.assertIn('--no-build-isolation -v -e "$triton_ascend_repo"', script_text)
 
+    def test_quickstart_prepares_local_triton_build_requirements_before_editable_install(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        self.assertIn(
+            'read_build_requirement_spec_from_pyproject "$triton_ascend_repo" "$package_spec"',
+            script_text,
+        )
+        self.assertIn('for package_spec in cmake ninja pybind11 nanobind; do', script_text)
+        self.assertIn('batch_specs+=("$package_spec")', script_text)
+        self.assertLess(
+            script_text.index('mapfile -t missing_batch_specs'),
+            script_text.index('"installing local triton-ascend from $triton_ascend_repo"'),
+        )
+
     def test_quickstart_fail_fast_gates_ascend_fallback(self) -> None:
         script_text = QUICKSTART_SCRIPT_PATH.read_text()
 
