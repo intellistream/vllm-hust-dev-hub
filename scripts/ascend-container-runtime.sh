@@ -48,5 +48,29 @@ while true; do
   sleep "${CONTAINER_SSH_HEALTH_INTERVAL}"
 done &
 
-trap : TERM INT
-sleep infinity & wait
+runtime_event() {
+  local event="$1"
+  local status="${2:-0}"
+  printf '{"kind":"container-runtime","event":"%s","status":%s,"pid":%s,"bashpid":%s,"ppid":%s,"time":"%s"}\n' \
+    "$event" "$status" "$$" "$BASHPID" "$PPID" \
+    "$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+}
+runtime_signal() {
+  runtime_event "signal-$1" 0
+}
+runtime_exit() {
+  local status="$1"
+  runtime_event "exit" "$status"
+}
+
+trap 'runtime_signal TERM' TERM
+trap 'runtime_signal INT' INT
+trap 'runtime_exit "$?"' EXIT
+runtime_event "start" 0
+sleep infinity &
+set +e
+wait
+runtime_wait_status=$?
+set -e
+runtime_event "wait-return" "$runtime_wait_status"
+exit "$runtime_wait_status"

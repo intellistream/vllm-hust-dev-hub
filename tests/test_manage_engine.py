@@ -11,6 +11,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANAGE_SCRIPT = REPO_ROOT / "manage.sh"
 ENGINE_SCRIPT = REPO_ROOT / "scripts" / "run_vllm_hust_engine.sh"
+CONTAINER_RUNTIME_SCRIPT = REPO_ROOT / "scripts" / "ascend-container-runtime.sh"
 ENV_TEMPLATE = REPO_ROOT / ".env.template"
 README = REPO_ROOT / "README.md"
 MULTILINE_IMPORT_PREFLIGHT = (
@@ -24,6 +25,9 @@ class ManageEngineGuardTests(unittest.TestCase):
             mode = script.stat().st_mode
             self.assertTrue(mode & stat.S_IXUSR, f"{script} should be executable")
             subprocess.run(["bash", "-n", str(script)], check=True)
+        # The container runtime is deliberately invoked as `bash <script>` by
+        # the frozen image entrypoint and need not carry an executable bit.
+        subprocess.run(["bash", "-n", str(CONTAINER_RUNTIME_SCRIPT)], check=True)
 
     def test_empty_api_key_fails_before_docker_access(self) -> None:
         env = os.environ.copy()
@@ -198,8 +202,21 @@ class ManageEngineGuardTests(unittest.TestCase):
                     print(json.dumps({
                         "status": "die",
                         "id": "a" * 64,
-                        "Actor": {"Attributes": {"exitCode": "137"}},
+                        "Actor": {"Attributes": {
+                            "exitCode": "137",
+                            "execID": "fixture-exec-id",
+                            "signal": "9",
+                            "unsafe": "fixture-secret",
+                        }},
                     }, sort_keys=True))
+                    raise SystemExit(0)
+                if args and args[0] == "logs":
+                    if os.environ.get("FAKE_FAIL_RUNTIME_LOG") == "1":
+                        print("runtime log unavailable", file=sys.stderr)
+                        raise SystemExit(2)
+                    print('{"kind":"container-runtime","event":"start","status":0}')
+                    print('{"kind":"container-runtime","event":"exit","status":126}')
+                    print("api-key=fixture-secret")
                     raise SystemExit(0)
                 if args and args[0] == "cp":
                     payload = sys.stdin.buffer.read()
@@ -264,13 +281,32 @@ class ManageEngineGuardTests(unittest.TestCase):
             )
             self.assertEqual(event["event"]["status"], "die")
             self.assertEqual(event["event"]["id"], "a" * 64)
+            self.assertEqual(event["event"]["execID"], "fixture-exec-id")
+            self.assertEqual(event["event"]["signal"], "9")
+            self.assertNotIn("unsafe", event["event"])
             self.assertRegex(
                 event["event"]["capture_until"],
                 r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z$",
             )
+            runtime_log = run_root / "container-runtime.log"
+            self.assertEqual(runtime_log.stat().st_mode & 0o777, 0o600)
+            runtime_text = runtime_log.read_text(encoding="utf-8")
+            self.assertIn('"event":"start"', runtime_text)
+            self.assertIn('"event":"exit"', runtime_text)
+            self.assertIn("api-key=<redacted>", runtime_text)
+            self.assertNotIn("fixture-secret", runtime_text)
+            runtime_receipt = next(
+                item for item in records
+                if item.get("kind") == "container-runtime-log"
+            )
+            self.assertEqual(runtime_receipt["status"], "PASS")
+            self.assertEqual(runtime_receipt["bytes"], runtime_log.stat().st_size)
+            self.assertRegex(runtime_receipt["sha256"], r"^[0-9a-f]{64}$")
 
             diagnostics.unlink()
+            runtime_log.unlink()
             env["FAKE_OMIT_TERMINAL_EVENT"] = "1"
+            env["FAKE_FAIL_RUNTIME_LOG"] = "1"
             missing = subprocess.run(
                 [str(ENGINE_SCRIPT)], cwd=REPO_ROOT, env=env, text=True,
                 capture_output=True, check=False,
@@ -288,6 +324,14 @@ class ManageEngineGuardTests(unittest.TestCase):
                 gap["capture_until"],
                 r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z$",
             )
+            runtime_gap = next(
+                item for item in missing_records
+                if item.get("kind") == "container-runtime-log"
+            )
+            self.assertEqual(
+                runtime_gap["status"], "UNAVAILABLE_CAPTURE_FAILED"
+            )
+            self.assertFalse(runtime_log.exists())
 
     def test_managed_unit_defaults_to_no_restart_and_journal_is_bounded_redacted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -726,6 +770,10 @@ class ManageEngineGuardTests(unittest.TestCase):
 
         self.assertIn("CONTAINER_SSH_USER:=shuhao", runtime)
         self.assertNotIn("CONTAINER_SSH_USER:?Error", runtime)
+        self.assertIn('runtime_event "start" 0', runtime)
+        self.assertIn('runtime_event "wait-return" "$runtime_wait_status"', runtime)
+        self.assertIn("trap 'runtime_signal TERM' TERM", runtime)
+        self.assertIn("trap 'runtime_exit \"$?\"' EXIT", runtime)
 
     def test_engine_launcher_stays_repo_agnostic(self) -> None:
         script = ENGINE_SCRIPT.read_text()

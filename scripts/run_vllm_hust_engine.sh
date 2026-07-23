@@ -383,6 +383,7 @@ ensure_container_ready
 container_full_id=""
 container_started_at=""
 container_pid1=""
+container_runtime_log_file=""
 capture_pid_identity() {
   local phase="$1"
   local pid="$2"
@@ -434,13 +435,55 @@ capture_container_inspect() {
     return 1
   fi
 }
-capture_docker_events() {
+capture_container_runtime_logs() {
+  local event_until="$1"
   [[ -n "$lifecycle_diagnostics_file" ]] || return 0
-  local event_until
-  # This bound is sampled after terminal inspect. Preserve nanoseconds: an
-  # integer-second bound can precede FinishedAt within the same second and
-  # silently exclude the exact die/kill/stop event needed for causality.
-  event_until="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+  container_runtime_log_file="$run_root_host/container-runtime.log"
+  local tmp_runtime_log="$container_runtime_log_file.tmp.$$"
+  if [[ -e "$container_runtime_log_file" || -L "$container_runtime_log_file" ]]; then
+    printf '%s\n' '{"kind":"container-runtime-log","status":"UNAVAILABLE_PREEXISTING"}' \
+      >> "$lifecycle_diagnostics_file"
+    return 1
+  fi
+  umask 077
+  if ! timeout 10 "${docker_cmd[@]}" logs --timestamps \
+      --since "$container_started_at" --until "$event_until" "$container" 2>&1 \
+      | sed -u -E 's/sk-[A-Za-z0-9._-]+/<redacted>/g; s/(api-key[ =])[^ ]+/\1<redacted>/Ig; s/(Bearer )[A-Za-z0-9._~+\/-]+/\1<redacted>/g; s/([A-Za-z_]*(KEY|TOKEN|SECRET)[A-Za-z_]*=)[^ ]+/\1<redacted>/g' \
+      > "$tmp_runtime_log"; then
+    rm -f "$tmp_runtime_log"
+    printf '%s\n' '{"kind":"container-runtime-log","status":"UNAVAILABLE_CAPTURE_FAILED"}' \
+      >> "$lifecycle_diagnostics_file"
+    return 1
+  fi
+  chmod 600 "$tmp_runtime_log"
+  if [[ ! -f "$tmp_runtime_log" || -L "$tmp_runtime_log" || "$(stat -c '%h' "$tmp_runtime_log")" != "1" ]]; then
+    rm -f "$tmp_runtime_log"
+    printf '%s\n' '{"kind":"container-runtime-log","status":"UNAVAILABLE_UNSAFE_FILE"}' \
+      >> "$lifecycle_diagnostics_file"
+    return 1
+  fi
+  mv "$tmp_runtime_log" "$container_runtime_log_file"
+  python3 - "$container_runtime_log_file" "$event_until" \
+      >> "$lifecycle_diagnostics_file" <<'PY'
+import hashlib
+import json
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+print(json.dumps({
+    "kind": "container-runtime-log",
+    "status": "PASS",
+    "path": str(path),
+    "bytes": path.stat().st_size,
+    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    "capture_until": sys.argv[2],
+}, sort_keys=True))
+PY
+}
+capture_docker_events() {
+  local event_until="$1"
+  [[ -n "$lifecycle_diagnostics_file" ]] || return 0
   if [[ -z "$container_full_id" || -z "$container_started_at" ]]; then
     printf '%s\n' '{"kind":"docker-events","status":"UNAVAILABLE_NO_START_BINDING"}' \
       >> "$lifecycle_diagnostics_file"
@@ -466,8 +509,9 @@ for line in sys.stdin:
             for key in ("Type", "Action", "status", "id", "time", "timeNano")
             if key in source
         }
-        if "exitCode" in attributes:
-            event["exitCode"] = attributes["exitCode"]
+        for key in ("exitCode", "execID", "signal", "execDuration"):
+            if key in attributes:
+                event[key] = attributes[key]
         event["capture_until"] = event_until
         action = source.get("Action") or source.get("status") or ""
         terminal_seen = terminal_seen or action in terminal_actions
@@ -907,6 +951,10 @@ set -e
 if (( engine_rc != 0 )) && [[ -n "$lifecycle_diagnostics_file" ]]; then
   capture_container_inspect "terminal" || true
   capture_pid_identity "terminal" "$container_pid1"
-  capture_docker_events || true
+  # One post-inspect nanosecond bound closes both PID1 log and Docker-event
+  # custody over the same exact terminal interval.
+  terminal_capture_until="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
+  capture_container_runtime_logs "$terminal_capture_until" || true
+  capture_docker_events "$terminal_capture_until" || true
 fi
 exit "$engine_rc"
