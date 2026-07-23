@@ -89,12 +89,35 @@ if [[ -n "$optimization_env_prefix" && -z "${VLLM_ENGINE_EXTRA_ENV_PREFIXES:-}" 
 fi
 target_device="${VLLM_TARGET_DEVICE:-npu}"
 container_log_file="${VLLM_ENGINE_CONTAINER_LOG_FILE:-}"
+host_log_file="${VLLM_ENGINE_HOST_LOG_FILE:-}"
 require_explicit_device_security="${VLLM_ENGINE_REQUIRE_EXPLICIT_DEVICE_SECURITY:-0}"
 container_security_profile="${VLLM_ENGINE_CONTAINER_SECURITY_PROFILE:-}"
 ascend_manager_expected_commit="${VLLM_ENGINE_ASCEND_MANAGER_EXPECTED_COMMIT:-}"
 ascend_manager_python="${VLLM_ENGINE_ASCEND_MANAGER_PYTHON:-}"
 ascend_manager_provenance_receipt="${VLLM_ENGINE_ASCEND_MANAGER_PROVENANCE_RECEIPT:-}"
 ascend_manager_device_discovery_root="${VLLM_ENGINE_ASCEND_MANAGER_DEVICE_DISCOVERY_ROOT:-}"
+
+# Preserve launcher, bootstrap, docker-exec, and engine stderr even when the
+# generated in-container script never starts. The container-side log below is
+# necessarily too late to observe a failed docker exec boundary.
+if [[ -n "$host_log_file" ]]; then
+  if [[ "$host_log_file" != /* ]]; then
+    echo "ERROR: VLLM_ENGINE_HOST_LOG_FILE must be absolute." >&2
+    exit 1
+  fi
+  mkdir -p "$(dirname "$host_log_file")"
+  if [[ -L "$host_log_file" ]]; then
+    echo "ERROR: refusing symlink host engine log: $host_log_file" >&2
+    exit 1
+  fi
+  : >> "$host_log_file"
+  if [[ ! -f "$host_log_file" || "$(stat -c '%h' "$host_log_file")" != "1" ]]; then
+    echo "ERROR: host engine log must be a regular single-link file." >&2
+    exit 1
+  fi
+  chmod 600 "$host_log_file"
+  exec > >(sed -u -E 's/sk-[A-Za-z0-9._-]+/<redacted>/g; s/(api-key[ =])[^ ]+/\1<redacted>/Ig; s/(Bearer )[A-Za-z0-9._~+\/-]+/\1<redacted>/g; s/([A-Za-z_]*(KEY|TOKEN|SECRET)[A-Za-z_]*=)[^ ]+/\1<redacted>/g' | tee -a "$host_log_file") 2>&1
+fi
 
 container_extra_env_exports() {
   python3 - <<'PY'
@@ -322,7 +345,7 @@ __EXTRA_ENV_EXPORTS__
 CONTAINER_LOG_FILE="__CONTAINER_LOG_FILE__"
 if [[ -n "$CONTAINER_LOG_FILE" ]]; then
   mkdir -p "$(dirname "$CONTAINER_LOG_FILE")"
-  exec > >(sed -E 's/sk-[A-Za-z0-9._-]+/<redacted>/g; s/(api-key[ =])[^ ]+/\1<redacted>/Ig; s/(Bearer )[A-Za-z0-9._~+\/-]+/\1<redacted>/g; s/([A-Za-z_]*(KEY|TOKEN|SECRET)[A-Za-z_]*=)[^ ]+/\1<redacted>/g' | tee -a "$CONTAINER_LOG_FILE") 2>&1
+  exec > >(sed -u -E 's/sk-[A-Za-z0-9._-]+/<redacted>/g; s/(api-key[ =])[^ ]+/\1<redacted>/Ig; s/(Bearer )[A-Za-z0-9._~+\/-]+/\1<redacted>/g; s/([A-Za-z_]*(KEY|TOKEN|SECRET)[A-Za-z_]*=)[^ ]+/\1<redacted>/g' | tee -a "$CONTAINER_LOG_FILE") 2>&1
 fi
 
 CONDA_ENV="__CONDA_ENV__"

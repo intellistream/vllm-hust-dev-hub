@@ -83,7 +83,9 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("v0.21.0rc1-openeuler", script)
         self.assertIn("VLLM_ENGINE_COMPILATION_CONFIG", script)
         self.assertIn("VLLM_ENGINE_CONTAINER_LOG_FILE", script)
+        self.assertIn("VLLM_ENGINE_HOST_LOG_FILE", script)
         self.assertIn("tee -a", script)
+        self.assertIn("sed -u -E", script)
         self.assertIn("<redacted>", script)
         self.assertIn("__EXTRA_ENV_EXPORTS__", script)
         self.assertIn("TORCH_DEVICE_BACKEND_AUTOLOAD", script)
@@ -161,12 +163,14 @@ class ManageEngineGuardTests(unittest.TestCase):
                     print("0:0:700")
                     raise SystemExit(0)
                 if args and args[0] == "exec":
+                    print("fixture docker exec stderr", file=sys.stderr)
                     raise SystemExit(0)
                 raise SystemExit(f"unexpected fake docker call: {args}")
                 """
             ))
             fake_docker.chmod(0o700)
             secret = "fixture-secret-must-not-enter-argv"
+            host_log_path = tmp_path / "host-engine.log"
             env = os.environ.copy()
             env.update({
                 "PATH": f"{tmp_path}:{env['PATH']}",
@@ -180,6 +184,7 @@ class ManageEngineGuardTests(unittest.TestCase):
                 "VLLM_ENGINE_CONTAINER_SECURITY_PROFILE": "explicit-devices-nonprivileged-v1",
                 "VLLM_ENGINE_ASCEND_MANAGER_EXPECTED_COMMIT": "f" * 40,
                 "VLLM_ENGINE_ASCEND_MANAGER_PYTHON": "/bin/true",
+                "VLLM_ENGINE_HOST_LOG_FILE": str(host_log_path),
             })
             result = subprocess.run(
                 [str(ENGINE_SCRIPT)], cwd=REPO_ROOT, env=env, text=True,
@@ -199,6 +204,9 @@ class ManageEngineGuardTests(unittest.TestCase):
             self.assertEqual(copy_meta["gid"], 0)
             self.assertEqual(copy_meta["mode"], "0o700")
             self.assertTrue(copy_meta["contains_secret"])
+            self.assertIn("fixture docker exec stderr", host_log_path.read_text())
+            self.assertNotIn(secret, host_log_path.read_text())
+            self.assertEqual(host_log_path.stat().st_mode & 0o777, 0o600)
             launcher = ENGINE_SCRIPT.read_text()
             self.assertIn("HUST_ASCEND_MANAGER_CONTAINER_SECURITY_PROFILE", launcher)
             self.assertIn("HUST_ASCEND_MANAGER_EXPECTED_COMMIT", launcher)
