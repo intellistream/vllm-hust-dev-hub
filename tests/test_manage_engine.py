@@ -2,6 +2,8 @@ from pathlib import Path
 import os
 import stat
 import subprocess
+import sys
+import tempfile
 import unittest
 
 
@@ -39,6 +41,77 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("real API key", result.stderr)
         self.assertNotIn("Docker container", result.stderr)
+
+    def test_dormant_mapping_advisory_requires_signed_context_before_docker(self) -> None:
+        env = os.environ.copy()
+        env.update(
+            {
+                "VLLM_ENGINE_CONTAINER": "dummy-container",
+                "VLLM_HUST_API_KEY": "test-only-not-a-production-secret",
+                "VLLM_ENGINE_DORMANT_NPU_MAPPINGS_ADVISORY": "1",
+            }
+        )
+        result = subprocess.run(
+            [str(ENGINE_SCRIPT)],
+            cwd=REPO_ROOT,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 75)
+        self.assertIn("explicit signed central authorization context", result.stderr)
+        self.assertNotIn("docker", result.stderr.lower())
+
+    def test_verified_context_makes_only_dormant_mapping_gate_advisory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp)
+            context = fixture / "authorization-context.json"
+            verifier = fixture / "verify-context.py"
+            marker = fixture / "verified"
+            context.write_text('{"test_fixture":true}\n')
+            verifier.write_text(
+                "from pathlib import Path\n"
+                "import sys\n"
+                "assert sys.argv[1].endswith('authorization-context.json')\n"
+                "assert sys.argv[2:] == ['--expected-device', '1']\n"
+                f"Path({str(marker)!r}).write_text('verified\\n')\n"
+            )
+            for command in ("docker", "sudo"):
+                executable = fixture / command
+                executable.write_text("#!/bin/sh\nexit 1\n")
+                executable.chmod(0o755)
+
+            env = os.environ.copy()
+            env.update(
+                {
+                    "PATH": f"{fixture}:{env['PATH']}",
+                    "VLLM_ENGINE_CONTAINER": "dummy-container",
+                    "VLLM_HUST_API_KEY": "test-only-not-a-production-secret",
+                    "VLLM_ENGINE_DORMANT_NPU_MAPPINGS_ADVISORY": "1",
+                    "VLLM_ENGINE_CENTRAL_AUTHORIZATION_CONTEXT": str(context),
+                    "VLLM_ENGINE_CENTRAL_AUTHORIZATION_VERIFIER": str(verifier),
+                    "VLLM_ENGINE_CENTRAL_AUTHORIZATION_PYTHON": sys.executable,
+                    "VLLM_ENGINE_CENTRAL_AUTHORIZATION_DEVICE": "1",
+                    "VLLM_ENGINE_CONTAINER_NPU_DEVICES": "1",
+                    "VLLM_ENGINE_CONTAINER_REQUIRE_EXCLUSIVE_NPU_DEVICES": "1",
+                }
+            )
+            result = subprocess.run(
+                [str(ENGINE_SCRIPT)],
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertTrue(marker.is_file())
+            self.assertIn("dormant NPU mappings are advisory", result.stdout)
+            self.assertIn("cannot access Docker socket", result.stderr)
+            self.assertNotIn("exclusive NPU device mapping", result.stderr)
 
     def test_env_template_exposes_host_managed_docker_knobs(self) -> None:
         template = ENV_TEMPLATE.read_text()
@@ -85,6 +158,12 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("VLLM_ENGINE_COMPILATION_CONFIG", script)
         self.assertIn("CONTAINER_NPU_DEVICES", script)
         self.assertIn("CONTAINER_PRIVILEGED", script)
+        self.assertIn("verify_central_authorization_context", script)
+        self.assertIn("effective_require_exclusive_npu_devices=0", script)
+        self.assertIn(
+            'CONTAINER_REQUIRE_EXCLUSIVE_NPU_DEVICES="$effective_require_exclusive_npu_devices"',
+            script,
+        )
         self.assertIn("VLLM_ENGINE_CONTAINER_LOG_FILE", script)
         self.assertIn("tee -a", script)
         self.assertIn("<redacted>", script)

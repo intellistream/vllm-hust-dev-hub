@@ -87,6 +87,13 @@ if [[ -n "$optimization_env_prefix" && -z "${VLLM_ENGINE_EXTRA_ENV_PREFIXES:-}" 
 fi
 target_device="${VLLM_TARGET_DEVICE:-npu}"
 container_log_file="${VLLM_ENGINE_CONTAINER_LOG_FILE:-}"
+dormant_npu_mappings_advisory="${VLLM_ENGINE_DORMANT_NPU_MAPPINGS_ADVISORY:-0}"
+central_authorization_context="${VLLM_ENGINE_CENTRAL_AUTHORIZATION_CONTEXT:-}"
+central_authorization_verifier="${VLLM_ENGINE_CENTRAL_AUTHORIZATION_VERIFIER:-}"
+central_authorization_python="${VLLM_ENGINE_CENTRAL_AUTHORIZATION_PYTHON:-}"
+central_authorization_device="${VLLM_ENGINE_CENTRAL_AUTHORIZATION_DEVICE:-}"
+central_authorization_verified=0
+effective_require_exclusive_npu_devices="${VLLM_ENGINE_CONTAINER_REQUIRE_EXCLUSIVE_NPU_DEVICES:-0}"
 
 container_extra_env_exports() {
   python3 - <<'PY'
@@ -147,6 +154,46 @@ if [[ -z "$api_key" || "$api_key" == "EMPTY" ]]; then
   echo "Set VLLM_HUST_API_KEY in .env; never use EMPTY." >&2
   exit 1
 fi
+
+verify_central_authorization_context() {
+  if [[ "$dormant_npu_mappings_advisory" != "1" && "$dormant_npu_mappings_advisory" != "true" ]]; then
+    return 0
+  fi
+  if [[ -z "$central_authorization_context" \
+        || -z "$central_authorization_verifier" \
+        || -z "$central_authorization_python" \
+        || -z "$central_authorization_device" ]]; then
+    echo "ERROR: dormant NPU mappings may be advisory only with an explicit signed central authorization context." >&2
+    exit 75
+  fi
+  if [[ "$central_authorization_context" != /* \
+        || "$central_authorization_verifier" != /* \
+        || "$central_authorization_python" != /* ]]; then
+    echo "ERROR: central authorization paths must be absolute." >&2
+    exit 75
+  fi
+  if [[ ! -f "$central_authorization_context" \
+        || -L "$central_authorization_context" \
+        || ! -f "$central_authorization_verifier" \
+        || -L "$central_authorization_verifier" \
+        || ! -x "$central_authorization_python" ]]; then
+    echo "ERROR: central authorization inputs are missing, symlinked, or non-executable." >&2
+    exit 75
+  fi
+  if [[ -z "${VLLM_ENGINE_CONTAINER_NPU_DEVICES:-}" \
+        || "$central_authorization_device" != "$VLLM_ENGINE_CONTAINER_NPU_DEVICES" ]]; then
+    echo "ERROR: signed central authorization device does not match the requested physical mapping." >&2
+    exit 75
+  fi
+  "$central_authorization_python" "$central_authorization_verifier" \
+    "$central_authorization_context" \
+    --expected-device "$central_authorization_device" >/dev/null
+  central_authorization_verified=1
+  effective_require_exclusive_npu_devices=0
+  echo "[vllm-hust] exact signed central authorization verified; dormant NPU mappings are advisory."
+}
+
+verify_central_authorization_context
 
 if (( max_num_batched_tokens < max_model_len )); then
   max_num_batched_tokens="$max_model_len"
@@ -212,7 +259,7 @@ ensure_container_ready() {
   IMAGE="$container_image" \
   CONTAINER_NPU_DEVICES="${VLLM_ENGINE_CONTAINER_NPU_DEVICES:-$npu_devices}" \
   CONTAINER_PRIVILEGED="${VLLM_ENGINE_CONTAINER_PRIVILEGED:-${VLLM_HUST_ASCEND_CONTAINER_PRIVILEGED:-1}}" \
-  CONTAINER_REQUIRE_EXCLUSIVE_NPU_DEVICES="${VLLM_ENGINE_CONTAINER_REQUIRE_EXCLUSIVE_NPU_DEVICES:-0}" \
+  CONTAINER_REQUIRE_EXCLUSIVE_NPU_DEVICES="$effective_require_exclusive_npu_devices" \
   VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE="$container_non_interactive" \
     "$repo_root/scripts/ascend-official-container.sh" start
 
