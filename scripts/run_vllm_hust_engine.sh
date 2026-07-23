@@ -394,6 +394,7 @@ set -euo pipefail
 
 __EXTRA_ENV_EXPORTS__
 
+IMPORT_PREFLIGHT=__IMPORT_PREFLIGHT_SHELL__
 CONTAINER_LOG_FILE="__CONTAINER_LOG_FILE__"
 if [[ -n "$CONTAINER_LOG_FILE" ]]; then
   mkdir -p "$(dirname "$CONTAINER_LOG_FILE")"
@@ -525,9 +526,9 @@ if [[ -n "__PIP_INSTALL__" ]]; then
   # shellcheck disable=SC2086
   "$ENGINE_PYTHON" -m pip install --no-cache-dir __PIP_INSTALL__
 fi
-if [[ -n "__IMPORT_PREFLIGHT__" ]]; then
-  echo "[container] import preflight: __IMPORT_PREFLIGHT__"
-  "$ENGINE_PYTHON" -c "__IMPORT_PREFLIGHT__"
+if [[ -n "$IMPORT_PREFLIGHT" ]]; then
+  echo "[container] import preflight configured"
+  "$ENGINE_PYTHON" -c "$IMPORT_PREFLIGHT"
 fi
 
 args=(
@@ -597,10 +598,12 @@ replace() {
   inner_script="${inner_script//"$needle"/"$value"}"
 }
 
+printf -v import_preflight_shell '%q' "$import_preflight"
 replace "__CONDA_ENV__" "$conda_env"
 replace "__CONDA_PREFIX__" "$conda_prefix"
 replace "__ENGINE_PYTHON__" "$engine_python"
 replace "__EXTRA_ENV_EXPORTS__" "$extra_env_exports"
+replace "__IMPORT_PREFLIGHT_SHELL__" "$import_preflight_shell"
 replace "__CONTAINER_LOG_FILE__" "$container_log_file"
 replace "__TARGET_DEVICE__" "$target_device"
 replace "__NPU_DEVICES__" "$npu_devices"
@@ -628,7 +631,6 @@ replace "__ENFORCE_EAGER__" "$enforce_eager"
 replace "__EXPERT_PARALLEL__" "$expert_parallel"
 replace "__QUANTIZATION__" "$quantization"
 replace "__PIP_INSTALL__" "$pip_install"
-replace "__IMPORT_PREFLIGHT__" "$import_preflight"
 if [[ "$run_bind_enabled" == "1" ]]; then
   replace "__CONTAINER_HOME__" "$run_root_container/home"
   replace "__CONTAINER_WORK_ROOT__" "$run_root_container"
@@ -646,6 +648,10 @@ trap cleanup EXIT
 
 printf '#!/usr/bin/env bash\n%s\n' "$inner_script" > "$tmp_host_script"
 chmod 700 "$tmp_host_script"
+if ! bash -n "$tmp_host_script"; then
+  echo "ERROR: fully rendered generated engine script failed bash -n." >&2
+  exit 1
+fi
 
 container_script="/tmp/$(basename "$tmp_host_script")"
 container_script_dir="$(dirname "$container_script")"

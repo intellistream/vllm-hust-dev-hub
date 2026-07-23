@@ -13,6 +13,9 @@ MANAGE_SCRIPT = REPO_ROOT / "manage.sh"
 ENGINE_SCRIPT = REPO_ROOT / "scripts" / "run_vllm_hust_engine.sh"
 ENV_TEMPLATE = REPO_ROOT / ".env.template"
 README = REPO_ROOT / "README.md"
+MULTILINE_IMPORT_PREFLIGHT = (
+    REPO_ROOT / "tests/fixtures/kvdelta_multiline_import_preflight.py"
+)
 
 
 class ManageEngineGuardTests(unittest.TestCase):
@@ -323,6 +326,9 @@ class ManageEngineGuardTests(unittest.TestCase):
                 "VLLM_ENGINE_RUN_ROOT_CONTAINER": "/run/kvdelta/fixture",
                 "VLLM_ENGINE_RUN_ROOT_UID": str(os.getuid()),
                 "VLLM_ENGINE_RUN_ROOT_GID": str(os.getgid()),
+                "VLLM_ENGINE_IMPORT_PREFLIGHT": (
+                    MULTILINE_IMPORT_PREFLIGHT.read_text(encoding="utf-8")
+                ),
             })
 
             result = subprocess.run(
@@ -340,6 +346,29 @@ class ManageEngineGuardTests(unittest.TestCase):
             ])
             self.assertEqual(final_exec[-3], "fixture-container")
             container_script = script_path.read_text()
+            syntax = subprocess.run(
+                ["bash", "-n", str(script_path)],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(syntax.returncode, 0, syntax.stderr)
+            self.assertIn(
+                'if [[ -n "$IMPORT_PREFLIGHT" ]]; then',
+                container_script,
+            )
+            self.assertIn(
+                '"$ENGINE_PYTHON" -c "$IMPORT_PREFLIGHT"',
+                container_script,
+            )
+            self.assertNotIn(
+                'if [[ -n "import importlib.util, json, pathlib, sys',
+                container_script,
+            )
+            self.assertIn(
+                "managed-container-software-compatibility-v1",
+                container_script,
+            )
             self.assertIn('export HOME="/run/kvdelta/fixture/home"', container_script)
             self.assertIn('cd "/run/kvdelta/fixture"', container_script)
             self.assertNotIn("mkdir /workspace", container_script)
