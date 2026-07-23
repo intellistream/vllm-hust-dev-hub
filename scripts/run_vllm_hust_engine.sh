@@ -17,7 +17,8 @@ load_dotenv() {
     [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
     local key="${line%%=*}"
     key="${key// /}"
-    [[ -z "$key" || -n "${!key:-}" ]] && continue
+    [[ -z "$key" ]] && continue
+    [[ -v "$key" ]] && continue
     export "$line"
   done < "$env_file"
 }
@@ -473,7 +474,9 @@ CONDA_ENV="__CONDA_ENV__"
 CONDA_PREFIX_OVERRIDE="__CONDA_PREFIX__"
 ENGINE_PYTHON="__ENGINE_PYTHON__"
 ENGINE_PYTHON_OVERRIDE="$ENGINE_PYTHON"
-if [[ -n "$CONDA_PREFIX_OVERRIDE" ]]; then
+if [[ -n "$ENGINE_PYTHON" ]]; then
+  echo "[container] exact engine Python selected; skipping conda activation"
+elif [[ -n "$CONDA_PREFIX_OVERRIDE" ]]; then
   export CONDA_PREFIX="$CONDA_PREFIX_OVERRIDE"
   export PATH="$CONDA_PREFIX/bin:$PATH"
   export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"

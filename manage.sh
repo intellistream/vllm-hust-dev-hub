@@ -16,7 +16,8 @@ load_dotenv() {
     [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
     local key="${line%%=*}"
     key="${key// /}"
-    [[ -z "$key" || -n "${!key:-}" ]] && continue
+    [[ -z "$key" ]] && continue
+    [[ -v "$key" ]] && continue
     export "$line"
   done < "$env_file"
 }

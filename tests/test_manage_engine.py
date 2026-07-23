@@ -326,6 +326,10 @@ class ManageEngineGuardTests(unittest.TestCase):
                 "VLLM_ENGINE_RUN_ROOT_CONTAINER": "/run/kvdelta/fixture",
                 "VLLM_ENGINE_RUN_ROOT_UID": str(os.getuid()),
                 "VLLM_ENGINE_RUN_ROOT_GID": str(os.getgid()),
+                "VLLM_ENGINE_BIN": "/usr/local/python3.12.13/bin/vllm",
+                "VLLM_ENGINE_SCRIPT": "",
+                "VLLM_ENGINE_CONDA_PREFIX": "",
+                "VLLM_ENGINE_PYTHON": "/usr/local/python3.12.13/bin/python3",
                 "VLLM_ENGINE_IMPORT_PREFLIGHT": (
                     MULTILINE_IMPORT_PREFLIGHT.read_text(encoding="utf-8")
                 ),
@@ -366,7 +370,25 @@ class ManageEngineGuardTests(unittest.TestCase):
                 container_script,
             )
             self.assertIn(
-                "managed-container-software-compatibility-v1",
+                "managed-container-software-compatibility-v2",
+                container_script,
+            )
+            self.assertIn(
+                '"/usr/local/python3.12.13/bin/vllm"',
+                container_script,
+            )
+            self.assertIn(
+                '"/usr/local/python3.12.13/bin/python3"',
+                container_script,
+            )
+            self.assertIn(
+                "exact engine Python selected; skipping conda activation",
+                container_script,
+            )
+            self.assertIn("except OSError as exc", container_script)
+            self.assertIn("type(exc).__name__", container_script)
+            self.assertNotIn(
+                "/workspace/vllm-hust-dev-container-env/bin/vllm-hust",
                 container_script,
             )
             self.assertIn('export HOME="/run/kvdelta/fixture/home"', container_script)
