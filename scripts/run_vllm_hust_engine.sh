@@ -91,6 +91,7 @@ fi
 target_device="${VLLM_TARGET_DEVICE:-npu}"
 container_log_file="${VLLM_ENGINE_CONTAINER_LOG_FILE:-}"
 host_log_file="${VLLM_ENGINE_HOST_LOG_FILE:-}"
+lifecycle_diagnostics_file="${VLLM_ENGINE_LIFECYCLE_DIAGNOSTICS_FILE:-}"
 require_explicit_device_security="${VLLM_ENGINE_REQUIRE_EXPLICIT_DEVICE_SECURITY:-0}"
 container_security_profile="${VLLM_ENGINE_CONTAINER_SECURITY_PROFILE:-}"
 ascend_manager_expected_commit="${VLLM_ENGINE_ASCEND_MANAGER_EXPECTED_COMMIT:-}"
@@ -253,6 +254,27 @@ if [[ -n "$run_root_host$run_root_parent$run_root_container$run_root_uid$run_roo
   run_bind_enabled=1
   manager_extra_bind="$run_root_host:$run_root_container"
 fi
+if [[ -n "$lifecycle_diagnostics_file" ]]; then
+  if [[ "$run_bind_enabled" != "1" ]]; then
+    echo "ERROR: lifecycle diagnostics require the exact-run bind identity." >&2
+    exit 1
+  fi
+  if [[ "$lifecycle_diagnostics_file" != "$run_root_host/container-lifecycle-diagnostics.jsonl" ]]; then
+    echo "ERROR: lifecycle diagnostics must use the frozen exact-run path." >&2
+    exit 1
+  fi
+  if [[ -e "$lifecycle_diagnostics_file" || -L "$lifecycle_diagnostics_file" ]]; then
+    echo "ERROR: refusing pre-existing lifecycle diagnostics file." >&2
+    exit 1
+  fi
+  umask 077
+  : > "$lifecycle_diagnostics_file"
+  if [[ ! -f "$lifecycle_diagnostics_file" || "$(stat -c '%h' "$lifecycle_diagnostics_file")" != "1" ]]; then
+    echo "ERROR: lifecycle diagnostics must be a regular single-link file." >&2
+    exit 1
+  fi
+  chmod 600 "$lifecycle_diagnostics_file"
+fi
 optimization_bind_enabled=0
 manager_optimization_bind=""
 if [[ -n "$optimization_repo_host$optimization_src_host$optimization_src_container$optimization_import_module" ]]; then
@@ -357,6 +379,108 @@ ensure_container_ready() {
 }
 
 ensure_container_ready
+
+container_full_id=""
+container_started_at=""
+container_pid1=""
+capture_pid_identity() {
+  local phase="$1"
+  local pid="$2"
+  [[ -n "$lifecycle_diagnostics_file" ]] || return 0
+  python3 - "$phase" "$pid" >> "$lifecycle_diagnostics_file" <<'PY'
+import json
+import os
+from pathlib import Path
+import sys
+
+phase, pid_text = sys.argv[1:]
+payload = {"kind": "host-pid-identity", "phase": phase, "pid": int(pid_text or "0")}
+if not pid_text.isdigit() or int(pid_text) <= 0:
+    payload["status"] = "ABSENT"
+else:
+    pid = int(pid_text)
+    proc = Path("/proc") / str(pid)
+    try:
+        stat_text = (proc / "stat").read_text(encoding="utf-8")
+        close = stat_text.rfind(")")
+        fields = stat_text[close + 2:].split()
+        payload.update({
+            "status": "PASS",
+            "comm": stat_text[stat_text.find("(") + 1:close],
+            "state": fields[0],
+            "ppid": int(fields[1]),
+            "starttime": int(fields[19]),
+            "cgroup": (proc / "cgroup").read_text(encoding="utf-8", errors="replace").splitlines(),
+            "exe": os.readlink(proc / "exe"),
+            "cmdline_length": len((proc / "cmdline").read_bytes()),
+        })
+    except OSError as exc:
+        payload.update({
+            "status": "UNAVAILABLE",
+            "error_type": type(exc).__name__,
+            "errno": exc.errno,
+        })
+print(json.dumps(payload, sort_keys=True))
+PY
+}
+capture_container_inspect() {
+  local phase="$1"
+  [[ -n "$lifecycle_diagnostics_file" ]] || return 0
+  if ! "${docker_cmd[@]}" inspect --format \
+      '{"kind":"container-inspect","phase":"'"$phase"'","container_id":{{json .Id}},"name":{{json .Name}},"state":{{json .State}},"restart_count":{{json .RestartCount}},"config_user":{{json .Config.User}},"host_config":{"memory":{{json .HostConfig.Memory}},"memory_swap":{{json .HostConfig.MemorySwap}},"oom_kill_disable":{{json .HostConfig.OomKillDisable}},"pids_limit":{{json .HostConfig.PidsLimit}},"runtime":{{json .HostConfig.Runtime}},"pid_mode":{{json .HostConfig.PidMode}},"security_opt":{{json .HostConfig.SecurityOpt}}}}' \
+      "$container" >> "$lifecycle_diagnostics_file"; then
+    printf '{"kind":"container-inspect","phase":"%s","status":"UNAVAILABLE"}\n' \
+      "$phase" >> "$lifecycle_diagnostics_file"
+    return 1
+  fi
+}
+capture_docker_events() {
+  [[ -n "$lifecycle_diagnostics_file" ]] || return 0
+  local event_until
+  event_until="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  if [[ -z "$container_full_id" || -z "$container_started_at" ]]; then
+    printf '%s\n' '{"kind":"docker-events","status":"UNAVAILABLE_NO_START_BINDING"}' \
+      >> "$lifecycle_diagnostics_file"
+    return 1
+  fi
+  if ! timeout 10 "${docker_cmd[@]}" events \
+      --since "$container_started_at" --until "$event_until" \
+      --filter "container=$container_full_id" --format '{{json .}}' \
+      | head -200 \
+      | python3 -c '
+import json
+import sys
+for line in sys.stdin:
+    line = line.strip()
+    if line:
+        source = json.loads(line)
+        attributes = source.get("Actor", {}).get("Attributes", {})
+        event = {
+            key: source[key]
+            for key in ("Type", "Action", "status", "id", "time", "timeNano")
+            if key in source
+        }
+        if "exitCode" in attributes:
+            event["exitCode"] = attributes["exitCode"]
+        print(json.dumps({"kind": "docker-event", "event": event}, sort_keys=True))
+' >> "$lifecycle_diagnostics_file"; then
+    printf '%s\n' '{"kind":"docker-events","status":"UNAVAILABLE"}' \
+      >> "$lifecycle_diagnostics_file"
+    return 1
+  fi
+}
+
+if [[ -n "$lifecycle_diagnostics_file" ]]; then
+  container_full_id="$("${docker_cmd[@]}" inspect --format '{{.Id}}' "$container")"
+  container_started_at="$("${docker_cmd[@]}" inspect --format '{{.State.StartedAt}}' "$container")"
+  container_pid1="$("${docker_cmd[@]}" inspect --format '{{.State.Pid}}' "$container")"
+  if [[ ! "$container_full_id" =~ ^[0-9a-f]{64}$ || -z "$container_started_at" || ! "$container_pid1" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: lifecycle diagnostics could not bind immutable container start identity." >&2
+    exit 1
+  fi
+  capture_container_inspect "start"
+  capture_pid_identity "start" "$container_pid1"
+fi
 
 if [[ "$run_bind_enabled" == "1" ]]; then
   observed_run_mount="$("${docker_cmd[@]}" inspect --format '{{range .Mounts}}{{if eq .Destination "'"$run_root_container"'"}}{{.Source}}:{{.Destination}}:{{.RW}}{{end}}{{end}}' "$container")"
@@ -753,7 +877,8 @@ docker_exec_args=(exec)
 if [[ "$run_bind_enabled" == "1" ]]; then
   docker_exec_args+=(--user "0:$run_root_gid" --workdir "$run_root_container")
 fi
-exec "${docker_cmd[@]}" "${docker_exec_args[@]}" \
+set +e
+"${docker_cmd[@]}" "${docker_exec_args[@]}" \
   --env "VLLM_TARGET_DEVICE=$target_device" \
   --env "ASCEND_RT_VISIBLE_DEVICES=$npu_devices" \
   --env "ASCEND_VISIBLE_DEVICES=$npu_devices" \
@@ -761,3 +886,11 @@ exec "${docker_cmd[@]}" "${docker_exec_args[@]}" \
   --env "VLLM_ENGINE_EXTRA_ARGS_JSON=${VLLM_ENGINE_EXTRA_ARGS_JSON:-}" \
   --env "VLLM_USE_SIMPLE_KV_OFFLOAD=${VLLM_USE_SIMPLE_KV_OFFLOAD:-0}" \
   "$container" bash "$container_script"
+engine_rc=$?
+set -e
+if (( engine_rc != 0 )) && [[ -n "$lifecycle_diagnostics_file" ]]; then
+  capture_container_inspect "terminal" || true
+  capture_pid_identity "terminal" "$container_pid1"
+  capture_docker_events || true
+fi
+exit "$engine_rc"

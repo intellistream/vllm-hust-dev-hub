@@ -87,6 +87,7 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("VLLM_ENGINE_COMPILATION_CONFIG", script)
         self.assertIn("VLLM_ENGINE_CONTAINER_LOG_FILE", script)
         self.assertIn("VLLM_ENGINE_HOST_LOG_FILE", script)
+        self.assertIn("VLLM_ENGINE_LIFECYCLE_DIAGNOSTICS_FILE", script)
         self.assertIn("tee -a", script)
         self.assertIn("sed -u -E", script)
         self.assertIn("<redacted>", script)
@@ -120,6 +121,137 @@ class ManageEngineGuardTests(unittest.TestCase):
             manage.index('load_dotenv "$repo_root/.env"'),
             manage.index('unit_name="${VLLM_ENGINE_SYSTEMD_UNIT'),
         )
+
+    def test_failed_engine_preserves_bound_container_lifecycle_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_root = tmp_path / "managed-container-runs" / "fixture"
+            run_root.mkdir(parents=True, mode=0o770)
+            run_root.chmod(0o770)
+            calls_path = tmp_path / "docker-calls.jsonl"
+            diagnostics = run_root / "container-lifecycle-diagnostics.jsonl"
+            fake_docker = tmp_path / "docker"
+            fake_docker.write_text(textwrap.dedent(
+                """\
+                #!/usr/bin/env python3
+                import io
+                import json
+                import os
+                import sys
+                import tarfile
+
+                args = sys.argv[1:]
+                with open(os.environ["FAKE_DOCKER_LOG"], "a") as handle:
+                    handle.write(json.dumps(args) + "\\n")
+                if args == ["info"]:
+                    raise SystemExit(0)
+                if args[:3] == ["inspect", "-f", "{{.State.Running}}"]:
+                    print("true")
+                    raise SystemExit(0)
+                if args[:3] == ["inspect", "--format", "{{.Config.User}}"]:
+                    print("")
+                    raise SystemExit(0)
+                if args[:2] == ["inspect", "--format"] and ".Mounts" in args[2]:
+                    print(os.environ["EXPECTED_RUN_MOUNT"])
+                    raise SystemExit(0)
+                if args[:3] == ["inspect", "--format", "{{.Id}}"]:
+                    print("a" * 64)
+                    raise SystemExit(0)
+                if args[:3] == ["inspect", "--format", "{{.State.StartedAt}}"]:
+                    print("2026-07-23T11:00:00Z")
+                    raise SystemExit(0)
+                if args[:3] == ["inspect", "--format", "{{.State.Pid}}"]:
+                    print(os.getppid())
+                    raise SystemExit(0)
+                if args[:2] == ["inspect", "--format"] and "container-inspect" in args[2]:
+                    phase = "terminal" if '"terminal"' in args[2] else "start"
+                    print(json.dumps({
+                        "kind": "container-inspect",
+                        "phase": phase,
+                        "container_id": "a" * 64,
+                        "name": "/fixture-container",
+                        "state": {
+                            "Status": "exited" if phase == "terminal" else "running",
+                            "Running": phase == "start",
+                            "OOMKilled": False,
+                            "Dead": False,
+                            "Pid": os.getppid() if phase == "start" else 0,
+                            "ExitCode": 137 if phase == "terminal" else 0,
+                            "Error": "",
+                        },
+                        "restart_count": 0,
+                    }, sort_keys=True))
+                    raise SystemExit(0)
+                if args and args[0] == "events":
+                    print(json.dumps({
+                        "status": "die",
+                        "id": "a" * 64,
+                        "Actor": {"Attributes": {"exitCode": "137"}},
+                    }, sort_keys=True))
+                    raise SystemExit(0)
+                if args and args[0] == "cp":
+                    payload = sys.stdin.buffer.read()
+                    with tarfile.open(fileobj=io.BytesIO(payload), mode="r:") as archive:
+                        assert len(archive.getmembers()) == 1
+                    raise SystemExit(0)
+                if args[:2] == ["exec", "--user"] and ".kvdelta-write-probe" in args[-1]:
+                    raise SystemExit(0)
+                if args[:2] == ["exec", "fixture-container"] and "stat" in args:
+                    print("0:0:700")
+                    raise SystemExit(0)
+                if args and args[0] == "exec":
+                    raise SystemExit(137)
+                raise SystemExit(f"unexpected fake docker call: {args}")
+                """
+            ))
+            fake_docker.chmod(0o700)
+            env = os.environ.copy()
+            env.update({
+                "PATH": f"{tmp_path}:{env['PATH']}",
+                "FAKE_DOCKER_LOG": str(calls_path),
+                "EXPECTED_RUN_MOUNT": f"{run_root}:/run/kvdelta/fixture:true",
+                "VLLM_ENGINE_CONTAINER": "fixture-container",
+                "VLLM_ENGINE_REPLACE_EXISTING": "false",
+                "VLLM_HUST_API_KEY": "fixture-secret",
+                "VLLM_ENGINE_RUN_ROOT_HOST": str(run_root),
+                "VLLM_ENGINE_RUN_ROOT_PARENT": str(tmp_path),
+                "VLLM_ENGINE_RUN_ROOT_CONTAINER": "/run/kvdelta/fixture",
+                "VLLM_ENGINE_RUN_ROOT_UID": str(os.getuid()),
+                "VLLM_ENGINE_RUN_ROOT_GID": str(os.getgid()),
+                "VLLM_ENGINE_LIFECYCLE_DIAGNOSTICS_FILE": str(diagnostics),
+            })
+
+            result = subprocess.run(
+                [str(ENGINE_SCRIPT)], cwd=REPO_ROOT, env=env, text=True,
+                capture_output=True, check=False,
+            )
+
+            self.assertEqual(result.returncode, 137, result.stderr)
+            self.assertEqual(diagnostics.stat().st_mode & 0o777, 0o600)
+            records = [
+                json.loads(line) for line in diagnostics.read_text().splitlines()
+            ]
+            inspections = [
+                item for item in records if item.get("kind") == "container-inspect"
+            ]
+            self.assertEqual(
+                [item["phase"] for item in inspections], ["start", "terminal"]
+            )
+            self.assertFalse(inspections[-1]["state"]["OOMKilled"])
+            self.assertEqual(inspections[-1]["state"]["ExitCode"], 137)
+            self.assertEqual(
+                {
+                    item["phase"]
+                    for item in records
+                    if item.get("kind") == "host-pid-identity"
+                },
+                {"start", "terminal"},
+            )
+            event = next(
+                item for item in records if item.get("kind") == "docker-event"
+            )
+            self.assertEqual(event["event"]["status"], "die")
+            self.assertEqual(event["event"]["id"], "a" * 64)
 
     def test_managed_unit_defaults_to_no_restart_and_journal_is_bounded_redacted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
