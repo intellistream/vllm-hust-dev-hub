@@ -96,6 +96,11 @@ ascend_manager_expected_commit="${VLLM_ENGINE_ASCEND_MANAGER_EXPECTED_COMMIT:-}"
 ascend_manager_python="${VLLM_ENGINE_ASCEND_MANAGER_PYTHON:-}"
 ascend_manager_provenance_receipt="${VLLM_ENGINE_ASCEND_MANAGER_PROVENANCE_RECEIPT:-}"
 ascend_manager_device_discovery_root="${VLLM_ENGINE_ASCEND_MANAGER_DEVICE_DISCOVERY_ROOT:-}"
+run_root_host="${VLLM_ENGINE_RUN_ROOT_HOST:-}"
+run_root_parent="${VLLM_ENGINE_RUN_ROOT_PARENT:-}"
+run_root_container="${VLLM_ENGINE_RUN_ROOT_CONTAINER:-}"
+run_root_uid="${VLLM_ENGINE_RUN_ROOT_UID:-}"
+run_root_gid="${VLLM_ENGINE_RUN_ROOT_GID:-}"
 
 # Preserve launcher, bootstrap, docker-exec, and engine stderr even when the
 # generated in-container script never starts. The container-side log below is
@@ -210,6 +215,39 @@ if [[ "$require_explicit_device_security" == "1" ]]; then
     exit 1
   fi
 fi
+run_bind_enabled=0
+manager_extra_bind=""
+if [[ -n "$run_root_host$run_root_parent$run_root_container$run_root_uid$run_root_gid" ]]; then
+  if [[ -z "$run_root_host" || -z "$run_root_parent" || -z "$run_root_container" || -z "$run_root_uid" || -z "$run_root_gid" ]]; then
+    echo "ERROR: exact-run bind requires host root, parent, container root, UID, and GID." >&2
+    exit 1
+  fi
+  if [[ "$run_root_host" != /* || "$run_root_parent" != /* || "$run_root_container" != /run/kvdelta/* ]]; then
+    echo "ERROR: exact-run bind paths must be absolute and use /run/kvdelta/<namespace>." >&2
+    exit 1
+  fi
+  if [[ ! "$run_root_uid" =~ ^[0-9]+$ || ! "$run_root_gid" =~ ^[0-9]+$ ]]; then
+    echo "ERROR: exact-run bind UID/GID must be numeric." >&2
+    exit 1
+  fi
+  if [[ -L "$run_root_host" || ! -d "$run_root_host" || -L "$run_root_parent" || ! -d "$run_root_parent" ]]; then
+    echo "ERROR: exact-run bind source and parent must be existing non-symlink directories." >&2
+    exit 1
+  fi
+  canonical_run_root="$(readlink -f "$run_root_host")"
+  canonical_run_parent="$(readlink -f "$run_root_parent")"
+  if [[ "$canonical_run_root" != "$run_root_host" || "$canonical_run_parent" != "$run_root_parent" || "$run_root_host" != "$run_root_parent/"* ]]; then
+    echo "ERROR: exact-run bind source must be canonical and contained by its frozen parent." >&2
+    exit 1
+  fi
+  run_root_stat="$(stat -c '%u:%g:%a' "$run_root_host")"
+  if [[ "$run_root_stat" != "$run_root_uid:$run_root_gid:770" ]]; then
+    echo "ERROR: exact-run bind source must match frozen UID:GID and mode 0770." >&2
+    exit 1
+  fi
+  run_bind_enabled=1
+  manager_extra_bind="$run_root_host:$run_root_container"
+fi
 docker_cmd=(docker)
 if ! command -v docker >/dev/null 2>&1; then
   echo "ERROR: docker not found on PATH." >&2
@@ -265,6 +303,7 @@ ensure_container_ready() {
   HUST_ASCEND_MANAGER_PYTHON="$ascend_manager_python" \
   HUST_ASCEND_MANAGER_PROVENANCE_RECEIPT="$ascend_manager_provenance_receipt" \
   HUST_ASCEND_MANAGER_DEVICE_DISCOVERY_ROOT="$ascend_manager_device_discovery_root" \
+  VLLM_HUST_ASCEND_EXTRA_BIND_MOUNT="$manager_extra_bind" \
   VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE="$container_non_interactive" \
     "$repo_root/scripts/ascend-official-container.sh" start
 
@@ -275,6 +314,19 @@ ensure_container_ready() {
 }
 
 ensure_container_ready
+
+if [[ "$run_bind_enabled" == "1" ]]; then
+  observed_run_mount="$("${docker_cmd[@]}" inspect --format '{{range .Mounts}}{{if eq .Destination "'"$run_root_container"'"}}{{.Source}}:{{.Destination}}:{{.RW}}{{end}}{{end}}' "$container")"
+  if [[ "$observed_run_mount" != "$run_root_host:$run_root_container:true" ]]; then
+    echo "ERROR: exact-run bind is absent, read-only, or drifted after container create." >&2
+    exit 1
+  fi
+  if ! "${docker_cmd[@]}" exec --user "0:$run_root_gid" --workdir "$run_root_container" \
+      "$container" sh -ceu 'test -d . && test -w . && : > .kvdelta-write-probe && rm -f .kvdelta-write-probe'; then
+    echo "ERROR: unchanged container UID with exact host GID cannot write the run bind." >&2
+    exit 1
+  fi
+fi
 
 echo "[vllm-hust] container        = $container"
 echo "[vllm-hust] image            = ${container_image:-auto-detect official Ascend image}"
@@ -433,12 +485,13 @@ print("[container] torch_npu_preflight: ok shape=%s device=%s" % (tuple(probe.sh
 PY
 fi
 
-export HOME="${VLLM_ENGINE_CONTAINER_HOME:-/tmp/vllm-hust-home}"
+export HOME="__CONTAINER_HOME__"
 export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_CONFIG_HOME="$HOME/.config"
 export VLLM_CACHE_ROOT="$HOME/.cache/vllm"
 export VLLM_CONFIG_ROOT="$HOME/.config/vllm"
 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$VLLM_CACHE_ROOT" "$VLLM_CONFIG_ROOT"
+cd "__CONTAINER_WORK_ROOT__"
 
 VLLM_BIN="__VLLM_BIN__"
 VLLM_SCRIPT="__VLLM_SCRIPT__"
@@ -576,6 +629,13 @@ replace "__EXPERT_PARALLEL__" "$expert_parallel"
 replace "__QUANTIZATION__" "$quantization"
 replace "__PIP_INSTALL__" "$pip_install"
 replace "__IMPORT_PREFLIGHT__" "$import_preflight"
+if [[ "$run_bind_enabled" == "1" ]]; then
+  replace "__CONTAINER_HOME__" "$run_root_container/home"
+  replace "__CONTAINER_WORK_ROOT__" "$run_root_container"
+else
+  replace "__CONTAINER_HOME__" "/tmp/vllm-hust-home"
+  replace "__CONTAINER_WORK_ROOT__" "/tmp"
+fi
 
 tmp_host_script="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/vllm-hust-engine.XXXXXX.sh")"
 chmod 600 "$tmp_host_script"
@@ -612,7 +672,11 @@ if [[ "$container_script_stat" != "0:0:700" ]]; then
   exit 1
 fi
 
-exec "${docker_cmd[@]}" exec \
+docker_exec_args=(exec)
+if [[ "$run_bind_enabled" == "1" ]]; then
+  docker_exec_args+=(--user "0:$run_root_gid" --workdir "$run_root_container")
+fi
+exec "${docker_cmd[@]}" "${docker_exec_args[@]}" \
   --env "VLLM_TARGET_DEVICE=$target_device" \
   --env "ASCEND_RT_VISIBLE_DEVICES=$npu_devices" \
   --env "ASCEND_VISIBLE_DEVICES=$npu_devices" \

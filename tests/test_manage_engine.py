@@ -254,6 +254,110 @@ class ManageEngineGuardTests(unittest.TestCase):
             self.assertIn("HUST_ASCEND_MANAGER_CONTAINER_SECURITY_PROFILE", launcher)
             self.assertIn("HUST_ASCEND_MANAGER_EXPECTED_COMMIT", launcher)
 
+    def test_exact_run_bind_is_rehearsed_and_used_without_workspace_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_root = tmp_path / "managed-container-runs" / "fixture"
+            run_root.mkdir(parents=True, mode=0o770)
+            run_root.chmod(0o770)
+            calls_path = tmp_path / "docker-calls.jsonl"
+            script_path = tmp_path / "container-script.sh"
+            fake_docker = tmp_path / "docker"
+            fake_docker.write_text(textwrap.dedent(
+                """\
+                #!/usr/bin/env python3
+                import io
+                import json
+                import os
+                import sys
+                import tarfile
+
+                args = sys.argv[1:]
+                with open(os.environ["FAKE_DOCKER_LOG"], "a") as handle:
+                    handle.write(json.dumps(args) + "\\n")
+                if args == ["info"]:
+                    raise SystemExit(0)
+                if args[:3] == ["inspect", "-f", "{{.State.Running}}"]:
+                    print("true")
+                    raise SystemExit(0)
+                if args[:3] == ["inspect", "--format", "{{.Config.User}}"]:
+                    print("")
+                    raise SystemExit(0)
+                if args[:2] == ["inspect", "--format"] and ".Mounts" in args[2]:
+                    print(os.environ["EXPECTED_RUN_MOUNT"])
+                    raise SystemExit(0)
+                if args and args[0] == "cp":
+                    payload = sys.stdin.buffer.read()
+                    with tarfile.open(fileobj=io.BytesIO(payload), mode="r:") as archive:
+                        member = archive.getmembers()[0]
+                        content = archive.extractfile(member).read()
+                    with open(os.environ["FAKE_CONTAINER_SCRIPT"], "wb") as handle:
+                        handle.write(content)
+                    raise SystemExit(0)
+                if args[:2] == ["exec", "--user"] and ".kvdelta-write-probe" in args[-1]:
+                    raise SystemExit(0)
+                if args[:2] == ["exec", "fixture-container"] and "stat" in args:
+                    print("0:0:700")
+                    raise SystemExit(0)
+                if args and args[0] == "exec":
+                    raise SystemExit(0)
+                raise SystemExit(f"unexpected fake docker call: {args}")
+                """
+            ))
+            fake_docker.chmod(0o700)
+            env = os.environ.copy()
+            env.update({
+                "PATH": f"{tmp_path}:{env['PATH']}",
+                "FAKE_DOCKER_LOG": str(calls_path),
+                "FAKE_CONTAINER_SCRIPT": str(script_path),
+                "EXPECTED_RUN_MOUNT": f"{run_root}:/run/kvdelta/fixture:true",
+                "VLLM_ENGINE_CONTAINER": "fixture-container",
+                "VLLM_ENGINE_REPLACE_EXISTING": "false",
+                "VLLM_HUST_API_KEY": "fixture-secret",
+                "VLLM_ENGINE_REQUIRE_EXPLICIT_DEVICE_SECURITY": "1",
+                "VLLM_ENGINE_CONTAINER_SECURITY_PROFILE": "explicit-devices-nonprivileged-v1",
+                "VLLM_ENGINE_ASCEND_MANAGER_EXPECTED_COMMIT": "f" * 40,
+                "VLLM_ENGINE_ASCEND_MANAGER_PYTHON": "/bin/true",
+                "VLLM_ENGINE_RUN_ROOT_HOST": str(run_root),
+                "VLLM_ENGINE_RUN_ROOT_PARENT": str(tmp_path),
+                "VLLM_ENGINE_RUN_ROOT_CONTAINER": "/run/kvdelta/fixture",
+                "VLLM_ENGINE_RUN_ROOT_UID": str(os.getuid()),
+                "VLLM_ENGINE_RUN_ROOT_GID": str(os.getgid()),
+            })
+
+            result = subprocess.run(
+                [str(ENGINE_SCRIPT)], cwd=REPO_ROOT, env=env, text=True,
+                capture_output=True, check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            calls = [json.loads(line) for line in calls_path.read_text().splitlines()]
+            self.assertTrue(any(".kvdelta-write-probe" in call[-1] for call in calls))
+            final_exec = calls[-1]
+            self.assertEqual(final_exec[:5], [
+                "exec", "--user", f"0:{os.getgid()}", "--workdir",
+                "/run/kvdelta/fixture",
+            ])
+            self.assertEqual(final_exec[-3], "fixture-container")
+            container_script = script_path.read_text()
+            self.assertIn('export HOME="/run/kvdelta/fixture/home"', container_script)
+            self.assertIn('cd "/run/kvdelta/fixture"', container_script)
+            self.assertNotIn("mkdir /workspace", container_script)
+
+    def test_partial_exact_run_bind_rejects_before_docker_access(self) -> None:
+        env = os.environ.copy()
+        env.update({
+            "VLLM_HUST_API_KEY": "host-free-fixture",
+            "VLLM_ENGINE_RUN_ROOT_HOST": "/tmp/incomplete",
+        })
+        result = subprocess.run(
+            [str(ENGINE_SCRIPT)], cwd=REPO_ROOT, env=env, text=True,
+            capture_output=True, check=False,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("exact-run bind requires", result.stderr)
+        self.assertNotIn("Docker container", result.stderr)
+
     def test_container_runtime_can_keep_alive_without_ssh_env(self) -> None:
         runtime = (REPO_ROOT / "scripts" / "ascend-container-runtime.sh").read_text()
 

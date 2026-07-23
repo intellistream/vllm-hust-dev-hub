@@ -387,6 +387,10 @@ main() {
     --shm-size "$SHM_SIZE"
   )
 
+  if [[ -n "${VLLM_HUST_ASCEND_EXTRA_BIND_MOUNT:-}" ]]; then
+    manager_cmd+=(--extra-bind-mount "$VLLM_HUST_ASCEND_EXTRA_BIND_MOUNT")
+  fi
+
   if [[ -n "$IMAGE" ]]; then
     manager_cmd+=(--image "$IMAGE")
   fi
