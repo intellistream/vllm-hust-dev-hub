@@ -2173,8 +2173,9 @@ ensure_pip_package_in_env() {
 pip_requirement_satisfied_in_env() {
   local env_name="$1"
   local package_spec="$2"
+  local check_script=''
 
-  run_conda_env_cmd "$env_name" python - "$package_spec" >/dev/null 2>&1 <<'PY'
+  check_script='
 import sys
 from importlib.metadata import PackageNotFoundError, version
 
@@ -2197,19 +2198,22 @@ if requirement.specifier and not requirement.specifier.contains(installed_versio
     raise SystemExit(1)
 
 raise SystemExit(0)
-PY
+'
+
+  run_conda_env_cmd "$env_name" python -c "$check_script" "$package_spec" >/dev/null 2>&1
 }
 
 list_missing_pip_requirements_in_env() {
   local env_name="$1"
   shift
   local requirement_specs=("$@")
+  local check_script=''
 
   if (( ${#requirement_specs[@]} == 0 )); then
     return 0
   fi
 
-  run_conda_env_cmd "$env_name" python - "${requirement_specs[@]}" <<'PY'
+  check_script='
 import sys
 from importlib.metadata import PackageNotFoundError, version
 
@@ -2232,7 +2236,12 @@ for raw_spec in sys.argv[1:]:
 
     if requirement.specifier and not requirement.specifier.contains(installed_version, prereleases=True):
         print(raw_spec)
-PY
+'
+
+  # conda run does not reliably forward heredoc stdin to its child process.
+  # Pass the checker via -c so an EOF in the wrapper cannot be mistaken for a
+  # successful dependency check.
+  run_conda_env_cmd "$env_name" python -c "$check_script" "${requirement_specs[@]}"
 }
 
 repo_requires_ascend_runtime() {

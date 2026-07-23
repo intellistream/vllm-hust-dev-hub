@@ -173,6 +173,19 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
             script_text.index('"installing local triton-ascend from $triton_ascend_repo"'),
         )
 
+    def test_quickstart_dependency_checks_do_not_use_conda_run_heredoc_stdin(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        self.assertIn('run_conda_env_cmd "$env_name" python -c "$check_script"', script_text)
+        self.assertIn(
+            'Pass the checker via -c so an EOF in the wrapper cannot be mistaken for a',
+            script_text,
+        )
+        self.assertNotIn(
+            'run_conda_env_cmd "$env_name" python - "$package_spec" >/dev/null 2>&1 <<\'PY\'',
+            script_text,
+        )
+
     def test_quickstart_fail_fast_gates_ascend_fallback(self) -> None:
         script_text = QUICKSTART_SCRIPT_PATH.read_text()
 
