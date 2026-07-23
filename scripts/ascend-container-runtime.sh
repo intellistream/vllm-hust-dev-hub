@@ -4,6 +4,11 @@
 
 set -euo pipefail
 
+if [[ "${ASCEND_CONTAINER_RUNTIME_PROBE_ONLY:-0}" == "1" ]]; then
+  printf '%s\n' "ASCEND_CONTAINER_RUNTIME_PROBE_OK"
+  exit 0
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [[ -f "${SCRIPT_DIR}/../.env" ]] && set -a && source "${SCRIPT_DIR}/../.env" && set +a
 

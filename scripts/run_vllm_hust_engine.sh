@@ -223,6 +223,7 @@ if [[ "$require_explicit_device_security" == "1" ]]; then
 fi
 run_bind_enabled=0
 manager_extra_bind=""
+manager_runtime_bind=""
 if [[ -n "$run_root_host$run_root_parent$run_root_container$run_root_uid$run_root_gid" ]]; then
   if [[ -z "$run_root_host" || -z "$run_root_parent" || -z "$run_root_container" || -z "$run_root_uid" || -z "$run_root_gid" ]]; then
     echo "ERROR: exact-run bind requires host root, parent, container root, UID, and GID." >&2
@@ -312,6 +313,33 @@ if [[ -n "$optimization_repo_host$optimization_src_host$optimization_src_contain
   optimization_bind_enabled=1
   manager_optimization_bind="$optimization_src_host:$optimization_src_container"
 fi
+if [[ "$run_bind_enabled" == "1" ]]; then
+  runtime_carrier_source="$repo_root/scripts/ascend-container-runtime.sh"
+  runtime_carrier_stager="$repo_root/scripts/stage_container_runtime.py"
+  if [[ ! -f "$runtime_carrier_stager" || -L "$runtime_carrier_stager" ]]; then
+    echo "ERROR: container runtime carrier stager is absent or symlinked." >&2
+    exit 1
+  fi
+  runtime_carrier_python="${ascend_manager_python:-python3}"
+  "$runtime_carrier_python" "$runtime_carrier_stager" \
+    --source "$runtime_carrier_source" \
+    --run-root "$run_root_host" \
+    --expected-run-root "$canonical_run_root"
+  runtime_carrier_host="$run_root_host/container-runtime-carrier"
+  runtime_carrier_receipt="$run_root_host/container-runtime-carrier-receipt.json"
+  if [[ "$(stat -c '%a' "$runtime_carrier_host")" != "555" || \
+        "$(stat -c '%a' "$runtime_carrier_host/scripts")" != "555" || \
+        "$(stat -c '%a' "$runtime_carrier_host/scripts/ascend-container-runtime.sh")" != "555" || \
+        "$(stat -c '%a' "$runtime_carrier_receipt")" != "600" ]]; then
+    echo "ERROR: staged container runtime carrier modes drifted." >&2
+    exit 1
+  fi
+  if ! cmp -s "$runtime_carrier_source" "$runtime_carrier_host/scripts/ascend-container-runtime.sh"; then
+    echo "ERROR: staged container runtime carrier bytes drifted." >&2
+    exit 1
+  fi
+  manager_runtime_bind="$runtime_carrier_host:/workspace/vllm-hust-dev-hub"
+fi
 docker_cmd=(docker)
 if ! command -v docker >/dev/null 2>&1; then
   echo "ERROR: docker not found on PATH." >&2
@@ -368,6 +396,7 @@ ensure_container_ready() {
   HUST_ASCEND_MANAGER_PROVENANCE_RECEIPT="$ascend_manager_provenance_receipt" \
   HUST_ASCEND_MANAGER_DEVICE_DISCOVERY_ROOT="$ascend_manager_device_discovery_root" \
   VLLM_HUST_ASCEND_EXTRA_BIND_MOUNT="$manager_extra_bind" \
+  VLLM_HUST_ASCEND_RUNTIME_BIND_MOUNT="$manager_runtime_bind" \
   VLLM_HUST_ASCEND_OPTIMIZATION_BIND_MOUNT="$manager_optimization_bind" \
   VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE="$container_non_interactive" \
     "$repo_root/scripts/ascend-official-container.sh" start

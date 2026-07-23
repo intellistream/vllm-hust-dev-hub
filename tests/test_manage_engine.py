@@ -1,8 +1,10 @@
 from pathlib import Path
 import json
 import os
+import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import textwrap
 import unittest
@@ -12,6 +14,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 MANAGE_SCRIPT = REPO_ROOT / "manage.sh"
 ENGINE_SCRIPT = REPO_ROOT / "scripts" / "run_vllm_hust_engine.sh"
 CONTAINER_RUNTIME_SCRIPT = REPO_ROOT / "scripts" / "ascend-container-runtime.sh"
+CONTAINER_RUNTIME_STAGER = REPO_ROOT / "scripts" / "stage_container_runtime.py"
+OFFICIAL_CONTAINER_SCRIPT = REPO_ROOT / "scripts" / "ascend-official-container.sh"
 ENV_TEMPLATE = REPO_ROOT / ".env.template"
 README = REPO_ROOT / "README.md"
 MULTILINE_IMPORT_PREFLIGHT = (
@@ -25,9 +29,161 @@ class ManageEngineGuardTests(unittest.TestCase):
             mode = script.stat().st_mode
             self.assertTrue(mode & stat.S_IXUSR, f"{script} should be executable")
             subprocess.run(["bash", "-n", str(script)], check=True)
-        # The container runtime is deliberately invoked as `bash <script>` by
-        # the frozen image entrypoint and need not carry an executable bit.
         subprocess.run(["bash", "-n", str(CONTAINER_RUNTIME_SCRIPT)], check=True)
+        subprocess.run(
+            ["python3", "-m", "py_compile", str(CONTAINER_RUNTIME_STAGER)],
+            check=True,
+        )
+
+    def test_runtime_carrier_removes_restrictive_checkout_dac_dependency(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_root = tmp_path / "managed-container-runs" / "fixture"
+            run_root.mkdir(parents=True, mode=0o770)
+            run_root.chmod(0o770)
+
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(CONTAINER_RUNTIME_STAGER),
+                    "--source",
+                    str(CONTAINER_RUNTIME_SCRIPT),
+                    "--run-root",
+                    str(run_root),
+                    "--expected-run-root",
+                    str(run_root),
+                ],
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            carrier = run_root / "container-runtime-carrier"
+            staged = carrier / "scripts" / CONTAINER_RUNTIME_SCRIPT.name
+            receipt = json.loads(
+                (run_root / "container-runtime-carrier-receipt.json").read_text()
+            )
+            self.assertEqual(staged.read_bytes(), CONTAINER_RUNTIME_SCRIPT.read_bytes())
+            self.assertEqual(stat.S_IMODE(carrier.stat().st_mode), 0o555)
+            self.assertEqual(stat.S_IMODE(staged.parent.stat().st_mode), 0o555)
+            self.assertEqual(stat.S_IMODE(staged.stat().st_mode), 0o555)
+            self.assertEqual(receipt["source_sha256"], receipt["staged_sha256"])
+            self.assertEqual(
+                receipt["carrier_container"], "/workspace/vllm-hust-dev-hub"
+            )
+
+            probe = subprocess.run(
+                [str(staged)],
+                env={**os.environ, "ASCEND_CONTAINER_RUNTIME_PROBE_ONLY": "1"},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(probe.returncode, 0, probe.stderr)
+            self.assertEqual(probe.stdout.strip(), "ASCEND_CONTAINER_RUNTIME_PROBE_OK")
+
+            # Reproduce the consumed run's permission boundary without Docker:
+            # uid 0 with no DAC capabilities is "other" for a uid-owned 0700
+            # checkout and therefore cannot traverse it.
+            legacy = tmp_path / "legacy-third-party"
+            legacy_scripts = legacy / "vllm-hust-dev-hub" / "scripts"
+            legacy_scripts.mkdir(parents=True)
+            legacy.chmod(0o700)
+            (legacy / "vllm-hust-dev-hub").chmod(0o700)
+            legacy_scripts.chmod(0o700)
+            legacy_runtime = legacy_scripts / CONTAINER_RUNTIME_SCRIPT.name
+            legacy_runtime.write_bytes(CONTAINER_RUNTIME_SCRIPT.read_bytes())
+            legacy_runtime.chmod(0o600)
+
+            def permits_other(path: Path, mask: int) -> bool:
+                return stat.S_IMODE(path.stat().st_mode) & mask == mask
+
+            self.assertFalse(permits_other(legacy, stat.S_IXOTH))
+            self.assertFalse(permits_other(legacy_runtime, stat.S_IROTH))
+            self.assertTrue(permits_other(carrier, stat.S_IXOTH))
+            self.assertTrue(permits_other(staged.parent, stat.S_IXOTH))
+            self.assertTrue(permits_other(staged, stat.S_IROTH | stat.S_IXOTH))
+
+    def test_official_container_forwards_runtime_carrier_before_pid1(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            calls = tmp_path / "python-argv.json"
+            fake_python = tmp_path / "python"
+            fake_python.write_text(
+                "#!/usr/bin/env python3\n"
+                "import json, os, sys\n"
+                "open(os.environ['FAKE_MANAGER_ARGV'], 'w').write(json.dumps(sys.argv[1:]))\n",
+                encoding="utf-8",
+            )
+            fake_python.chmod(0o700)
+            fake_docker = tmp_path / "docker"
+            fake_docker.write_text(
+                "#!/usr/bin/env bash\n"
+                "if [[ \"$1\" == info && \"$2\" == --format ]]; then "
+                "printf '/data/docker\\n'; else exit 0; fi\n",
+                encoding="utf-8",
+            )
+            fake_docker.chmod(0o700)
+            run_root = tmp_path / "run"
+            runtime_carrier = run_root / "container-runtime-carrier"
+            runtime_carrier.mkdir(parents=True)
+            optimization = tmp_path / "optimization"
+            optimization.mkdir()
+            env = os.environ.copy()
+            env.update(
+                {
+                    "PATH": f"{tmp_path}:{env['PATH']}",
+                    "HUST_ASCEND_MANAGER_PYTHON": str(fake_python),
+                    "FAKE_MANAGER_ARGV": str(calls),
+                    "HOST_WORKSPACE_ROOT": str(tmp_path),
+                    "HOST_CACHE_DIR": str(tmp_path / "cache"),
+                    "VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE": "1",
+                    "VLLM_HUST_AUTO_ENABLE_CONTAINER_SSH": "0",
+                    "VLLM_HUST_ASCEND_EXTRA_BIND_MOUNT": (
+                        f"{run_root}:/run/kvdelta/fixture"
+                    ),
+                    "VLLM_HUST_ASCEND_RUNTIME_BIND_MOUNT": (
+                        f"{runtime_carrier}:/workspace/vllm-hust-dev-hub"
+                    ),
+                    "VLLM_HUST_ASCEND_OPTIMIZATION_BIND_MOUNT": (
+                        f"{optimization}:/opt/vllm-optimization/fixture/src"
+                    ),
+                }
+            )
+            result = subprocess.run(
+                [str(OFFICIAL_CONTAINER_SCRIPT), "start"],
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            argv = json.loads(calls.read_text())
+            binds = [
+                argv[index + 1]
+                for index, value in enumerate(argv)
+                if value == "--extra-bind-mount"
+            ]
+            self.assertEqual(
+                binds,
+                [
+                    f"{run_root}:/run/kvdelta/fixture",
+                    f"{runtime_carrier}:/workspace/vllm-hust-dev-hub",
+                    f"{optimization}:/opt/vllm-optimization/fixture/src",
+                ],
+            )
+            manager = (
+                REPO_ROOT.parent
+                / "ascend-runtime-manager"
+                / "src"
+                / "hust_ascend_manager"
+                / "container.py"
+            ).read_text()
+            self.assertIn(
+                'return ["bash", "-lc", f"bash {shlex.quote(container_runtime_script_path(config))}"]',
+                manager,
+            )
 
     def test_empty_api_key_fails_before_docker_access(self) -> None:
         env = os.environ.copy()
@@ -305,6 +461,11 @@ class ManageEngineGuardTests(unittest.TestCase):
 
             diagnostics.unlink()
             runtime_log.unlink()
+            runtime_carrier = run_root / "container-runtime-carrier"
+            runtime_carrier.chmod(0o700)
+            (runtime_carrier / "scripts").chmod(0o700)
+            shutil.rmtree(runtime_carrier)
+            (run_root / "container-runtime-carrier-receipt.json").unlink()
             env["FAKE_OMIT_TERMINAL_EVENT"] = "1"
             env["FAKE_FAIL_RUNTIME_LOG"] = "1"
             missing = subprocess.run(
@@ -441,7 +602,7 @@ class ManageEngineGuardTests(unittest.TestCase):
                 "VLLM_ENGINE_REQUIRE_EXPLICIT_DEVICE_SECURITY": "1",
                 "VLLM_ENGINE_CONTAINER_SECURITY_PROFILE": "explicit-devices-nonprivileged-v1",
                 "VLLM_ENGINE_ASCEND_MANAGER_EXPECTED_COMMIT": "f" * 40,
-                "VLLM_ENGINE_ASCEND_MANAGER_PYTHON": "/bin/true",
+                "VLLM_ENGINE_ASCEND_MANAGER_PYTHON": os.path.realpath(sys.executable),
                 "VLLM_ENGINE_HOST_LOG_FILE": str(host_log_path),
             })
             result = subprocess.run(
@@ -532,7 +693,7 @@ class ManageEngineGuardTests(unittest.TestCase):
                 "VLLM_ENGINE_REQUIRE_EXPLICIT_DEVICE_SECURITY": "1",
                 "VLLM_ENGINE_CONTAINER_SECURITY_PROFILE": "explicit-devices-nonprivileged-v1",
                 "VLLM_ENGINE_ASCEND_MANAGER_EXPECTED_COMMIT": "f" * 40,
-                "VLLM_ENGINE_ASCEND_MANAGER_PYTHON": "/bin/true",
+                "VLLM_ENGINE_ASCEND_MANAGER_PYTHON": os.path.realpath(sys.executable),
                 "VLLM_ENGINE_RUN_ROOT_HOST": str(run_root),
                 "VLLM_ENGINE_RUN_ROOT_PARENT": str(tmp_path),
                 "VLLM_ENGINE_RUN_ROOT_CONTAINER": "/run/kvdelta/fixture",

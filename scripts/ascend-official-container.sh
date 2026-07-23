@@ -390,6 +390,9 @@ main() {
   if [[ -n "${VLLM_HUST_ASCEND_EXTRA_BIND_MOUNT:-}" ]]; then
     manager_cmd+=(--extra-bind-mount "$VLLM_HUST_ASCEND_EXTRA_BIND_MOUNT")
   fi
+  if [[ -n "${VLLM_HUST_ASCEND_RUNTIME_BIND_MOUNT:-}" ]]; then
+    manager_cmd+=(--extra-bind-mount "$VLLM_HUST_ASCEND_RUNTIME_BIND_MOUNT")
+  fi
   if [[ -n "${VLLM_HUST_ASCEND_OPTIMIZATION_BIND_MOUNT:-}" ]]; then
     manager_cmd+=(--extra-bind-mount "$VLLM_HUST_ASCEND_OPTIMIZATION_BIND_MOUNT")
   fi
