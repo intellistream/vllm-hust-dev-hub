@@ -437,7 +437,10 @@ capture_container_inspect() {
 capture_docker_events() {
   [[ -n "$lifecycle_diagnostics_file" ]] || return 0
   local event_until
-  event_until="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  # This bound is sampled after terminal inspect. Preserve nanoseconds: an
+  # integer-second bound can precede FinishedAt within the same second and
+  # silently exclude the exact die/kill/stop event needed for causality.
+  event_until="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
   if [[ -z "$container_full_id" || -z "$container_started_at" ]]; then
     printf '%s\n' '{"kind":"docker-events","status":"UNAVAILABLE_NO_START_BINDING"}' \
       >> "$lifecycle_diagnostics_file"
@@ -450,6 +453,9 @@ capture_docker_events() {
       | python3 -c '
 import json
 import sys
+event_until = sys.argv[1]
+terminal_actions = {"die", "kill", "stop", "destroy"}
+terminal_seen = False
 for line in sys.stdin:
     line = line.strip()
     if line:
@@ -462,8 +468,18 @@ for line in sys.stdin:
         }
         if "exitCode" in attributes:
             event["exitCode"] = attributes["exitCode"]
+        event["capture_until"] = event_until
+        action = source.get("Action") or source.get("status") or ""
+        terminal_seen = terminal_seen or action in terminal_actions
         print(json.dumps({"kind": "docker-event", "event": event}, sort_keys=True))
-' >> "$lifecycle_diagnostics_file"; then
+if not terminal_seen:
+    print(json.dumps({
+        "kind": "docker-events",
+        "status": "UNAVAILABLE_NO_TERMINAL_EVENT",
+        "capture_until": event_until,
+    }, sort_keys=True))
+    raise SystemExit(3)
+' "$event_until" >> "$lifecycle_diagnostics_file"; then
     printf '%s\n' '{"kind":"docker-events","status":"UNAVAILABLE"}' \
       >> "$lifecycle_diagnostics_file"
     return 1

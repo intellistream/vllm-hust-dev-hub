@@ -183,6 +183,18 @@ class ManageEngineGuardTests(unittest.TestCase):
                     }, sort_keys=True))
                     raise SystemExit(0)
                 if args and args[0] == "events":
+                    until = args[args.index("--until") + 1]
+                    if "." not in until or not until.endswith("Z"):
+                        raise SystemExit(
+                            f"terminal event bound lacks nanoseconds: {until}"
+                        )
+                    if os.environ.get("FAKE_OMIT_TERMINAL_EVENT") == "1":
+                        print(json.dumps({
+                            "status": "start",
+                            "id": "a" * 64,
+                            "Actor": {"Attributes": {}},
+                        }, sort_keys=True))
+                        raise SystemExit(0)
                     print(json.dumps({
                         "status": "die",
                         "id": "a" * 64,
@@ -252,6 +264,30 @@ class ManageEngineGuardTests(unittest.TestCase):
             )
             self.assertEqual(event["event"]["status"], "die")
             self.assertEqual(event["event"]["id"], "a" * 64)
+            self.assertRegex(
+                event["event"]["capture_until"],
+                r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z$",
+            )
+
+            diagnostics.unlink()
+            env["FAKE_OMIT_TERMINAL_EVENT"] = "1"
+            missing = subprocess.run(
+                [str(ENGINE_SCRIPT)], cwd=REPO_ROOT, env=env, text=True,
+                capture_output=True, check=False,
+            )
+            self.assertEqual(missing.returncode, 137, missing.stderr)
+            missing_records = [
+                json.loads(line)
+                for line in diagnostics.read_text().splitlines()
+            ]
+            gap = next(
+                item for item in missing_records
+                if item.get("status") == "UNAVAILABLE_NO_TERMINAL_EVENT"
+            )
+            self.assertRegex(
+                gap["capture_until"],
+                r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z$",
+            )
 
     def test_managed_unit_defaults_to_no_restart_and_journal_is_bounded_redacted(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
