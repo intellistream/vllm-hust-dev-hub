@@ -101,6 +101,10 @@ run_root_parent="${VLLM_ENGINE_RUN_ROOT_PARENT:-}"
 run_root_container="${VLLM_ENGINE_RUN_ROOT_CONTAINER:-}"
 run_root_uid="${VLLM_ENGINE_RUN_ROOT_UID:-}"
 run_root_gid="${VLLM_ENGINE_RUN_ROOT_GID:-}"
+optimization_repo_host="${VLLM_ENGINE_OPTIMIZATION_REPO_HOST:-}"
+optimization_src_host="${VLLM_ENGINE_OPTIMIZATION_SRC_HOST:-}"
+optimization_src_container="${VLLM_ENGINE_OPTIMIZATION_SRC_CONTAINER:-}"
+optimization_import_module="${VLLM_ENGINE_OPTIMIZATION_IMPORT_MODULE:-}"
 
 # Preserve launcher, bootstrap, docker-exec, and engine stderr even when the
 # generated in-container script never starts. The container-side log below is
@@ -248,6 +252,43 @@ if [[ -n "$run_root_host$run_root_parent$run_root_container$run_root_uid$run_roo
   run_bind_enabled=1
   manager_extra_bind="$run_root_host:$run_root_container"
 fi
+optimization_bind_enabled=0
+manager_optimization_bind=""
+if [[ -n "$optimization_repo_host$optimization_src_host$optimization_src_container$optimization_import_module" ]]; then
+  if [[ "$run_bind_enabled" != "1" ]]; then
+    echo "ERROR: optimization source bind requires the exact-run bind identity." >&2
+    exit 1
+  fi
+  if [[ -z "$optimization_repo_host" || -z "$optimization_src_host" || -z "$optimization_src_container" || -z "$optimization_import_module" ]]; then
+    echo "ERROR: optimization source bind requires repo root, source root, container root, and import module." >&2
+    exit 1
+  fi
+  if [[ "$optimization_repo_host" != /* || "$optimization_src_host" != /* || "$optimization_src_container" != /opt/vllm-optimization/*/src ]]; then
+    echo "ERROR: optimization source bind paths must be absolute and use /opt/vllm-optimization/<namespace>/src." >&2
+    exit 1
+  fi
+  if [[ -L "$optimization_repo_host" || ! -d "$optimization_repo_host" || -L "$optimization_src_host" || ! -d "$optimization_src_host" ]]; then
+    echo "ERROR: optimization repo and source must be existing non-symlink directories." >&2
+    exit 1
+  fi
+  canonical_optimization_repo="$(readlink -f "$optimization_repo_host")"
+  canonical_optimization_src="$(readlink -f "$optimization_src_host")"
+  if [[ "$canonical_optimization_repo" != "$optimization_repo_host" || "$canonical_optimization_src" != "$optimization_src_host" || "$optimization_src_host" != "$optimization_repo_host/"* ]]; then
+    echo "ERROR: optimization source must be canonical and contained by its frozen repo root." >&2
+    exit 1
+  fi
+  if [[ ! "$optimization_import_module" =~ ^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$ ]]; then
+    echo "ERROR: optimization import module is malformed." >&2
+    exit 1
+  fi
+  optimization_module_file="$optimization_src_host/${optimization_import_module//.//}.py"
+  if [[ -L "$optimization_module_file" || ! -f "$optimization_module_file" || ! -r "$optimization_module_file" ]]; then
+    echo "ERROR: optimization import module source is absent, symlinked, or unreadable." >&2
+    exit 1
+  fi
+  optimization_bind_enabled=1
+  manager_optimization_bind="$optimization_src_host:$optimization_src_container"
+fi
 docker_cmd=(docker)
 if ! command -v docker >/dev/null 2>&1; then
   echo "ERROR: docker not found on PATH." >&2
@@ -304,6 +345,7 @@ ensure_container_ready() {
   HUST_ASCEND_MANAGER_PROVENANCE_RECEIPT="$ascend_manager_provenance_receipt" \
   HUST_ASCEND_MANAGER_DEVICE_DISCOVERY_ROOT="$ascend_manager_device_discovery_root" \
   VLLM_HUST_ASCEND_EXTRA_BIND_MOUNT="$manager_extra_bind" \
+  VLLM_HUST_ASCEND_OPTIMIZATION_BIND_MOUNT="$manager_optimization_bind" \
   VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE="$container_non_interactive" \
     "$repo_root/scripts/ascend-official-container.sh" start
 
@@ -324,6 +366,32 @@ if [[ "$run_bind_enabled" == "1" ]]; then
   if ! "${docker_cmd[@]}" exec --user "0:$run_root_gid" --workdir "$run_root_container" \
       "$container" sh -ceu 'test -d . && test -w . && : > .kvdelta-write-probe && rm -f .kvdelta-write-probe'; then
     echo "ERROR: unchanged container UID with exact host GID cannot write the run bind." >&2
+    exit 1
+  fi
+fi
+if [[ "$optimization_bind_enabled" == "1" ]]; then
+  observed_optimization_mount="$("${docker_cmd[@]}" inspect --format '{{range .Mounts}}{{if eq .Destination "'"$optimization_src_container"'"}}{{.Source}}:{{.Destination}}:{{.RW}}{{end}}{{end}}' "$container")"
+  if [[ "$observed_optimization_mount" != "$optimization_src_host:$optimization_src_container:true" ]]; then
+    echo "ERROR: optimization source bind is absent, read-only, or drifted after container create." >&2
+    exit 1
+  fi
+  if [[ -z "$engine_python" || "$engine_python" != /* ]]; then
+    echo "ERROR: optimization import proof requires an absolute container Python." >&2
+    exit 1
+  fi
+  optimization_container_module_file="$optimization_src_container/${optimization_import_module//.//}.py"
+  if ! "${docker_cmd[@]}" exec --user "0:$run_root_gid" \
+      --env "PYTHONPATH=$pythonpath" \
+      "$container" "$engine_python" -c \
+      'import importlib.util, pathlib, sys
+module, expected = sys.argv[1:]
+spec = importlib.util.find_spec(module)
+if spec is None or spec.origin is None:
+    raise SystemExit("optimization import proof: module unavailable")
+if pathlib.Path(spec.origin).resolve() != pathlib.Path(expected).resolve():
+    raise SystemExit("optimization import proof: module origin drift")' \
+      "$optimization_import_module" "$optimization_container_module_file"; then
+    echo "ERROR: optimization module is not importable from the exact mounted source." >&2
     exit 1
   fi
 fi

@@ -373,6 +373,150 @@ class ManageEngineGuardTests(unittest.TestCase):
             self.assertIn('cd "/run/kvdelta/fixture"', container_script)
             self.assertNotIn("mkdir /workspace", container_script)
 
+    def test_exact_optimization_source_bind_proves_import_or_fails_closed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            run_root = tmp_path / "managed-container-runs" / "fixture"
+            run_root.mkdir(parents=True, mode=0o770)
+            run_root.chmod(0o770)
+            optimization_repo = tmp_path / "optimization-repo"
+            optimization_src = optimization_repo / "src"
+            package = optimization_src / "vllm_kvdelta"
+            package.mkdir(parents=True)
+            (package / "__init__.py").write_text("", encoding="utf-8")
+            connector = package / "connector.py"
+            connector.write_text("BOUNDARY_MARKER = 'PASS'\n", encoding="utf-8")
+            target = "/opt/vllm-optimization/fixture/delta-producer/src"
+            calls_path = tmp_path / "docker-calls.jsonl"
+            proof_path = tmp_path / "import-proof.json"
+            script_path = tmp_path / "container-script.sh"
+            fake_docker = tmp_path / "docker"
+            fake_docker.write_text(textwrap.dedent(
+                """\
+                #!/usr/bin/env python3
+                import io
+                import json
+                import os
+                import subprocess
+                import sys
+                import tarfile
+
+                args = sys.argv[1:]
+                with open(os.environ["FAKE_DOCKER_LOG"], "a") as handle:
+                    handle.write(json.dumps(args) + "\\n")
+                if args == ["info"]:
+                    raise SystemExit(0)
+                if args[:3] == ["inspect", "-f", "{{.State.Running}}"]:
+                    print("true")
+                    raise SystemExit(0)
+                if args[:2] == ["inspect", "--format"] and ".Mounts" in args[2]:
+                    if os.environ["OPTIMIZATION_TARGET"] in args[2]:
+                        print(os.environ["EXPECTED_OPTIMIZATION_MOUNT"])
+                    else:
+                        print(os.environ["EXPECTED_RUN_MOUNT"])
+                    raise SystemExit(0)
+                if args[:3] == ["inspect", "--format", "{{.Config.User}}"]:
+                    print("")
+                    raise SystemExit(0)
+                if args and args[0] == "cp":
+                    payload = sys.stdin.buffer.read()
+                    with tarfile.open(fileobj=io.BytesIO(payload), mode="r:") as archive:
+                        member = archive.getmembers()[0]
+                        content = archive.extractfile(member).read()
+                    with open(os.environ["FAKE_CONTAINER_SCRIPT"], "wb") as handle:
+                        handle.write(content)
+                    raise SystemExit(0)
+                if args[:2] == ["exec", "--user"] and ".kvdelta-write-probe" in args[-1]:
+                    raise SystemExit(0)
+                if args[:2] == ["exec", "fixture-container"] and "stat" in args:
+                    print("0:0:700")
+                    raise SystemExit(0)
+                if args[:2] == ["exec", "--user"] and "-c" in args:
+                    code_index = args.index("-c")
+                    module = args[code_index + 2]
+                    expected = args[code_index + 3]
+                    if expected != os.environ["EXPECTED_CONTAINER_MODULE"]:
+                        raise SystemExit("unexpected container module path")
+                    child = dict(os.environ)
+                    child["PYTHONPATH"] = os.environ["OPTIMIZATION_SRC"]
+                    host_expected = os.path.join(
+                        os.environ["OPTIMIZATION_SRC"], *module.split(".")
+                    ) + ".py"
+                    result = subprocess.run(
+                        [sys.executable, "-c", args[code_index + 1], module, host_expected],
+                        env=child,
+                        text=True,
+                        capture_output=True,
+                    )
+                    with open(os.environ["FAKE_IMPORT_PROOF"], "w") as handle:
+                        json.dump({
+                            "module": module,
+                            "host_expected": host_expected,
+                            "returncode": result.returncode,
+                            "stderr": result.stderr,
+                        }, handle, sort_keys=True)
+                    raise SystemExit(result.returncode)
+                if args and args[0] == "exec":
+                    raise SystemExit(0)
+                raise SystemExit(f"unexpected fake docker call: {args}")
+                """
+            ))
+            fake_docker.chmod(0o700)
+            env = os.environ.copy()
+            env.update({
+                "PATH": f"{tmp_path}:{env['PATH']}",
+                "FAKE_DOCKER_LOG": str(calls_path),
+                "FAKE_CONTAINER_SCRIPT": str(script_path),
+                "FAKE_IMPORT_PROOF": str(proof_path),
+                "OPTIMIZATION_SRC": str(optimization_src),
+                "OPTIMIZATION_TARGET": target,
+                "EXPECTED_CONTAINER_MODULE": f"{target}/vllm_kvdelta/connector.py",
+                "EXPECTED_RUN_MOUNT": f"{run_root}:/run/kvdelta/fixture:true",
+                "EXPECTED_OPTIMIZATION_MOUNT": f"{optimization_src}:{target}:true",
+                "VLLM_ENGINE_CONTAINER": "fixture-container",
+                "VLLM_ENGINE_REPLACE_EXISTING": "false",
+                "VLLM_HUST_API_KEY": "fixture-secret",
+                "VLLM_ENGINE_PYTHON": "/usr/local/python3.12.13/bin/python3",
+                "VLLM_ENGINE_RUN_ROOT_HOST": str(run_root),
+                "VLLM_ENGINE_RUN_ROOT_PARENT": str(tmp_path),
+                "VLLM_ENGINE_RUN_ROOT_CONTAINER": "/run/kvdelta/fixture",
+                "VLLM_ENGINE_RUN_ROOT_UID": str(os.getuid()),
+                "VLLM_ENGINE_RUN_ROOT_GID": str(os.getgid()),
+                "VLLM_ENGINE_OPTIMIZATION_REPO_HOST": str(optimization_repo),
+                "VLLM_ENGINE_OPTIMIZATION_SRC_HOST": str(optimization_src),
+                "VLLM_ENGINE_OPTIMIZATION_SRC_CONTAINER": target,
+                "VLLM_ENGINE_OPTIMIZATION_IMPORT_MODULE": "vllm_kvdelta.connector",
+                "VLLM_ENGINE_PYTHONPATH": target,
+            })
+
+            result = subprocess.run(
+                [str(ENGINE_SCRIPT)], cwd=REPO_ROOT, env=env, text=True,
+                capture_output=True, check=False,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            proof = json.loads(proof_path.read_text())
+            self.assertEqual(proof["module"], "vllm_kvdelta.connector")
+            self.assertEqual(proof["returncode"], 0)
+            calls = [json.loads(line) for line in calls_path.read_text().splitlines()]
+            import_exec = next(
+                call for call in calls
+                if call[:2] == ["exec", "--user"] and "-c" in call
+            )
+            self.assertIn(f"PYTHONPATH={target}", import_exec)
+            self.assertIn("/usr/local/python3.12.13/bin/python3", import_exec)
+
+            connector.unlink()
+            failed = subprocess.run(
+                [str(ENGINE_SCRIPT)], cwd=REPO_ROOT, env=env, text=True,
+                capture_output=True, check=False,
+            )
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertIn(
+                "optimization import module source is absent",
+                failed.stderr,
+            )
+
     def test_partial_exact_run_bind_rejects_before_docker_access(self) -> None:
         env = os.environ.copy()
         env.update({
