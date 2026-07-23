@@ -2194,6 +2194,12 @@ try:
 except PackageNotFoundError:
     raise SystemExit(1)
 
+if requirement.name.lower() == "pybind11":
+    try:
+        import pybind11  # noqa: F401
+    except ImportError:
+        raise SystemExit(1)
+
 if requirement.specifier and not requirement.specifier.contains(installed_version, prereleases=True):
     raise SystemExit(1)
 
@@ -2233,6 +2239,13 @@ for raw_spec in sys.argv[1:]:
     except PackageNotFoundError:
         print(raw_spec)
         continue
+
+    if requirement.name.lower() == "pybind11":
+        try:
+            import pybind11  # noqa: F401
+        except ImportError:
+            print(raw_spec)
+            continue
 
     if requirement.specifier and not requirement.specifier.contains(installed_version, prereleases=True):
         print(raw_spec)
