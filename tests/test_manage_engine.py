@@ -51,6 +51,8 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("VLLM_ENGINE_CONTAINER_PRIVILEGED=0", template)
         self.assertIn("VLLM_ENGINE_PYTHON=/usr/local/python3.12.13/bin/python", template)
         self.assertIn("VLLM_ENGINE_CONDA_ENV=vllm-hust-dev", template)
+        self.assertIn("VLLM_ENGINE_RESTART_POLICY=on-failure", template)
+        self.assertIn("VLLM_ENGINE_DIAGNOSTIC_JOURNAL_LINES=200", template)
         self.assertIn("COMPILE_CUSTOM_KERNELS=0", template)
         self.assertIn("VLLM_ENGINE_COMPILATION_CONFIG", template)
         self.assertIn("VLLM_PLUGINS=ascend", template)
@@ -96,6 +98,10 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("VLLM_OPTIMIZATION_", manage)
         self.assertIn("TORCH_DEVICE_BACKEND_AUTOLOAD", manage)
         self.assertIn("VLLM_ENGINE_PYTHON", manage)
+        self.assertIn('Restart=$restart_policy', manage)
+        self.assertIn('diagnostics)', manage)
+        self.assertIn('journalctl --user -u "$unit_name" --no-pager', manage)
+        self.assertIn("redact_diagnostics", manage)
         self.assertLess(
             manage.index('load_dotenv "$repo_root/.env"'),
             manage.index('unit_name="${VLLM_ENGINE_SYSTEMD_UNIT'),

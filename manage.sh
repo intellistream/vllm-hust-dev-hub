@@ -27,6 +27,17 @@ unit_name="${VLLM_ENGINE_SYSTEMD_UNIT:-vllm-hust-dev-hub-engine.service}"
 unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
 unit_path="$unit_dir/$unit_name"
 unit_env_path="$unit_path.env"
+restart_policy="${VLLM_ENGINE_RESTART_POLICY:-on-failure}"
+diagnostic_journal_lines="${VLLM_ENGINE_DIAGNOSTIC_JOURNAL_LINES:-200}"
+case "$restart_policy" in
+  no|on-success|on-failure|on-abnormal|on-abort|on-watchdog|always) ;;
+  *) echo "Invalid VLLM_ENGINE_RESTART_POLICY: $restart_policy" >&2; exit 2 ;;
+esac
+if [[ ! "$diagnostic_journal_lines" =~ ^[0-9]+$ ]] \
+  || (( diagnostic_journal_lines < 1 || diagnostic_journal_lines > 2000 )); then
+  echo "VLLM_ENGINE_DIAGNOSTIC_JOURNAL_LINES must be in 1..2000." >&2
+  exit 2
+fi
 user_runtime_dir="/run/user/$(id -u)"
 user_bus_path="$user_runtime_dir/bus"
 
@@ -39,7 +50,7 @@ fi
 
 usage() {
   cat <<EOF
-Usage: ./manage.sh <status|install|start|stop|restart|logs|health|foreground> [flags]
+Usage: ./manage.sh <status|install|start|stop|restart|logs|diagnostics|health|foreground> [flags]
 
 Actions:
   install      Install/update the user systemd unit only
@@ -48,6 +59,7 @@ Actions:
   restart      Install/update the unit and restart vLLM-HUST
   status       Show systemd status
   logs         Follow service logs
+  diagnostics  Print bounded redacted service status and journal output
   health       Check http://127.0.0.1:\${VLLM_ENGINE_PORT:-8000}/health
   foreground   Run the engine launcher directly in the current terminal
 
@@ -168,7 +180,7 @@ Type=simple
 WorkingDirectory=$repo_root
 EnvironmentFile=-$unit_env_path
 ExecStart=$repo_root/scripts/run_vllm_hust_engine.sh
-Restart=on-failure
+Restart=$restart_policy
 RestartSec=10
 TimeoutStopSec=60
 KillMode=control-group
@@ -205,6 +217,25 @@ print(json.dumps({
 PY
 }
 
+redact_diagnostics() {
+  sed -E \
+    -e 's/sk-[A-Za-z0-9._-]+/<redacted>/g' \
+    -e 's/(api-key[ =])[^ ]+/\1<redacted>/Ig' \
+    -e 's/(Bearer )[A-Za-z0-9._~+\/-]+/\1<redacted>/g' \
+    -e 's/([A-Za-z_]*(KEY|TOKEN|SECRET)[A-Za-z_]*=)[^ ]+/\1<redacted>/g'
+}
+
+bounded_diagnostics() {
+  require_unit
+  {
+    echo "## systemctl status"
+    systemctl --user --no-pager --full status "$unit_name" || true
+    echo "## journalctl last $diagnostic_journal_lines lines"
+    journalctl --user -u "$unit_name" --no-pager \
+      --output=short-iso -n "$diagnostic_journal_lines" || true
+  } 2>&1 | redact_diagnostics
+}
+
 health_url="http://127.0.0.1:${VLLM_ENGINE_PORT:-${PORT:-8000}}/health"
 
 case "$action" in
@@ -239,6 +270,9 @@ case "$action" in
   logs)
     require_unit
     exec journalctl --user -u "$unit_name" -f
+    ;;
+  diagnostics)
+    bounded_diagnostics
     ;;
   health)
     if curl -fsS -m 5 "$health_url" >/dev/null; then
