@@ -15,7 +15,7 @@ import sys
 import tempfile
 
 
-TARGET = "/workspace/vllm-hust-dev-hub"
+TARGET = "/opt/vllm-hust-runtime-carrier"
 SCRIPT_RELATIVE = Path("scripts/ascend-container-runtime.sh")
 
 

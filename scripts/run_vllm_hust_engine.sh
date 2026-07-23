@@ -224,6 +224,7 @@ fi
 run_bind_enabled=0
 manager_extra_bind=""
 manager_runtime_bind=""
+runtime_carrier_container=""
 if [[ -n "$run_root_host$run_root_parent$run_root_container$run_root_uid$run_root_gid" ]]; then
   if [[ -z "$run_root_host" || -z "$run_root_parent" || -z "$run_root_container" || -z "$run_root_uid" || -z "$run_root_gid" ]]; then
     echo "ERROR: exact-run bind requires host root, parent, container root, UID, and GID." >&2
@@ -338,7 +339,15 @@ if [[ "$run_bind_enabled" == "1" ]]; then
     echo "ERROR: staged container runtime carrier bytes drifted." >&2
     exit 1
   fi
-  manager_runtime_bind="$runtime_carrier_host:/workspace/vllm-hust-dev-hub"
+  runtime_carrier_container="/opt/vllm-hust-runtime-carrier"
+  receipt_carrier_container="$("$runtime_carrier_python" -c \
+    'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["carrier_container"])' \
+    "$runtime_carrier_receipt")"
+  if [[ "$receipt_carrier_container" != "$runtime_carrier_container" ]]; then
+    echo "ERROR: staged container runtime carrier target drifted." >&2
+    exit 1
+  fi
+  manager_runtime_bind="$runtime_carrier_host:$runtime_carrier_container"
 fi
 docker_cmd=(docker)
 if ! command -v docker >/dev/null 2>&1; then
@@ -398,6 +407,7 @@ ensure_container_ready() {
   VLLM_HUST_ASCEND_EXTRA_BIND_MOUNT="$manager_extra_bind" \
   VLLM_HUST_ASCEND_RUNTIME_BIND_MOUNT="$manager_runtime_bind" \
   VLLM_HUST_ASCEND_OPTIMIZATION_BIND_MOUNT="$manager_optimization_bind" \
+  CONTAINER_WORKDIR="${runtime_carrier_container:-}" \
   VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE="$container_non_interactive" \
     "$repo_root/scripts/ascend-official-container.sh" start
 

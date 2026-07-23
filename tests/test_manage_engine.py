@@ -1,4 +1,5 @@
 from pathlib import Path
+import importlib.util
 import json
 import os
 import shutil
@@ -15,6 +16,9 @@ MANAGE_SCRIPT = REPO_ROOT / "manage.sh"
 ENGINE_SCRIPT = REPO_ROOT / "scripts" / "run_vllm_hust_engine.sh"
 CONTAINER_RUNTIME_SCRIPT = REPO_ROOT / "scripts" / "ascend-container-runtime.sh"
 CONTAINER_RUNTIME_STAGER = REPO_ROOT / "scripts" / "stage_container_runtime.py"
+CONTAINER_RUNTIME_PROOF = (
+    REPO_ROOT / "scripts" / "prove_container_runtime_carrier.py"
+)
 OFFICIAL_CONTAINER_SCRIPT = REPO_ROOT / "scripts" / "ascend-official-container.sh"
 ENV_TEMPLATE = REPO_ROOT / ".env.template"
 README = REPO_ROOT / "README.md"
@@ -32,6 +36,10 @@ class ManageEngineGuardTests(unittest.TestCase):
         subprocess.run(["bash", "-n", str(CONTAINER_RUNTIME_SCRIPT)], check=True)
         subprocess.run(
             ["python3", "-m", "py_compile", str(CONTAINER_RUNTIME_STAGER)],
+            check=True,
+        )
+        subprocess.run(
+            ["python3", "-m", "py_compile", str(CONTAINER_RUNTIME_PROOF)],
             check=True,
         )
 
@@ -70,7 +78,7 @@ class ManageEngineGuardTests(unittest.TestCase):
             self.assertEqual(stat.S_IMODE(staged.stat().st_mode), 0o555)
             self.assertEqual(receipt["source_sha256"], receipt["staged_sha256"])
             self.assertEqual(
-                receipt["carrier_container"], "/workspace/vllm-hust-dev-hub"
+                receipt["carrier_container"], "/opt/vllm-hust-runtime-carrier"
             )
 
             probe = subprocess.run(
@@ -144,8 +152,9 @@ class ManageEngineGuardTests(unittest.TestCase):
                         f"{run_root}:/run/kvdelta/fixture"
                     ),
                     "VLLM_HUST_ASCEND_RUNTIME_BIND_MOUNT": (
-                        f"{runtime_carrier}:/workspace/vllm-hust-dev-hub"
+                        f"{runtime_carrier}:/opt/vllm-hust-runtime-carrier"
                     ),
+                    "CONTAINER_WORKDIR": "/opt/vllm-hust-runtime-carrier",
                     "VLLM_HUST_ASCEND_OPTIMIZATION_BIND_MOUNT": (
                         f"{optimization}:/opt/vllm-optimization/fixture/src"
                     ),
@@ -169,9 +178,13 @@ class ManageEngineGuardTests(unittest.TestCase):
                 binds,
                 [
                     f"{run_root}:/run/kvdelta/fixture",
-                    f"{runtime_carrier}:/workspace/vllm-hust-dev-hub",
+                    f"{runtime_carrier}:/opt/vllm-hust-runtime-carrier",
                     f"{optimization}:/opt/vllm-optimization/fixture/src",
                 ],
+            )
+            workdir_index = argv.index("--container-workdir")
+            self.assertEqual(
+                argv[workdir_index + 1], "/opt/vllm-hust-runtime-carrier"
             )
             manager = (
                 REPO_ROOT.parent
@@ -184,6 +197,46 @@ class ManageEngineGuardTests(unittest.TestCase):
                 'return ["bash", "-lc", f"bash {shlex.quote(container_runtime_script_path(config))}"]',
                 manager,
             )
+
+    def test_cpu_container_proof_requires_disjoint_exact_final_create(self) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "prove_container_runtime_carrier", CONTAINER_RUNTIME_PROOF
+        )
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        self.assertTrue(
+            module.target_is_disjoint(
+                "/opt/vllm-hust-runtime-carrier", ("/workspace",)
+            )
+        )
+        self.assertFalse(
+            module.target_is_disjoint(
+                "/workspace/vllm-hust-dev-hub", ("/workspace",)
+            )
+        )
+        argv = module.build_create_argv(
+            ["docker"],
+            name="kvdelta-runtime-carrier-proof-fixture",
+            image=(
+                "quay.io/ascend/vllm-ascend@"
+                "sha256:105834a38766a6b1b89a7eeb313a37351d098a69e8cdee87ad0ca3a6e090ce13"
+            ),
+            workspace=Path("/exact/workspace"),
+            carrier=Path("/exact/carrier"),
+        )
+        joined = " ".join(argv)
+        self.assertIn("--network none", joined)
+        self.assertIn("--cap-drop ALL", joined)
+        self.assertIn("--security-opt no-new-privileges:true", joined)
+        self.assertIn(
+            "/exact/carrier:/opt/vllm-hust-runtime-carrier:ro", joined
+        )
+        self.assertNotIn("--device", argv)
+        self.assertNotIn("-p", argv)
+        self.assertNotIn("--publish", argv)
 
     def test_empty_api_key_fails_before_docker_access(self) -> None:
         env = os.environ.copy()
