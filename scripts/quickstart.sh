@@ -894,7 +894,7 @@ ensure_ascend_build_python_packages() {
     # AscendNPU-IR uses nanobind's CMake package, not only its Python
     # metadata. Verify both the import and the package configuration path.
     if ! run_conda_env_cmd "$ENV_NAME" python -c \
-      'import nanobind; from pathlib import Path; p = Path(nanobind.cmake_dir()); assert (p / "nanobindConfig.cmake").is_file()' \
+      'import nanobind; from pathlib import Path; p = Path(nanobind.cmake_dir()); assert any((p / name).is_file() for name in ("nanobindConfig.cmake", "nanobind-config.cmake"))' \
       >/dev/null 2>&1; then
       log "nanobind CMake package is unavailable in '$ENV_NAME'; force reinstalling $local_nanobind_spec"
       run_with_heartbeat \
@@ -907,7 +907,7 @@ ensure_ascend_build_python_packages() {
       fi
     fi
     if ! run_conda_env_cmd "$ENV_NAME" python -c \
-      'import nanobind; from pathlib import Path; p = Path(nanobind.cmake_dir()); assert (p / "nanobindConfig.cmake").is_file()' \
+      'import nanobind; from pathlib import Path; p = Path(nanobind.cmake_dir()); assert any((p / name).is_file() for name in ("nanobindConfig.cmake", "nanobind-config.cmake"))' \
       >/dev/null 2>&1; then
       log "Error: nanobind CMake package remains unavailable in '$ENV_NAME' after repair"
       log_perf_step_end "$perf_description" "$perf_start_epoch" 1
