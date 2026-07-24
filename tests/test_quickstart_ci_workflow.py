@@ -179,6 +179,8 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         self.assertIn('run_conda_env_cmd "$env_name" python -c "$check_script"', script_text)
         self.assertIn('if requirement.name.lower() == "pybind11":', script_text)
         self.assertIn('import pybind11  # noqa: F401', script_text)
+        self.assertIn('run_conda_env_cmd "$ENV_NAME" python -c \'import pybind11\'', script_text)
+        self.assertIn('force reinstalling $local_pybind11_spec', script_text)
         self.assertIn(
             'Pass the checker via -c so an EOF in the wrapper cannot be mistaken for a',
             script_text,

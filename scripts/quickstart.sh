@@ -786,6 +786,7 @@ ensure_ascend_build_python_packages() {
   local perf_description="Ascend build dependency check in $ENV_NAME"
   local perf_start_epoch
   local pybind11_spec
+  local local_pybind11_spec="pybind11>=2.13.1"
   local triton_ascend_repo
   local triton_ascend_spec
   local bootstrap_specs=(
@@ -821,6 +822,9 @@ ensure_ascend_build_python_packages() {
       package_spec="$(read_build_requirement_spec_from_pyproject "$triton_ascend_repo" "$package_spec" || true)"
       if [[ -n "$package_spec" ]]; then
         batch_specs+=("$package_spec")
+      fi
+      if [[ "$package_spec" == pybind11* ]]; then
+        local_pybind11_spec="$package_spec"
       fi
     done
   else
@@ -863,6 +867,26 @@ ensure_ascend_build_python_packages() {
   fi
 
   if [[ -n "$triton_ascend_repo" ]]; then
+    # Validate the exact interpreter used by the upcoming editable install.
+    # Distribution metadata alone is insufficient: a stale or partial
+    # pybind11 installation can look installed while setup.py fails at import.
+    if ! run_conda_env_cmd "$ENV_NAME" python -c 'import pybind11' >/dev/null 2>&1; then
+      log "pybind11 is not importable in '$ENV_NAME'; force reinstalling $local_pybind11_spec"
+      run_with_heartbeat \
+        "repairing pybind11 in $ENV_NAME" \
+        run_pip_install_in_env "$ENV_NAME" -- --force-reinstall --no-cache-dir "$local_pybind11_spec"
+      rc=$?
+      if (( rc != 0 )); then
+        log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+        return "$rc"
+      fi
+    fi
+    if ! run_conda_env_cmd "$ENV_NAME" python -c 'import pybind11' >/dev/null 2>&1; then
+      log "Error: pybind11 remains unavailable in '$ENV_NAME' after repair"
+      log_perf_step_end "$perf_description" "$perf_start_epoch" 1
+      return 1
+    fi
+
     log "Installing triton-ascend from local HUST source: $triton_ascend_repo"
     run_with_heartbeat \
       "installing local triton-ascend from $triton_ascend_repo" \
