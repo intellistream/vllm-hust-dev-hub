@@ -786,6 +786,8 @@ ensure_ascend_build_python_packages() {
   local perf_description="Ascend build dependency check in $ENV_NAME"
   local perf_start_epoch
   local pybind11_spec
+  local local_pybind11_spec="pybind11>=2.13.1"
+  local local_nanobind_spec="nanobind>=2.4"
   local triton_ascend_repo
   local triton_ascend_spec
   local bootstrap_specs=(
@@ -813,18 +815,22 @@ ensure_ascend_build_python_packages() {
   done
 
   if triton_ascend_repo="$(resolve_local_triton_ascend_repo)"; then
-    log "Installing triton-ascend from local HUST source: $triton_ascend_repo"
-    run_with_heartbeat \
-      "installing local triton-ascend from $triton_ascend_repo" \
-      run_pip_install_in_env "$ENV_NAME" \
-        "TRITON_WHEEL_NAME=triton-ascend" \
-        "MAX_JOBS=${HUST_TRITON_ASCEND_MAX_JOBS:-32}" \
-        -- --no-build-isolation -v -e "$triton_ascend_repo"
-    rc=$?
-    if (( rc != 0 )); then
-      log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
-      return "$rc"
-    fi
+    # Local editable installs use --no-build-isolation, so every requirement
+    # from the local project's build-system.requires must already be present.
+    # In particular, setup.py imports pybind11 while pip is only preparing
+    # editable metadata; installing it in the batch below would be too late.
+    for package_spec in cmake ninja pybind11 nanobind; do
+      package_spec="$(read_build_requirement_spec_from_pyproject "$triton_ascend_repo" "$package_spec" || true)"
+      if [[ -n "$package_spec" ]]; then
+        batch_specs+=("$package_spec")
+      fi
+      if [[ "$package_spec" == pybind11* ]]; then
+        local_pybind11_spec="$package_spec"
+      fi
+      if [[ "$package_spec" == nanobind* ]]; then
+        local_nanobind_spec="$package_spec"
+      fi
+    done
   else
     triton_ascend_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "triton-ascend" || true)"
     batch_specs+=("${triton_ascend_spec:-triton-ascend}")
@@ -837,10 +843,12 @@ ensure_ascend_build_python_packages() {
   # False, which silently disables all triton-ascend kernels including
   # the fused qkv_rmsnorm_rope op. Must be installed unconditionally
   # regardless of whether we're compiling custom C++ kernels.
-  pybind11_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "pybind11" || true)"
-  batch_specs+=("${pybind11_spec:-pybind11}")
+  if [[ -z "$triton_ascend_repo" ]]; then
+    pybind11_spec="$(read_build_requirement_spec_from_pyproject "$repo_path" "pybind11" || true)"
+    batch_specs+=("${pybind11_spec:-pybind11}")
+  fi
 
-  if [[ "$compile_custom_kernels" == "0" ]]; then
+  if [[ "$compile_custom_kernels" == "0" || -n "$triton_ascend_repo" ]]; then
     :
   else
     batch_specs+=("cmake" "nanobind>=2.4")
@@ -850,18 +858,74 @@ ensure_ascend_build_python_packages() {
 
   if (( ${#missing_batch_specs[@]} == 0 )); then
     log "Ascend build Python dependencies already satisfied in '$ENV_NAME'"
-    log_perf_step_end "$perf_description" "$perf_start_epoch" 0
-    return 0
+  else
+    log "Installing missing or incompatible Ascend build Python dependencies into '$ENV_NAME': ${missing_batch_specs[*]}"
+    run_with_heartbeat \
+      "installing Ascend build Python dependencies into $ENV_NAME" \
+      run_pip_install_in_env "$ENV_NAME" -- "${missing_batch_specs[@]}"
+    rc=$?
+    if (( rc != 0 )); then
+      log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+      return "$rc"
+    fi
   fi
 
-  log "Installing missing or incompatible Ascend build Python dependencies into '$ENV_NAME': ${missing_batch_specs[*]}"
-  run_with_heartbeat \
-    "installing Ascend build Python dependencies into $ENV_NAME" \
-    run_pip_install_in_env "$ENV_NAME" -- "${missing_batch_specs[@]}"
-  rc=$?
-  if (( rc != 0 )); then
-    log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
-    return "$rc"
+  if [[ -n "$triton_ascend_repo" ]]; then
+    # Validate the exact interpreter used by the upcoming editable install.
+    # Distribution metadata alone is insufficient: a stale or partial
+    # pybind11 installation can look installed while setup.py fails at import.
+    if ! run_conda_env_cmd "$ENV_NAME" python -c 'import pybind11' >/dev/null 2>&1; then
+      log "pybind11 is not importable in '$ENV_NAME'; force reinstalling $local_pybind11_spec"
+      run_with_heartbeat \
+        "repairing pybind11 in $ENV_NAME" \
+        run_pip_install_in_env "$ENV_NAME" -- --force-reinstall --no-cache-dir "$local_pybind11_spec"
+      rc=$?
+      if (( rc != 0 )); then
+        log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+        return "$rc"
+      fi
+    fi
+    if ! run_conda_env_cmd "$ENV_NAME" python -c 'import pybind11' >/dev/null 2>&1; then
+      log "Error: pybind11 remains unavailable in '$ENV_NAME' after repair"
+      log_perf_step_end "$perf_description" "$perf_start_epoch" 1
+      return 1
+    fi
+
+    # AscendNPU-IR uses nanobind's CMake package, not only its Python
+    # metadata. Verify both the import and the package configuration path.
+    if ! run_conda_env_cmd "$ENV_NAME" python -c \
+      'import nanobind; from pathlib import Path; p = Path(nanobind.cmake_dir()); assert (p / "nanobindConfig.cmake").is_file()' \
+      >/dev/null 2>&1; then
+      log "nanobind CMake package is unavailable in '$ENV_NAME'; force reinstalling $local_nanobind_spec"
+      run_with_heartbeat \
+        "repairing nanobind in $ENV_NAME" \
+        run_pip_install_in_env "$ENV_NAME" -- --force-reinstall --no-cache-dir "$local_nanobind_spec"
+      rc=$?
+      if (( rc != 0 )); then
+        log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+        return "$rc"
+      fi
+    fi
+    if ! run_conda_env_cmd "$ENV_NAME" python -c \
+      'import nanobind; from pathlib import Path; p = Path(nanobind.cmake_dir()); assert (p / "nanobindConfig.cmake").is_file()' \
+      >/dev/null 2>&1; then
+      log "Error: nanobind CMake package remains unavailable in '$ENV_NAME' after repair"
+      log_perf_step_end "$perf_description" "$perf_start_epoch" 1
+      return 1
+    fi
+
+    log "Installing triton-ascend from local HUST source: $triton_ascend_repo"
+    run_with_heartbeat \
+      "installing local triton-ascend from $triton_ascend_repo" \
+      run_pip_install_in_env "$ENV_NAME" \
+        "TRITON_WHEEL_NAME=triton-ascend" \
+        "MAX_JOBS=${HUST_TRITON_ASCEND_MAX_JOBS:-32}" \
+        -- --no-build-isolation -v -e "$triton_ascend_repo"
+    rc=$?
+    if (( rc != 0 )); then
+      log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+      return "$rc"
+    fi
   fi
 
   log_perf_step_end "$perf_description" "$perf_start_epoch" 0
@@ -2160,8 +2224,9 @@ ensure_pip_package_in_env() {
 pip_requirement_satisfied_in_env() {
   local env_name="$1"
   local package_spec="$2"
+  local check_script=''
 
-  run_conda_env_cmd "$env_name" python - "$package_spec" >/dev/null 2>&1 <<'PY'
+  check_script='
 import sys
 from importlib.metadata import PackageNotFoundError, version
 
@@ -2180,23 +2245,32 @@ try:
 except PackageNotFoundError:
     raise SystemExit(1)
 
+if requirement.name.lower() == "pybind11":
+    try:
+        import pybind11  # noqa: F401
+    except ImportError:
+        raise SystemExit(1)
+
 if requirement.specifier and not requirement.specifier.contains(installed_version, prereleases=True):
     raise SystemExit(1)
 
 raise SystemExit(0)
-PY
+'
+
+  run_conda_env_cmd "$env_name" python -c "$check_script" "$package_spec" >/dev/null 2>&1
 }
 
 list_missing_pip_requirements_in_env() {
   local env_name="$1"
   shift
   local requirement_specs=("$@")
+  local check_script=''
 
   if (( ${#requirement_specs[@]} == 0 )); then
     return 0
   fi
 
-  run_conda_env_cmd "$env_name" python - "${requirement_specs[@]}" <<'PY'
+  check_script='
 import sys
 from importlib.metadata import PackageNotFoundError, version
 
@@ -2217,9 +2291,21 @@ for raw_spec in sys.argv[1:]:
         print(raw_spec)
         continue
 
+    if requirement.name.lower() == "pybind11":
+        try:
+            import pybind11  # noqa: F401
+        except ImportError:
+            print(raw_spec)
+            continue
+
     if requirement.specifier and not requirement.specifier.contains(installed_version, prereleases=True):
         print(raw_spec)
-PY
+'
+
+  # conda run does not reliably forward heredoc stdin to its child process.
+  # Pass the checker via -c so an EOF in the wrapper cannot be mistaken for a
+  # successful dependency check.
+  run_conda_env_cmd "$env_name" python -c "$check_script" "${requirement_specs[@]}"
 }
 
 repo_requires_ascend_runtime() {

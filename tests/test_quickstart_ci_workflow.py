@@ -159,6 +159,39 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         self.assertIn('"$WORKSPACE_ROOT/triton-ascend-hust"', script_text)
         self.assertIn('--no-build-isolation -v -e "$triton_ascend_repo"', script_text)
 
+    def test_quickstart_prepares_local_triton_build_requirements_before_editable_install(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        self.assertIn(
+            'read_build_requirement_spec_from_pyproject "$triton_ascend_repo" "$package_spec"',
+            script_text,
+        )
+        self.assertIn('for package_spec in cmake ninja pybind11 nanobind; do', script_text)
+        self.assertIn('batch_specs+=("$package_spec")', script_text)
+        self.assertLess(
+            script_text.index('mapfile -t missing_batch_specs'),
+            script_text.index('"installing local triton-ascend from $triton_ascend_repo"'),
+        )
+
+    def test_quickstart_dependency_checks_do_not_use_conda_run_heredoc_stdin(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        self.assertIn('run_conda_env_cmd "$env_name" python -c "$check_script"', script_text)
+        self.assertIn('if requirement.name.lower() == "pybind11":', script_text)
+        self.assertIn('import pybind11  # noqa: F401', script_text)
+        self.assertIn('run_conda_env_cmd "$ENV_NAME" python -c \'import pybind11\'', script_text)
+        self.assertIn('force reinstalling $local_pybind11_spec', script_text)
+        self.assertIn('nanobind.cmake_dir()', script_text)
+        self.assertIn('force reinstalling $local_nanobind_spec', script_text)
+        self.assertIn(
+            'Pass the checker via -c so an EOF in the wrapper cannot be mistaken for a',
+            script_text,
+        )
+        self.assertNotIn(
+            'run_conda_env_cmd "$env_name" python - "$package_spec" >/dev/null 2>&1 <<\'PY\'',
+            script_text,
+        )
+
     def test_quickstart_fail_fast_gates_ascend_fallback(self) -> None:
         script_text = QUICKSTART_SCRIPT_PATH.read_text()
 
