@@ -182,6 +182,7 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         self.assertIn('run_conda_env_cmd "$ENV_NAME" python -c \'import pybind11\'', script_text)
         self.assertIn('force reinstalling $local_pybind11_spec', script_text)
         self.assertIn('nanobind.cmake_dir()', script_text)
+        self.assertIn('"nanobind-config.cmake"', script_text)
         self.assertIn('force reinstalling $local_nanobind_spec', script_text)
         self.assertIn(
             'Pass the checker via -c so an EOF in the wrapper cannot be mistaken for a',
