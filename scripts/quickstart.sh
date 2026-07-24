@@ -787,6 +787,7 @@ ensure_ascend_build_python_packages() {
   local perf_start_epoch
   local pybind11_spec
   local local_pybind11_spec="pybind11>=2.13.1"
+  local local_nanobind_spec="nanobind>=2.4"
   local triton_ascend_repo
   local triton_ascend_spec
   local bootstrap_specs=(
@@ -825,6 +826,9 @@ ensure_ascend_build_python_packages() {
       fi
       if [[ "$package_spec" == pybind11* ]]; then
         local_pybind11_spec="$package_spec"
+      fi
+      if [[ "$package_spec" == nanobind* ]]; then
+        local_nanobind_spec="$package_spec"
       fi
     done
   else
@@ -883,6 +887,29 @@ ensure_ascend_build_python_packages() {
     fi
     if ! run_conda_env_cmd "$ENV_NAME" python -c 'import pybind11' >/dev/null 2>&1; then
       log "Error: pybind11 remains unavailable in '$ENV_NAME' after repair"
+      log_perf_step_end "$perf_description" "$perf_start_epoch" 1
+      return 1
+    fi
+
+    # AscendNPU-IR uses nanobind's CMake package, not only its Python
+    # metadata. Verify both the import and the package configuration path.
+    if ! run_conda_env_cmd "$ENV_NAME" python -c \
+      'import nanobind; from pathlib import Path; p = Path(nanobind.cmake_dir()); assert (p / "nanobindConfig.cmake").is_file()' \
+      >/dev/null 2>&1; then
+      log "nanobind CMake package is unavailable in '$ENV_NAME'; force reinstalling $local_nanobind_spec"
+      run_with_heartbeat \
+        "repairing nanobind in $ENV_NAME" \
+        run_pip_install_in_env "$ENV_NAME" -- --force-reinstall --no-cache-dir "$local_nanobind_spec"
+      rc=$?
+      if (( rc != 0 )); then
+        log_perf_step_end "$perf_description" "$perf_start_epoch" "$rc"
+        return "$rc"
+      fi
+    fi
+    if ! run_conda_env_cmd "$ENV_NAME" python -c \
+      'import nanobind; from pathlib import Path; p = Path(nanobind.cmake_dir()); assert (p / "nanobindConfig.cmake").is_file()' \
+      >/dev/null 2>&1; then
+      log "Error: nanobind CMake package remains unavailable in '$ENV_NAME' after repair"
       log_perf_step_end "$perf_description" "$perf_start_epoch" 1
       return 1
     fi
