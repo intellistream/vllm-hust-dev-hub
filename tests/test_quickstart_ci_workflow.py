@@ -158,6 +158,7 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         self.assertIn('"${HUST_TRITON_ASCEND_REPO:-}"', script_text)
         self.assertIn('"$WORKSPACE_ROOT/triton-ascend-hust"', script_text)
         self.assertIn('--no-build-isolation -v -e "$triton_ascend_repo"', script_text)
+        self.assertIn('"TRITON_CODEGEN_BACKENDS=ascend"', script_text)
 
     def test_quickstart_prepares_local_triton_build_requirements_before_editable_install(self) -> None:
         script_text = QUICKSTART_SCRIPT_PATH.read_text()

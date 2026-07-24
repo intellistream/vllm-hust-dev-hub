@@ -919,6 +919,7 @@ ensure_ascend_build_python_packages() {
       "installing local triton-ascend from $triton_ascend_repo" \
       run_pip_install_in_env "$ENV_NAME" \
         "TRITON_WHEEL_NAME=triton-ascend" \
+        "TRITON_CODEGEN_BACKENDS=ascend" \
         "MAX_JOBS=${HUST_TRITON_ASCEND_MAX_JOBS:-32}" \
         -- --no-build-isolation -v -e "$triton_ascend_repo"
     rc=$?
