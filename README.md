@@ -328,6 +328,34 @@ It also sets `VLLM_PLUGINS=ascend,<plugin>` when `VLLM_PLUGINS` is not
 explicitly provided. Use `VLLM_ENGINE_PYTHONPATH` or `VLLM_PLUGINS` only when
 you need full manual control.
 
+
+### Use the DiffSpec Optimization Plugin
+
+DiffSpec remains a standalone repository and is integrated through dev-hub's
+workspace synchronization, editable installation, launch profile, and Ascend
+end-to-end validation.
+
+```bash
+bash scripts/clone-workspace-repos.sh --yes
+
+bash scripts/quickstart.sh \
+  --install \
+  --install-mode refresh \
+  --install-scope plugins \
+  --env-name vllm-hust-dev \
+  -y
+```
+
+On an Ascend development machine:
+
+```bash
+export VLLM_HUST_API_KEY='<real-test-key>'
+export DIFFSPEC_TARGET_MODEL=/path/to/target-model
+export DIFFSPEC_DRAFT_MODEL=/path/to/eagle3-draft-model
+
+bash scripts/test-diffspec-e2e.sh
+```
+
 ### Sync into an Offline Container
 
 Use this helper from an internet-connected development machine when the target

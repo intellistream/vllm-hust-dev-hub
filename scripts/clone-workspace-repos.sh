@@ -397,6 +397,8 @@ REPOS=(
   "vllm-hust-dev-hub|git@github.com:vLLM-HUST/vllm-hust-dev-hub.git"
   "vllm-hust|git@github.com:vLLM-HUST/vllm-hust.git"
   "vllm-ascend-hust|git@github.com:vLLM-HUST/vllm-ascend-hust.git"
+  # Standalone optimization plugin.
+  "vllm-ascend-hust-diffspec|git@github.com:vLLM-HUST/vllm-ascend-hust-diffspec.git"
   "vllm-ascend-quant-hust|git@github.com:vLLM-HUST/vllm-ascend-quant-hust.git"
   "triton-ascend-hust|git@github.com:vLLM-HUST/triton-ascend-hust.git"
   # ── services & applications ──────────────────────────────────────────────

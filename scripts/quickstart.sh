@@ -139,7 +139,7 @@ print_help() {
   --conda                  创建或更新 conda 环境。
   --install                在已有 conda 环境中安装本地仓库。
   --install-mode MODE      安装模式: install 或 refresh (默认: install)。
-  --install-scope SCOPE    安装范围: core 或 full (默认: core)。
+  --install-scope SCOPE    安装范围: core、plugins 或 full (默认: core)。
   --ascend-lightweight     Ascend 插件使用轻量模式安装 (等价于 COMPILE_CUSTOM_KERNELS=0)。
   --ascend-custom-kernels VALUE
                            显式设置 Ascend 插件 COMPILE_CUSTOM_KERNELS 值。
@@ -2121,6 +2121,10 @@ build_installable_repo_entries() {
     "$WORKSPACE_ROOT/vllm-hust-benchmark"
   )
 
+  local plugin_repo_candidates=(
+    "$WORKSPACE_ROOT/vllm-ascend-hust-diffspec"
+  )
+
   local extra_repo_candidates=(
     "$WORKSPACE_ROOT/vllm-hust-workstation"
     "$WORKSPACE_ROOT/vllm-hust-docs"
@@ -2131,6 +2135,9 @@ build_installable_repo_entries() {
 
   local repo_candidates=()
   repo_candidates+=("${core_repo_candidates[@]}")
+  if [[ "$scope" == "plugins" || "$scope" == "full" ]]; then
+    repo_candidates+=("${plugin_repo_candidates[@]}")
+  fi
   if [[ "$scope" == "full" ]]; then
     repo_candidates+=("${extra_repo_candidates[@]}")
   fi
@@ -2776,7 +2783,7 @@ install_workspace_repos_into_env() {
     return 2
   fi
 
-  if [[ "$install_scope" != "core" && "$install_scope" != "full" ]]; then
+  if [[ "$install_scope" != "core" && "$install_scope" != "plugins" && "$install_scope" != "full" ]]; then
     echo "Invalid install scope: $install_scope" >&2
     log_perf_step_end "$perf_description" "$perf_start_epoch" 2
     return 2

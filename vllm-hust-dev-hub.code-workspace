@@ -67,6 +67,9 @@
     {
       "name": "[ref] reference-repos",
       "path": "../reference-repos"
+    },
+    {
+      "path": "../vllm-ascend-hust-diffspec"
     }
   ],
   "settings": {
