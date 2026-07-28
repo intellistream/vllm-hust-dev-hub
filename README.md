@@ -508,3 +508,4 @@ Other behavior worth knowing:
 - Train8 container quickstart:
   [docs/train8-container-quickstart.md](docs/train8-container-quickstart.md)
 - Performance follow-up roadmap: [ROADMAP.md](ROADMAP.md)
+- Benchmark guidance series: [docs/benchmark-guides/](docs/benchmark-guides/)
