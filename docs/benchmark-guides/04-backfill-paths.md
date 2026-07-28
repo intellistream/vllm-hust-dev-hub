@@ -93,10 +93,22 @@ instructcoder-online
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `BACKFILL_PYTHON` | `~/miniconda3/envs/vllm-hust-dev/bin/python` | Python 解释器路径 |
-| `SAME_SPEC_GPU_MEMORY_UTILIZATION` | `0.6` | same-spec hash 的 gpu_memory_utilization |
-| `SAME_SPEC_MAX_MODEL_LEN` | `30720` | same-spec hash 的 max_model_len |
 | `HF_ENDPOINT` | `https://hf-mirror.com` | HuggingFace 镜像 |
 | `VLLM_USE_V1` | `1` | 启用 V1 引擎 |
+
+### 模块常量
+
+| 常量名 | 值 | 含义 |
+|---|---|---|
+| `MODEL_NAME` | `Qwen/Qwen2.5-14B-Instruct` | 默认模型 |
+| `MODEL_PARAMETERS` | `14B` | 模型参数量 |
+| `MODEL_PRECISION` | `FP16` | 模型精度 |
+| `HARDWARE_CHIP_MODEL` | `910B2` | 硬件芯片型号 |
+| `DEFAULT_GPU_MEMORY_UTILIZATION` | `0.6` | same-spec 的 gpu_memory_utilization |
+| `DEFAULT_MAX_MODEL_LEN` | `32768` | same-spec 的 max_model_len(不是 30720) |
+| `SUBMITTER` | `vllm-hust-org-member` | 默认 submitter 标识 |
+
+这些是代码里硬编码的常量,不是环境变量,不能通过 env 覆盖。
 
 ## 路径 D `backfill_historical_pr_benchmarks.py` 详细
 
