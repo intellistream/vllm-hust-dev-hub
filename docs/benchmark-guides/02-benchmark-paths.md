@@ -1,22 +1,28 @@
 # 手动 Benchmark 路径对比
 
-workspace 的手动 benchmark 有两条互斥路径,都跑 `vllm-hust-benchmark` 仓里的脚本,都吃同一份 spec JSON,但目标、conda env、源码位置、产出目录完全不同。一句话:`vllm-hust 执行版走 same-spec runner,vllm 官方 baseline 走 official-v0180-baselines runner`。
+## 路径 vs 案例
 
-## 两条路径对照表
+阅读本指南前先分清两个概念:
 
-| 维度 | 路径 A:vllm-hust 执行版 | 路径 B:vllm 官方 baseline |
-|------|------------------------|--------------------------|
-| 目标 | 测当前 `vllm-hust` 主干 + `vllm-ascend-hust` 主干在 Ascend 910B2 上的性能 | 建立或复核官方 vLLM v0.18.0 + vLLM-Ascend v0.18.0 pinned baseline |
-| 入口脚本 | `vllm-hust-benchmark/scripts/run-current-ascend-same-spec.sh` | `vllm-hust-benchmark/scripts/run-official-v0180-baselines.sh` |
-| conda env 名 | `vllm-hust-dev` | `vllm-ascend-official-v0180` |
-| 源码位置 | `$WORKSPACE_ROOT/vllm-hust` + `$WORKSPACE_ROOT/vllm-ascend-hust` | `reference-repos/vllm@v0.18.0` + `reference-repos/vllm-ascend@v0.18.0` worktree |
-| PYTHONPATH 注入方式 | `$CURRENT_VLLM_ASCEND_HUST_REPO:$CURRENT_VLLM_HUST_REPO` 注入 | 官方 worktree 路径注入 |
-| 是否安装到 site-packages | 否,通过 PYTHONPATH | 否,通过 PYTHONPATH |
-| 默认 NPU 设备选择 | 由 same-spec runner 内部决定 | `--devices` 指定,如 `0` 或 `1,2` |
-| raw 产出目录 | `vllm-hust-benchmark/.benchmarks/current-ascend-same-spec/<run-id>/` | `vllm-hust-benchmark/.benchmarks/official-ascend-goal-baseline/` |
-| leaderboard 归档目录 | `vllm-hust-benchmark/submissions/<run-id>/` | `vllm-hust-benchmark/submissions/official-ascend-*` |
-| 典型命令(一行) | `bash scripts/run-current-ascend-same-spec.sh docs/official-baselines/<spec>.json` | `bash scripts/run-official-v0180-baselines.sh --repeat-count 3` |
-| 典型用途 | 验证 fork 优化、回归测试、给 leaderboard 贡献 vllm-hust 一侧数据 | 建立官方 baseline、复核已有 baseline、给 leaderboard 提供 vllm 一侧对照数据 |
+- **路径(path)**:执行链路不同 —— 入口脚本不同 / 服务管理方式不同 / 产出 artifact 不同。本指南列出 8 条路径(A-H)。
+- **案例(case)**:同一路径下的不同使用场景。例如路径 A 的"单 spec 跑"与"manage.sh 冒烟"是同一路径的两个案例;路径 C 的 `plan`/`run`/`fill` 是同一路径的多个子命令案例。
+
+后续每条路径会标明它是路径还是案例变体。
+
+workspace 的手动 benchmark 路径都在 `vllm-hust-benchmark` 仓里,大多吃同一份 spec JSON,但目标、conda env、源码位置、产出目录不同。一句话:`vllm-hust 执行版走 same-spec runner,vllm 官方 baseline 走 official-v0180-baselines runner,其余路径在此之上做 backfill / profiling / 重复 / 批量`。
+
+## 8 条路径完整目录
+
+| 路径 | 目标 | 入口脚本 | conda env | 源码位置 | 产出目录 | 典型用途 |
+|------|------|---------|----------|---------|---------|---------|
+| A | vllm-hust 执行版(我们的 fork) | `vllm-hust-benchmark/scripts/run-current-ascend-same-spec.sh <spec.json>` | `vllm-hust-dev` | `$WORKSPACE_ROOT/vllm-hust` + `vllm-ascend-hust`(PYTHONPATH 注入) | `.benchmarks/current-ascend-same-spec/` 与 `submissions/` | 验证 fork 优化、回归测试、贡献 vllm-hust 一侧数据 |
+| B | vllm 官方 v0.18.0 baseline | `vllm-hust-benchmark/scripts/run-official-v0180-baselines.sh [options] [<spec>...]` | `vllm-ascend-official-v0180` | `reference-repos/vllm@v0.18.0` + `reference-repos/vllm-ascend@v0.18.0`(PYTHONPATH) | `.benchmarks/official-ascend-goal-baseline/` 与 `submissions/official-ascend-*` | 建立或复核官方 v0.18.0 baseline |
+| C | 单卡历史 commit backfill | `python3 scripts/backfill_single_gpu.py <subcommand>` | `vllm-hust-dev`(`BACKFILL_PYTHON` 控制) | `vllm-hust` + `vllm-ascend-hust`(脚本会 git checkout 目标 commit) | `.benchmarks/backfill-single-gpu/` 与 `submissions/single-gpu-backfill-*` | 补某个 commit 的缺失 workload,详见 [04-backfill-paths.md](04-backfill-paths.md) |
+| D | 历史 PR real-online backfill | `python3 scripts/backfill_historical_pr_benchmarks.py [options]` | `vllm-hust-dev` | detached git worktrees(不污染主 checkout) | `.benchmarks/historical-pr-backfill/` 与 `submissions/historical-pr-*` | 跑历史 PR 的 real-online 数据,详见 [04-backfill-paths.md](04-backfill-paths.md) |
+| E | 组织成员 delta 基准 | `python3 scripts/run_org_member_benchmarks.py run [options]` | `vllm-hust-dev` | `vllm-hust` worktree(Va=稳定基础设施,Vb=被测代码) | `.benchmarks/checkpoint.json` 与 `submissions/` | 计算 org member delta = perf(org_group) - perf(previous_upstream_group) |
+| F | msprof profiling | `bash scripts/run-current-ascend-same-spec-msprof.sh <spec.json>` | `vllm-hust-dev` | 同路径 A | `.benchmarks/current-ascend-msprof/<run-id>/`(`msprof_raw/` + `benchmark/`) | 性能剖析,产出 msprof 文本 trace + 同 spec benchmark 结果 |
+| G | campaign 重复跑 | `bash scripts/run-campaign-repetitions.sh <spec> [--repetitions N]` | `vllm-hust-dev` | 同路径 A | `submissions/<campaign-prefix>-<workload>-<chip>chip-<ts>/`(N 份) | 同 spec 重复 N 次取中位数,内部调 `run-single-repetition.sh` |
+| H | matrix 多 spec 批量跑 | `bash scripts/run-current-ascend-same-spec-matrix.sh <spec-dir-or-files...>` | `vllm-hust-dev` | 同路径 A | `.benchmarks/<matrix-run-id>/<spec-slug>/`(每 spec 一份) | 一次跑多个 spec,内部调路径 A 的 runner |
 
 ## 路径 A 详细:vllm-hust 执行版
 
@@ -101,6 +107,76 @@ bash scripts/run-official-v0180-baselines.sh --review-existing --repeat-count 3
 
 > `v0.11.0` 已退役,不得重新发布到 `leaderboard-data/snapshots`。
 
+## 路径 C:单卡历史 commit backfill
+
+补 `vllm-hust` 历史 commit 在 910B2 单卡上的缺失 workload。
+
+```bash
+python3 scripts/backfill_single_gpu.py run --commit <sha> --workload <name>
+```
+
+- 产出:`.benchmarks/backfill-single-gpu/` 与 `submissions/single-gpu-backfill-*`
+- 详见 [04-backfill-paths.md](04-backfill-paths.md)
+
+## 路径 D:历史 PR real-online backfill
+
+跑历史 PR 的 real-online benchmark,通过 `manage.sh --managed-dev-hub` 启服务。
+
+```bash
+PYTHONPATH=src python scripts/backfill_historical_pr_benchmarks.py \
+  --plan-file <plan.json> --managed-dev-hub --execute
+```
+
+- 产出:`.benchmarks/historical-pr-backfill/` 与 `submissions/historical-pr-*`
+- 详见 [04-backfill-paths.md](04-backfill-paths.md)
+
+## 路径 E:组织成员 delta 基准
+
+为组织成员的 commit 跑 benchmark,计算相对上游的 delta。
+
+```bash
+GH_TOKEN=<token> python3 scripts/run_org_member_benchmarks.py run --dry-run
+```
+
+- 产出:`.benchmarks/checkpoint.json` 与 `submissions/`
+- attribution 模型:PR commits → 1 benchmark/PR;consecutive commits(无 PR)→ 1 benchmark/session;delta = `perf(org_group) - perf(previous_upstream_group)`
+- 详见 [04-backfill-paths.md](04-backfill-paths.md)
+
+## 路径 F:msprof profiling
+
+同 spec 跑一次 benchmark + msprof 性能剖析。
+
+```bash
+bash scripts/run-current-ascend-same-spec-msprof.sh <spec.json>
+```
+
+- 产出:`.benchmarks/current-ascend-msprof/<run-id>/`,含 `msprof_raw/` 与 `benchmark/`
+- 配置文件:`scripts/run-current-ascend-same-spec-msprof.env`
+- 默认 msprof flags:`--ascendcl=on --runtime-api=on --task-time=l1 --hccl=on --type=text`
+
+## 路径 G:campaign 重复跑
+
+同 spec 重复 N 次(默认 3),取中位数。
+
+```bash
+bash scripts/run-campaign-repetitions.sh <spec.json> \
+  --campaign-prefix <prefix> --repetitions 3
+```
+
+- 产出:`submissions/<campaign-prefix>-<workload>-<chip>chip-<ts>/`(N 份独立 artifact 目录)
+- 内部调 `run-single-repetition.sh`,每份 artifact 含 `run_leaderboard.json` / `env-manifest.json` / `checksums.sha256` / `STATUS`
+
+## 路径 H:matrix 多 spec 批量跑
+
+一次跑一个目录下所有 spec,内部调路径 A 的 runner。
+
+```bash
+bash scripts/run-current-ascend-same-spec-matrix.sh docs/spec-matrix/
+```
+
+- 产出:`.benchmarks/<matrix-run-id>/<spec-slug>/`(每 spec 一份)
+- 设 `PUBLISH_WEBSITE=1` 可在跑完后聚合到 `vllm-hust-website/data`
+
 ## A/B 对比必须固定的变量
 
 做 fork vs baseline 严格 A/B 对比时,以下变量必须保持一致:
@@ -112,7 +188,7 @@ bash scripts/run-official-v0180-baselines.sh --review-existing --repeat-count 3
 - 只切换 conda env 与源码 repo(PYTHONPATH)
 - 建议固定 `REPEAT_COUNT=3` 取中位数,避免单次抖动
 
-## manage.sh 冒烟变体
+## 路径 A 的案例:manage.sh 冒烟
 
 只做一次小规模冒烟时,不必走 same-spec runner,可以手动起服务再 `vllm bench serve` 直接打。
 
