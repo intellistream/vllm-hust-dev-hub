@@ -152,6 +152,13 @@
 | core | #183 | KV Cache 研究 |
 | ascend | #145 | P0,两卡 40-47% 回归 |
 
+#### 文档定位
+
+- #58 / #146 / #151 / #163 → 回归 bisect SOP 见 [08-regression-bisect-sop.md](08-regression-bisect-sop.md)
+- #183(KV Cache 研究)→ 研究方法论见 [09-multi-chip-and-research.md](09-multi-chip-and-research.md)
+- ascend #145(两卡回归)→ 多卡路径与 bisect 见 [09-multi-chip-and-research.md](09-multi-chip-and-research.md)
+- output 指标好坏判断见 [10-output-metrics-guide.md](10-output-metrics-guide.md)
+
 ### 上游依赖
 
 - `vllm-hust` 的 `vllm/benchmarks/`(latency.py、serve.py、startup.py、sweep/cli.py)

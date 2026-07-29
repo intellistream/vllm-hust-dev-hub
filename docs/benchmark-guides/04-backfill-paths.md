@@ -226,7 +226,7 @@ visionarena-online
 
 ```bash
 # Dry-run
-cd /workspace/hust-tools
+cd vllm-hust-benchmark
 GH_TOKEN=<ghp_xxx> python3 run_org_member_benchmarks.py run --dry-run
 
 # 带上游 baseline commits

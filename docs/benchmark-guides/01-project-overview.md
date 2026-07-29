@@ -40,8 +40,16 @@ vllm-hust(运行时) → vllm-hust-benchmark(编排导出) → vllm-hust-website
 
 ## 打开 workspace 后该看哪里
 
-- 想了解 dev-hub 仓本身:看 `vllm-hust-dev-hub/README.md`
-- 想跑/管理引擎服务:看 `vllm-hust-dev-hub/manage.sh` 与 `scripts/run_vllm_hust_engine.sh`
-- 想跑 benchmark 或建 baseline:看 `vllm-hust-benchmark/README.md` 与 `docs/benchmark-guides/02-benchmark-paths.md`
-- 想看参数与输出含义:看 `docs/benchmark-guides/03-params-outputs-reference.md`
-- 想看官网 leaderboard:看 `vllm-hust-website/README.md`
+按编号顺序阅读:
+
+1. **第 1 步:新人快速开始** —— [00-quickstart.md](00-quickstart.md):5 分钟跑通第一条 benchmark
+2. **第 2 步:了解项目结构** —— [01-project-overview.md](01-project-overview.md)(本文):各仓职责与目录结构
+3. **第 3 步:选 benchmark 路径** —— [02-benchmark-paths.md](02-benchmark-paths.md):8 条路径 A-H 完整目录
+4. **第 4 步:看懂输入与输出** —— [03-params-outputs-reference.md](03-params-outputs-reference.md):spec 字段与 metrics 字段速查
+5. **第 5 步:查脚本参数** —— [07-params-cheatsheet.md](07-params-cheatsheet.md):25 个脚本参数总表 + use demo
+6. **按需:做 backfill** —— [04-backfill-paths.md](04-backfill-paths.md):3 条 backfill 路径 C/D/E 详解
+7. **按需:接手 Paul 的任务** —— [05-tasks-and-optimization.md](05-tasks-and-optimization.md):Paul 的 task 分类 A-E 与代码优化路径
+8. **按需:看功能遗漏** —— [06-benchmark-gaps-checklist.md](06-benchmark-gaps-checklist.md):12 条已知遗漏与修复计划
+9. **按需:调查性能回归** —— [08-regression-bisect-sop.md](08-regression-bisect-sop.md):bisect SOP + #58/#146/#151/#163 专用配置
+10. **按需:多卡或 KV cache 研究** —— [09-multi-chip-and-research.md](09-multi-chip-and-research.md):多卡路径 + #183 研究方法论
+11. **按需:理解 output 指标** —— [10-output-metrics-guide.md](10-output-metrics-guide.md):metrics 5 字段 + 16 约束字段 + 好坏判断 + 优化方向
