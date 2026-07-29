@@ -1,6 +1,6 @@
 # 输出指标解读
 
-本文档说明 benchmark output 的指标体系。输入参数见 [03-params-outputs-reference.md](03-params-outputs-reference.md),路径选择见 [02-benchmark-paths.md](02-benchmark-paths.md)。
+本文档说明 benchmark output 的指标体系。输入参数见 [03-params-outputs-reference.md](03-params-outputs-reference.md),路径选择见 [02-benchmark-paths.md](02-benchmark-paths.md)。submission/snapshot 整体产出体系(指标存放在哪个文件、如何派生)见 [11-submission-snapshot-output.md](11-submission-snapshot-output.md)。
 
 ## metrics 5 字段
 
@@ -115,3 +115,93 @@
 - `benchmark_type` 决定 `run_leaderboard.json` 的哪些 metrics 字段被置 null
 - `idempotency_key` 由 `scenario+engine+engine_version+model_identity+chip_model+chip_count+node_count+run_id` 的 SHA-256 生成,用于聚合器去重
 - 数据错误须回 exporter 源头修正,不应在 website 自行修补单条 entry
+
+## 性能分析分层指引:看哪个文件、看哪些指标
+
+性能分析分三层递进:**先选文件,再选指标,最后按角色裁剪**。不要一上来就翻 raw。
+
+### 第 1 层:看哪个 output 文件
+
+按分析目标选文件,不要全看。
+
+| 分析目标 | 看哪个文件 | 为什么 |
+|---------|-----------|--------|
+| 快速判断本次跑得好不好 | submission 的 `run_leaderboard.json` | 5+16 字段已标准化,直接对比基线 |
+| 横向对比 vllm vs vllm-hust | snapshot 的 `leaderboard_compare.json` | 已按 same_spec scope 分组,同条件对比 |
+| 看趋势/找回归 commit | 多个 submission 的 `run_leaderboard.json` 串联 | 标准化字段可横比,raw 不行 |
+| 深度排查某个指标的尾延迟 | submission 的 `raw_benchmark_result.json` | raw 有 p95/p99/avg_latency 等 run_leaderboard 没有的字段 |
+| 排查 entry 没进网站 | snapshot 的 `rejected_superseded_report.json` + `admission_report.json` | 看被拒/被隔离原因 |
+| 排查环境/复现问题 | submission 的 `env-manifest.json` + `pip-packages.json` + `server.stdout.log` | 看依赖版本、git commit、服务端日志 |
+| 网站访客视角 | snapshot 的 `leaderboard_single.json` / `leaderboard_multi.json` | 这就是网站数据源 |
+
+**一句话优先级**:`run_leaderboard.json` 是性能分析的主战场;raw 是深挖尾延迟时才看;snapshot 报告是排查"数据没进网站"时才看。
+
+### 第 2 层:看哪些指标(按目标分层)
+
+`run_leaderboard.json` 里 5 个 metrics + 16 个 constraints.metrics,不是每个都要看。按目标分层:
+
+**健康度(每次必看,不过关直接停)**
+
+| 指标 | 判定 |
+|------|------|
+| submission 的 `STATUS` | 必须 `OK` |
+| `metrics.error_rate` | 必须 `0.0`;> 0 直接判失败 |
+| `constraints.metrics.long_context_throughput_stable`(online 类) | 必须 `true` |
+
+**核心性能(online 类:random-online / sharegpt-online / prefix-repetition-online 等)**
+
+| 指标 | 看均值还是尾延迟 | 好坏判定 |
+|------|-----------------|---------|
+| `metrics.ttft_ms` | 均值 | < 300ms 正常,> 500ms 回归 |
+| `metrics.tbt_ms` | 均值 | < 55ms 达标,> 80ms 回归 |
+| `metrics.throughput_tps` | 均值 | 200-245 tps 正常,降 > 5% 回归 |
+| `constraints.metrics.long_context_ttft_p99_ms` | 尾延迟 | 关注是否突增(实测 95-1461ms) |
+| `constraints.metrics.long_context_tpot_p99_ms` | 尾延迟 | 关注是否突增(实测 10-54ms) |
+
+**核心性能(throughput 类:sharegpt-throughput / sonnet-throughput)**
+
+| 指标 | 好坏判定 |
+|------|---------|
+| `metrics.throughput_tps` | sharegpt ~1383;sonnet ~4283-4648;目标 ≥ 2× 基线 |
+| `ttft_ms` / `tbt_ms` | 恒为 null,不用看 |
+
+**核心性能(latency 类:random-latency)**
+
+| 指标 | 好坏判定 |
+|------|---------|
+| `metrics.ttft_ms` | ~7000-9700ms(是 batch 端到端延迟,**不可与 online 横比**) |
+| `throughput_tps` / `tbt_ms` | 恒为 null,不用看 |
+
+**基线对比(vllm-hust vs vllm 优化效果)**
+
+| 指标 | 目标 |
+|------|------|
+| `constraints.metrics.typical_throughput_ratio_vs_baseline` | ≥ 2.0 |
+| `constraints.metrics.typical_ttft_reduction_pct_vs_baseline` | ≥ 20 |
+| `constraints.metrics.typical_tpot_reduction_pct_vs_baseline` | ≥ 25 |
+| `constraints.metrics.unit_token_cost_reduction_pct` | 35(sample) |
+
+**资源利用(当前参考价值有限)**
+
+| 指标 | 状态 |
+|------|------|
+| `metrics.peak_mem_mb` | 实测均为 0(采集未落地),暂不可用 |
+| `constraints.metrics.single_chip_effective_utilization_pct` | 目标 > 90;实测多 null |
+
+### 第 3 层:按角色裁剪
+
+| 角色 | 主要看 | 次要看 |
+|------|--------|--------|
+| 引擎开发者(自己跑验证) | submission 的 `run_leaderboard.json` 5 metrics | raw 看 p99 尾延迟;`server.stdout.log` 排障 |
+| Paul(Backfill/Leaderboard 完整性) | 多个 submission 的 `run_leaderboard.json` 趋势 | snapshot 的 `rejected_superseded_report` + `admission_report` 排查 entry 去向 |
+| 回归调查(性能回归二分) | 多个 commit 的 `run_leaderboard.json` 串联看 `ttft_ms`/`tbt_ms`/`throughput_tps` 趋势 | raw 的 p99 看尾延迟突跳;详见 [08-regression-bisect-sop.md](08-regression-bisect-sop.md) |
+| 网站访客 | snapshot 的 `leaderboard_compare.json`(同 scope vllm vs vllm-hust) | `leaderboard_single.json` 看绝对值 |
+| CI/perfgate reviewer | submission 的 `STATUS` + `error_rate` + 5 metrics 是否过 gate | `env-manifest.json` 校验环境一致性 |
+
+### 常见误用
+
+- **拿 online 的 `ttft_ms` 跟 latency 的 `ttft_ms` 横比** → 字段同名但语义不同(latency 是 batch 端到端延迟)
+- **拿 raw 的字段做跨 commit 趋势分析** → raw 字段随 vllm 版本变,不稳定的字段不能做趋势;用 `run_leaderboard.json` 的 5 metrics
+- **看 `peak_mem_mb` 判断显存** → 当前都是 0,采集没落地,看不了
+- **从文件名推断 `910B2`/`FP16`** → 禁止,权威字段在 `run_leaderboard.json` 内
+- **拿两个 vllm-hust 版本互比当基线** → `agent.md` 明示:必须对比同 spec 的 `vllm` baseline,不能 vllm-hust 自比
