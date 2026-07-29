@@ -1,8 +1,8 @@
 # Benchmark Guides 索引
 
-本目录共 12 篇文档,覆盖从跑第一条 benchmark 到产出 leaderboard snapshot 的全链路。先看下表选文档,再按角色路径顺序读。
+本目录共 13 篇文档,覆盖从跑第一条 benchmark 到产出 leaderboard snapshot 的全链路,含 FAQ 与 issue 映射。先看下表选文档,再按角色路径顺序读。
 
-## 12 篇文档定位表
+## 13 篇文档定位表
 
 | 编号 | 文档 | 一句话定位 |
 |------|------|-----------|
@@ -18,6 +18,7 @@
 | 09 | [09-multi-chip-and-research.md](09-multi-chip-and-research.md) | 多卡(≥2)benchmark 路径与 KV cache/prefix 等研究方法论 |
 | 10 | [10-output-metrics-guide.md](10-output-metrics-guide.md) | metrics 5 字段 + constraints.metrics 16 字段含义、好坏判定,及性能分析分层指引(看哪个文件/哪些指标/按角色) |
 | 11 | [11-submission-snapshot-output.md](11-submission-snapshot-output.md) | submission 目录 9 文件 + snapshot 目录 7 文件清单与派生流程 |
+| 12 | [12-faq-issue-mapping.md](12-faq-issue-mapping.md) | 五大场景(手动/自动/校验/排障/补数据)FAQ 速查 + issue → 文档映射 |
 
 ## 三种角色阅读路径
 
@@ -35,6 +36,11 @@
 2. [04-backfill-paths.md](04-backfill-paths.md) — 若是补历史 PR 数据走这里
 3. [11-submission-snapshot-output.md](11-submission-snapshot-output.md) — 排查"entry 没进 snapshot"或"被 superseded"
 4. (按需)[08-regression-bisect-sop.md](08-regression-bisect-sop.md) — 性能回归时
+
+### 自动 / 校验 / 排障路径
+
+1. [12-faq-issue-mapping.md](12-faq-issue-mapping.md) — 先按症状定位
+2. 按表跳到对应的脚本或文档(11 排查报告 / 08 回归 / 09 多卡 / 10 指标)
 
 ### Paul(按任务类别)
 
@@ -75,6 +81,9 @@
           └──────────┬──────────┘
                      ▼
               [06-benchmark-gaps-checklist]   ← 横向查漏
+                     ▲
+                     │
+   [12-faq-issue-mapping] ── 横向速查,串起所有文档 + issue 编号
 ```
 
 说明:
@@ -85,3 +94,4 @@
 - 05 是 Paul 任务地图,横向串起 A/B/C/D/E 五类
 - 08/09 是深度专题,有具体回归/研究需求时再看
 - 06 是横向 checklist,任何角色都可用于查漏
+- 12 是横向 FAQ,遇到具体问题/issue 时按症状反查所有文档
