@@ -317,6 +317,14 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
 
         self.assertEqual(result.stdout.strip(), "1")
 
+    def test_quickstart_installs_ccache_as_system_build_package(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        # ccache must be present in every supported package manager branch so
+        # triton-ascend's built-in TRITON_BUILD_WITH_CCACHE can find it on PATH.
+        self.assertIn('packages=(gcc gcc-c++ python3-devel zlib-devel git make ccache)', script_text)
+        self.assertIn('packages=(gcc g++ python3-dev zlib1g-dev git make ccache)', script_text)
+
 
 if __name__ == "__main__":
     unittest.main()
