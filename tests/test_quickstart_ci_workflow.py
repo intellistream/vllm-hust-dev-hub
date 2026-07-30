@@ -317,6 +317,106 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
 
         self.assertEqual(result.stdout.strip(), "1")
 
+    def test_quickstart_defines_ccache_resolver_for_triton_ascend(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        self.assertIn("resolve_triton_ascend_ccache_env_args()", script_text)
+        self.assertIn('${HUST_TRITON_ASCEND_USE_CCACHE:-auto}', script_text)
+        self.assertIn('-DCMAKE_C_COMPILER_LAUNCHER=ccache', script_text)
+        self.assertIn('-DCMAKE_CXX_COMPILER_LAUNCHER=ccache', script_text)
+        # The resolver must be wired into the editable install path, not just defined.
+        self.assertIn('ccache_resolved="$(resolve_triton_ascend_ccache_env_args)"', script_text)
+        self.assertIn('"${ccache_env_args[@]}"', script_text)
+        # Existing triton-ascend build knobs must be preserved alongside the new ccache args.
+        self.assertIn('"TRITON_WHEEL_NAME=triton-ascend"', script_text)
+        self.assertIn('"MAX_JOBS=${HUST_TRITON_ASCEND_MAX_JOBS:-32}"', script_text)
+
+    def _run_ccache_resolver(self, env_overrides: dict, extra_path_dir: str = "") -> subprocess.CompletedProcess:
+        """Source quickstart's function bodies (excluding main) and invoke the ccache resolver.
+
+        Uses `export` (not inline `VAR=val cmd`) so the function is found correctly
+        across bash versions, and `set +e` so the function's non-zero return is
+        captured by `rc=$?` instead of aborting the shell under `set -euo pipefail`.
+        """
+        export_stmts = " ".join(
+            f"export {key}={shlex.quote(value)};" for key, value in env_overrides.items()
+        )
+        path_stmt = f"export PATH={shlex.quote(extra_path_dir)}:$PATH;" if extra_path_dir else ""
+        command = (
+            f"source <(sed '/^main() {{/,$d' {shlex.quote(str(QUICKSTART_SCRIPT_PATH))}); "
+            f"unset HUST_TRITON_ASCEND_USE_CCACHE CCACHE_DIR CMAKE_ARGS; "
+            f"{export_stmts} {path_stmt} "
+            "set +e; resolve_triton_ascend_ccache_env_args; rc=$?; printf 'rc=%s\\n' \"$rc\""
+        )
+        return subprocess.run(
+            ["bash", "-lc", command],
+            capture_output=True,
+            text=True,
+        )
+
+    def _make_fake_ccache(self, tmpdir: str) -> str:
+        """Drop a fake `ccache` executable in tmpdir so the resolver's `command -v` check passes."""
+        ccache_path = Path(tmpdir, "ccache")
+        ccache_path.write_text("#!/usr/bin/env bash\nexit 0\n")
+        ccache_path.chmod(0o755)
+        return str(tmpdir)
+
+    def test_triton_ascend_ccache_is_disabled_when_env_turned_off(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            extra_path = self._make_fake_ccache(tmpdir)
+            result = self._run_ccache_resolver(
+                {"HUST_TRITON_ASCEND_USE_CCACHE": "0"},
+                extra_path_dir=extra_path,
+            )
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(result.stdout.strip(), "rc=1")
+
+    def test_triton_ascend_ccache_is_disabled_when_ccache_not_on_path(self) -> None:
+        # Force PATH to a minimal directory with no ccache so `command -v ccache` fails.
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = self._run_ccache_resolver(
+                {"PATH": tmpdir, "HUST_TRITON_ASCEND_USE_CCACHE": "auto"},
+            )
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertEqual(result.stdout.strip(), "rc=1")
+
+    def test_triton_ascend_ccache_emits_launcher_and_cache_dir_when_available(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            extra_path = self._make_fake_ccache(tmpdir)
+            custom_cache = Path(tmpdir, "my-ccache")
+            custom_cache.mkdir()
+            result = self._run_ccache_resolver(
+                {"HUST_TRITON_ASCEND_USE_CCACHE": "auto", "CCACHE_DIR": str(custom_cache)},
+                extra_path_dir=extra_path,
+            )
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertIn("rc=0", lines)
+        self.assertIn(f"CCACHE_DIR={custom_cache}", lines)
+        cmake_line = next((ln for ln in lines if ln.startswith("CMAKE_ARGS=")), None)
+        self.assertIsNotNone(cmake_line, msg=result.stdout)
+        self.assertIn("-DCMAKE_C_COMPILER_LAUNCHER=ccache", cmake_line)
+        self.assertIn("-DCMAKE_CXX_COMPILER_LAUNCHER=ccache", cmake_line)
+
+    def test_triton_ascend_ccache_preserves_user_provided_cmake_args(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            extra_path = self._make_fake_ccache(tmpdir)
+            result = self._run_ccache_resolver(
+                {"HUST_TRITON_ASCEND_USE_CCACHE": "auto", "CMAKE_ARGS": "-DCMAKE_BUILD_TYPE=Release"},
+                extra_path_dir=extra_path,
+            )
+
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        lines = result.stdout.splitlines()
+        self.assertIn("rc=0", lines)
+        cmake_line = next((ln for ln in lines if ln.startswith("CMAKE_ARGS=")), None)
+        self.assertIsNotNone(cmake_line, msg=result.stdout)
+        # User-provided flag must come first, followed by the ccache launcher flags.
+        self.assertIn("-DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=ccache", cmake_line)
+
 
 if __name__ == "__main__":
     unittest.main()

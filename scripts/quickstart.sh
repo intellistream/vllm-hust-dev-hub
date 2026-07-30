@@ -780,6 +780,55 @@ resolve_local_triton_ascend_repo() {
   return 1
 }
 
+# Resolve ccache environment arguments for triton-ascend's CMake-driven build.
+#
+# triton-ascend compiles a large C++ surface (MLIR/TableGen TUs such as ir.cc
+# that are single-file bottlenecks), so a clean editable install can sit on
+# "588/596" for several minutes while a handful of big units finish serially.
+# ccache turns repeat installs (same source, same toolchain) into near-instant
+# cache hits, which is the dominant win when re-running quickstart during dev.
+#
+# Prints one "KEY=VALUE" per line (suitable for `mapfile`) and returns 0 when
+# ccache should be wired in; returns 1 (silently) when disabled or unavailable
+# so callers can fall back to the legacy build path.
+#
+# Knobs:
+# - HUST_TRITON_ASCEND_USE_CCACHE: auto (default) | 1/true/on/yes | 0/false/off/no
+# - CCACHE_DIR: honored if set; otherwise defaults to a persistent per-user
+#   location under $CURRENT_USER_CACHE_HOME so cache survives across runs.
+# - CMAKE_ARGS: any user-provided value is preserved and appended to.
+resolve_triton_ascend_ccache_env_args() {
+  local use_ccache_lower
+  use_ccache_lower="$(printf '%s' "${HUST_TRITON_ASCEND_USE_CCACHE:-auto}" | tr '[:upper:]' '[:lower:]')"
+  if [[ "$use_ccache_lower" == "0" || "$use_ccache_lower" == "false" \
+        || "$use_ccache_lower" == "off" || "$use_ccache_lower" == "no" ]]; then
+    return 1
+  fi
+
+  if ! command -v ccache >/dev/null 2>&1; then
+    return 1
+  fi
+
+  local ccache_dir="${CCACHE_DIR:-}"
+  if [[ -z "$ccache_dir" ]]; then
+    local cache_base="${XDG_CACHE_HOME:-${CURRENT_USER_CACHE_HOME:-}}"
+    if [[ -z "$cache_base" || ! -d "$cache_base" ]]; then
+      cache_base="${HOME:-$(pwd)}/.cache"
+    fi
+    ccache_dir="$cache_base/ccache"
+  fi
+
+  local cmake_args="${CMAKE_ARGS:-}"
+  if [[ -n "$cmake_args" ]]; then
+    cmake_args="$cmake_args "
+  fi
+  cmake_args+="-DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache"
+
+  printf 'CCACHE_DIR=%s\n' "$ccache_dir"
+  printf 'CMAKE_ARGS=%s\n' "$cmake_args"
+  return 0
+}
+
 ensure_ascend_build_python_packages() {
   local repo_path="$1"
   local compile_custom_kernels="$2"
@@ -915,12 +964,25 @@ ensure_ascend_build_python_packages() {
     fi
 
     log "Installing triton-ascend from local HUST source: $triton_ascend_repo"
+
+    # Wire ccache into the CMake build when available so that repeat
+    # editable installs hit the cache instead of recompiling 596 C++ TUs
+    # (the ir.cc tail alone can otherwise stall for minutes). No-op when
+    # ccache is missing or explicitly disabled, preserving legacy behavior.
+    local ccache_env_args=()
+    local ccache_resolved
+    if ccache_resolved="$(resolve_triton_ascend_ccache_env_args)"; then
+      mapfile -t ccache_env_args <<<"$ccache_resolved"
+      log "ccache detected; enabling CMake compiler launcher for triton-ascend (CCACHE_DIR=${ccache_env_args[0]#CCACHE_DIR=})"
+    fi
+
     run_with_heartbeat \
       "installing local triton-ascend from $triton_ascend_repo" \
       run_pip_install_in_env "$ENV_NAME" \
         "TRITON_WHEEL_NAME=triton-ascend" \
         "TRITON_CODEGEN_BACKENDS=ascend" \
         "MAX_JOBS=${HUST_TRITON_ASCEND_MAX_JOBS:-32}" \
+        "${ccache_env_args[@]}" \
         -- --no-build-isolation -v -e "$triton_ascend_repo"
     rc=$?
     if (( rc != 0 )); then
