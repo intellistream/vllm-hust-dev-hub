@@ -260,13 +260,13 @@ ensure_system_build_packages() {
 
   if command -v dnf >/dev/null 2>&1; then
     pkg_manager="dnf"
-    packages=(gcc gcc-c++ python3-devel zlib-devel git make)
+    packages=(gcc gcc-c++ python3-devel zlib-devel git make ccache)
   elif command -v yum >/dev/null 2>&1; then
     pkg_manager="yum"
-    packages=(gcc gcc-c++ python3-devel zlib-devel git make)
+    packages=(gcc gcc-c++ python3-devel zlib-devel git make ccache)
   elif command -v apt-get >/dev/null 2>&1; then
     pkg_manager="apt-get"
-    packages=(gcc g++ python3-dev zlib1g-dev git make)
+    packages=(gcc g++ python3-dev zlib1g-dev git make ccache)
   else
     log "Warning: no supported package manager found (dnf/yum/apt-get); skipping system package install"
     return 0
