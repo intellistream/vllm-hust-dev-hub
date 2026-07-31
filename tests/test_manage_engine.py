@@ -107,6 +107,16 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("CONTAINER_SSH_USER:=shuhao", runtime)
         self.assertNotIn("CONTAINER_SSH_USER:?Error", runtime)
 
+    def test_managed_unit_supports_explicit_one_shot_restart_policy(self) -> None:
+        manage = MANAGE_SCRIPT.read_text()
+
+        self.assertIn(
+            'restart_policy="${VLLM_ENGINE_RESTART_POLICY:-on-failure}"',
+            manage,
+        )
+        self.assertIn("no|on-failure", manage)
+        self.assertIn("Restart=$restart_policy", manage)
+
     def test_engine_launcher_stays_repo_agnostic(self) -> None:
         script = ENGINE_SCRIPT.read_text()
         manage = MANAGE_SCRIPT.read_text()
