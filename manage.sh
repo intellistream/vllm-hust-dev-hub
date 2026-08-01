@@ -63,7 +63,7 @@ Required .env:
   VLLM_HUST_API_KEY=<real non-EMPTY key>
 
 Common .env knobs:
-  VLLM_ENGINE_CONTAINER=vllm-ascend-dev
+  VLLM_ENGINE_CONTAINER_NAME=vllm-ascend-dev
   VLLM_ENGINE_IMAGE=quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler
   VLLM_ENGINE_ENV_FILE=profiles/smoke-qwen2.5-7b-npu1.env
   VLLM_ENGINE_AUTO_CREATE_CONTAINER=true

@@ -51,6 +51,7 @@ bash scripts/quickstart.sh
 这一路径现在会自动完成这些事情：
 
 - 可选地让你直接粘贴一个额外 SSH 公钥，并持久化到 `~/.ssh/vllm-ascend-extra-authorized_keys`
+- 提示录入唯一容器名；直接回车时默认使用“镜像 basename/tag + 当前登录用户名”
 - 在检测到宿主机 SSH 公钥材料时自动配置容器内 `sshd`
 - 自动对齐容器 SSH 用户和 `/workspace` 的 UID/GID，保证连上后能直接访问工作区
 - 当工作区同级仓库是指向 `/data/...` 的 symlink 时，自动补挂真实目标路径
@@ -81,7 +82,9 @@ bash scripts/ascend-official-container.sh shell
 
 说明：
 
-- 默认容器名是 `vllm-ascend-dev`
+- canonical 容器名变量是 `VLLM_ENGINE_CONTAINER_NAME`；旧的
+  `VLLM_ENGINE_CONTAINER` 在兼容期内仍可使用
+- 未显式配置容器名时，默认名由镜像 basename/tag 与当前登录用户名生成，并规范化为 Docker 合法名称
 - 默认会按交互提示选择合适的官方镜像，当前默认是 `quay.io/ascend/vllm-ascend:v0.17.0rc1` 家族（A3 / openEuler 会自动切换对应后缀）。只有在你需要固定 openEuler、A3 或回归验证其他版本时，才需要额外设置 `export IMAGE=...`。
 - 宿主机工作区根目录会挂载到容器内的 `/workspace`
 - 容器内的默认工作目录是 `/workspace/vllm-hust-dev-hub`

@@ -7,9 +7,16 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 HUB_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 WORKSPACE_ROOT="$(cd -- "$HUB_ROOT/.." && pwd)"
 MANAGER_SRC="${HUST_ASCEND_MANAGER_SRC:-$WORKSPACE_ROOT/ascend-runtime-manager/src}"
+CONTAINER_NAME_SCRIPT="$SCRIPT_DIR/container-name.sh"
+
+# shellcheck source=scripts/container-name.sh
+source "$CONTAINER_NAME_SCRIPT"
 
 IMAGE="${IMAGE:-}"
-CONTAINER_NAME="${CONTAINER_NAME:-vllm-ascend-dev}"
+if ! CONTAINER_NAME="$(configured_vllm_engine_container_name)"; then
+  CONTAINER_NAME="$(container_name_from_image_and_user "${IMAGE:-quay.io/ascend/vllm-ascend:v0.17.0rc1}" "$(id -un 2>/dev/null || printf '%s' "${USER:-user}")")"
+fi
+validate_docker_container_name "$CONTAINER_NAME"
 HOST_WORKSPACE_ROOT="${HOST_WORKSPACE_ROOT:-$WORKSPACE_ROOT}"
 CONTAINER_WORKSPACE_ROOT="${CONTAINER_WORKSPACE_ROOT:-/workspace}"
 CONTAINER_WORKDIR="${CONTAINER_WORKDIR:-$CONTAINER_WORKSPACE_ROOT/vllm-hust-dev-hub}"
@@ -41,6 +48,22 @@ find_python() {
   fi
   echo "python3 or python is required" >&2
   return 1
+}
+
+ensure_manager_module_available() {
+  local python_bin="$1"
+
+  if PYTHONPATH="$MANAGER_SRC${PYTHONPATH:+:$PYTHONPATH}" \
+    "$python_bin" -c 'import hust_ascend_manager.cli' >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ -f "$MANAGER_SRC/hust_ascend_manager/cli.py" ]]; then
+    fail "无法使用 $python_bin 导入 hust_ascend_manager；该管理器需要 Python 3.10+。请激活 quickstart 创建的 conda 环境后重试。"
+    return 1
+  fi
+
+  fail "找不到 hust_ascend_manager；预期源码位于 $MANAGER_SRC。请先运行 quickstart 选项 6，或设置 HUST_ASCEND_MANAGER_SRC。"
 }
 
 resolve_docker_cmd() {
@@ -329,6 +352,49 @@ maybe_enable_container_ssh() {
 
 main() {
   local action="${1:-install}"
+
+  case "$action" in
+    help|-h|--help)
+      cat <<'USAGE'
+Usage: ascend-official-container.sh [ACTION] [OPTIONS]
+
+Start, reuse, and enter the official Ascend vLLM container.
+
+Actions:
+  install     Pull image, create container, and enter shell (default)
+  start       Start an existing stopped container and enter shell
+  shell       Enter a running container
+  exec        Execute a command in the container
+  status      Show container status
+  stop        Stop the container
+  rm          Remove the container
+  pull        Pull the container image
+  ssh-enable  Enable SSH in the container
+  ssh-deploy  Deploy SSH keys and enable SSH
+  help        Show this help message
+
+Environment:
+  IMAGE                          Docker image (default:
+                                 quay.io/ascend/vllm-ascend:v0.17.0rc1)
+  VLLM_ENGINE_CONTAINER_NAME     Custom container name
+  VLLM_ENGINE_CONTAINER          (deprecated) Custom container name
+  CONTAINER_NAME                 Fallback container name
+  HOST_WORKSPACE_ROOT            Host workspace root
+  CONTAINER_WORKSPACE_ROOT       Container workspace root (default: /workspace)
+  CONTAINER_WORKDIR              Container working directory
+  HOST_CACHE_DIR                 Host cache directory (default: ~/.cache)
+  SHM_SIZE                       Shared memory size (default: 16g)
+  HUST_ASCEND_MANAGER_SRC        Path to hust_ascend_manager source
+  VLLM_HUST_AUTO_RELOCATE_DOCKER Auto-relocate Docker data root (default: 0)
+  VLLM_HUST_AUTO_ENABLE_CONTAINER_SSH
+                                 Auto-enable container SSH (default: 1)
+  DEFAULT_CONTAINER_SSH_USER     SSH user (default: shuhao)
+  DEFAULT_CONTAINER_SSH_PORT     SSH port (default: 2222)
+USAGE
+      return 0
+      ;;
+  esac
+
   local effective_action
   local suggested_private_key=""
   local python_bin
@@ -336,14 +402,7 @@ main() {
   local -a manager_cmd
 
   python_bin="$(find_python)"
-
-  case "$action" in
-    help|-h|--help)
-      PYTHONPATH="$MANAGER_SRC${PYTHONPATH:+:$PYTHONPATH}" \
-        "$python_bin" -m hust_ascend_manager.cli container -h
-      return 0
-      ;;
-  esac
+  ensure_manager_module_available "$python_bin"
 
   maybe_relocate_docker_data_root "$python_bin" "$action"
   effective_action="$(maybe_enable_container_ssh "$action")"

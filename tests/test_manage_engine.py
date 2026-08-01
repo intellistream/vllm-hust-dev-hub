@@ -8,6 +8,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANAGE_SCRIPT = REPO_ROOT / "manage.sh"
 ENGINE_SCRIPT = REPO_ROOT / "scripts" / "run_vllm_hust_engine.sh"
+CLEANUP_SCRIPT = REPO_ROOT / "scripts" / "cleanup_vllm_hust_engine.sh"
 ENV_TEMPLATE = REPO_ROOT / ".env.template"
 README = REPO_ROOT / "README.md"
 SMOKE_PROFILE = REPO_ROOT / "profiles" / "smoke-qwen2.5-7b-npu1.env"
@@ -15,10 +16,17 @@ SMOKE_PROFILE = REPO_ROOT / "profiles" / "smoke-qwen2.5-7b-npu1.env"
 
 class ManageEngineGuardTests(unittest.TestCase):
     def test_management_scripts_are_executable_and_syntax_valid(self) -> None:
-        for script in (MANAGE_SCRIPT, ENGINE_SCRIPT):
+        for script in (MANAGE_SCRIPT, ENGINE_SCRIPT, CLEANUP_SCRIPT):
             mode = script.stat().st_mode
             self.assertTrue(mode & stat.S_IXUSR, f"{script} should be executable")
             subprocess.run(["bash", "-n", str(script)], check=True)
+
+    def test_cleanup_error_documents_canonical_and_legacy_variables(self) -> None:
+        script = CLEANUP_SCRIPT.read_text()
+
+        self.assertIn("VLLM_ENGINE_CONTAINER_NAME", script)
+        self.assertIn("legacy fallbacks: VLLM_ENGINE_CONTAINER or DOCKER_CONTAINER", script)
+        self.assertIn("VLLM_ENGINE_PORT or PORT", script)
 
     def test_empty_api_key_fails_before_docker_access(self) -> None:
         env = os.environ.copy()
@@ -44,7 +52,7 @@ class ManageEngineGuardTests(unittest.TestCase):
     def test_env_template_exposes_host_managed_docker_knobs(self) -> None:
         template = ENV_TEMPLATE.read_text()
 
-        self.assertIn("VLLM_ENGINE_CONTAINER=vllm-ascend-dev", template)
+        self.assertIn("VLLM_ENGINE_CONTAINER_NAME=vllm-ascend-dev", template)
         self.assertIn("VLLM_ENGINE_AUTO_CREATE_CONTAINER=true", template)
         self.assertIn("VLLM_ENGINE_ENV_FILE=profiles/smoke-qwen2.5-7b-npu1.env", template)
         self.assertIn("VLLM_ENGINE_IMAGE=quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler", template)

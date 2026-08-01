@@ -31,7 +31,7 @@ if [[ -n "${VLLM_ENGINE_ENV_FILE:-}" ]]; then
   load_dotenv "$VLLM_ENGINE_ENV_FILE" true
 fi
 
-container="${VLLM_ENGINE_CONTAINER:-${DOCKER_CONTAINER:-vllm-ascend-dev}}"
+container="${VLLM_ENGINE_CONTAINER_NAME:-${VLLM_ENGINE_CONTAINER:-${DOCKER_CONTAINER:-vllm-ascend-dev}}}"
 container_image="${VLLM_ENGINE_IMAGE:-${IMAGE:-quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler}}"
 auto_create_container="${VLLM_ENGINE_AUTO_CREATE_CONTAINER:-true}"
 container_non_interactive="${VLLM_ENGINE_CONTAINER_NON_INTERACTIVE:-1}"
@@ -231,7 +231,7 @@ ensure_container_ready() {
 
   echo "[vllm-hust] container '$container' is absent or stopped; bootstrapping via dev-hub container manager."
   echo "[vllm-hust] image             = ${container_image:-auto-detect official Ascend image}"
-  CONTAINER_NAME="$container" \
+  VLLM_ENGINE_CONTAINER_NAME="$container" \
   IMAGE="$container_image" \
   VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE="$container_non_interactive" \
     "$repo_root/scripts/ascend-official-container.sh" start

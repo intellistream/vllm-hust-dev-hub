@@ -83,7 +83,7 @@ bash scripts/quickstart.sh
 
 这个流程会做以下事情：
 
-- 检测或创建 `vllm-ascend-dev` 容器
+- 提示录入容器名；直接回车时使用“镜像 basename/tag + 当前登录用户名”并自动规范化为 Docker 合法名称
 - 交互式选择官方镜像变体；未额外指定时默认从 `v0.17.0rc1` 家族中按设备和 OS 选型
 - 允许粘贴额外公钥，并保存到 `~/.ssh/vllm-ascend-extra-authorized_keys`
 - 在容器内安装并配置 `openssh-server`
@@ -94,6 +94,14 @@ bash scripts/quickstart.sh
 
 ```bash
 export IMAGE=quay.io/ascend/vllm-ascend:v0.17.0rc1-openeuler
+bash scripts/quickstart.sh
+```
+
+也可通过 canonical 环境变量跳过容器名提问；旧变量
+`VLLM_ENGINE_CONTAINER` 在兼容期内仍可使用：
+
+```bash
+export VLLM_ENGINE_CONTAINER_NAME=vllm-ascend-v0.17.0rc1-openeuler-gcw
 bash scripts/quickstart.sh
 ```
 
