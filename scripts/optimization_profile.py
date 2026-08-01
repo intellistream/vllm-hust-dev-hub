@@ -122,9 +122,7 @@ def build_environment(
     environment: dict[str, str] = {
         "VLLM_OPTIMIZATION_PROFILE": profile_id,
         "VLLM_OPTIMIZATION_REPO_CONTAINER": (
-            container_repo
-            or os.environ.get("VLLM_OPTIMIZATION_REPO_CONTAINER")
-            or f"/workspace/{repository}"
+            container_repo or f"/workspace/{repository}"
         ),
         "VLLM_OPTIMIZATION_SRC_SUBDIR": str(manifest.get("source_subdir") or ""),
         "VLLM_OPTIMIZATION_PLUGIN": plugin,
@@ -144,9 +142,7 @@ def build_environment(
         environment["VLLM_PLUGINS"] = ",".join(vllm_plugins)
 
     extra_keys = [str(item) for item in activation.get("extra_env_keys") or []]
-    extra_prefixes = [
-        str(item) for item in activation.get("extra_env_prefixes") or []
-    ]
+    extra_prefixes = [str(item) for item in activation.get("extra_env_prefixes") or []]
     if extra_keys:
         environment["VLLM_ENGINE_EXTRA_ENV_KEYS"] = merge_csv(
             os.environ.get("VLLM_ENGINE_EXTRA_ENV_KEYS", ""), extra_keys

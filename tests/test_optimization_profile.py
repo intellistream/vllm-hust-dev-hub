@@ -12,7 +12,12 @@ RESOLVER = REPO_ROOT / "scripts" / "optimization_profile.py"
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "optimization_manifests"
 
 
-def resolve(name: str, *parameters: str, env: dict[str, str] | None = None):
+def resolve(
+    name: str,
+    *parameters: str,
+    env: dict[str, str] | None = None,
+    container_repo: str | None = None,
+):
     command = [
         sys.executable,
         str(RESOLVER),
@@ -21,6 +26,8 @@ def resolve(name: str, *parameters: str, env: dict[str, str] | None = None):
         "--format",
         "json",
     ]
+    if container_repo is not None:
+        command.extend(("--container-repo", container_repo))
     for parameter in parameters:
         command.extend(("--param", parameter))
     result = subprocess.run(
@@ -77,6 +84,28 @@ def test_operator_environment_overrides_manifest_defaults() -> None:
 
     assert result.returncode == 0
     assert environment["BIDKV_UTILITY_ENABLE"] == "0"
+
+
+def test_profile_repository_ignores_stale_low_level_environment() -> None:
+    env = os.environ.copy()
+    env["VLLM_OPTIMIZATION_REPO_CONTAINER"] = "/workspace/stale-plugin"
+
+    result, environment = resolve("bidkv", env=env)
+
+    assert result.returncode == 0
+    assert (
+        environment["VLLM_OPTIMIZATION_REPO_CONTAINER"] == "/workspace/vllm-hust-bidkv"
+    )
+
+
+def test_explicit_container_repository_override_is_supported() -> None:
+    result, environment = resolve(
+        "bidkv",
+        container_repo="/opt/vllm-hust-bidkv",
+    )
+
+    assert result.returncode == 0
+    assert environment["VLLM_OPTIMIZATION_REPO_CONTAINER"] == "/opt/vllm-hust-bidkv"
 
 
 def test_multiple_profiles_fail_closed() -> None:

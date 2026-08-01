@@ -33,6 +33,12 @@ environment defaults. The manifest owns the exact `VLLM_PLUGINS` allowlist.
 Existing `VLLM_ENGINE_EXTRA_ARGS_JSON` entries are appended after profile
 arguments so explicit operator arguments remain last.
 
+A named profile also owns its repository path. A stale
+`VLLM_OPTIMIZATION_REPO_CONTAINER` from an earlier low-level launch cannot
+redirect the selected profile to another repository. The resolver's explicit
+`--container-repo` option remains available for controlled nonstandard
+container layouts.
+
 Each profile explicitly lists its vLLM plugins. This prevents an optimization
 left installed by an earlier run from being discovered accidentally when the
 operator switches profiles.
