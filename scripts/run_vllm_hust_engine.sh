@@ -65,12 +65,21 @@ fused_mc2="${VLLM_ASCEND_ENABLE_FUSED_MC2:-1}"
 optimization_repo_container="${VLLM_OPTIMIZATION_REPO_CONTAINER:-}"
 optimization_src_subdir="${VLLM_OPTIMIZATION_SRC_SUBDIR:-src}"
 optimization_plugin="${VLLM_OPTIMIZATION_PLUGIN:-}"
+optimization_entrypoint_group="${VLLM_OPTIMIZATION_ENTRYPOINT_GROUP:-vllm.general_plugins}"
+optimization_auto_install="${VLLM_OPTIMIZATION_AUTO_INSTALL:-true}"
+optimization_entrypoint_probe="$(<"$repo_root/scripts/check_optimization_entrypoint.py")"
 optimization_env_prefix="${VLLM_OPTIMIZATION_ENV_PREFIX:-}"
 plugins="${VLLM_PLUGINS:-}"
 if [[ -z "$plugins" ]]; then
   plugins="ascend"
-  if [[ -n "$optimization_plugin" ]]; then
-    plugins="${plugins},${optimization_plugin}"
+elif [[ ",$plugins," != *",ascend,"* ]]; then
+  plugins="ascend,${plugins}"
+fi
+if [[ -n "$optimization_plugin" ]]; then
+  if [[ "$optimization_entrypoint_group" == "vllm.general_plugins" || "$optimization_entrypoint_group" == "vllm.platform_plugins" ]]; then
+    if [[ ",$plugins," != *",$optimization_plugin,"* ]]; then
+      plugins="${plugins},${optimization_plugin}"
+    fi
   fi
 fi
 engine_base_pythonpath="${VLLM_ENGINE_BASE_PYTHONPATH-/workspace/vllm-hust:/workspace/vllm-ascend-hust}"
@@ -320,6 +329,10 @@ CONDA_ENV="__CONDA_ENV__"
 CONDA_PREFIX_OVERRIDE="__CONDA_PREFIX__"
 ENGINE_PYTHON="__ENGINE_PYTHON__"
 ENGINE_PYTHON_OVERRIDE="$ENGINE_PYTHON"
+OPTIMIZATION_REPO="__OPTIMIZATION_REPO__"
+OPTIMIZATION_PLUGIN="__OPTIMIZATION_PLUGIN__"
+OPTIMIZATION_ENTRYPOINT_GROUP="__OPTIMIZATION_ENTRYPOINT_GROUP__"
+OPTIMIZATION_AUTO_INSTALL="__OPTIMIZATION_AUTO_INSTALL__"
 if [[ -n "$CONDA_PREFIX_OVERRIDE" ]]; then
   export CONDA_PREFIX="$CONDA_PREFIX_OVERRIDE"
   export PATH="$CONDA_PREFIX/bin:$PATH"
@@ -342,6 +355,38 @@ if [[ -n "$ENGINE_PYTHON" ]]; then
   fi
 else
   ENGINE_PYTHON="$(command -v python3)"
+fi
+
+optimization_plugin_installed() {
+  "$ENGINE_PYTHON" - "$OPTIMIZATION_ENTRYPOINT_GROUP" "$OPTIMIZATION_PLUGIN" <<'PY'
+__OPTIMIZATION_ENTRYPOINT_PROBE__
+PY
+}
+
+if [[ -n "$OPTIMIZATION_REPO" || -n "$OPTIMIZATION_PLUGIN" ]]; then
+  if [[ -z "$OPTIMIZATION_REPO" || -z "$OPTIMIZATION_PLUGIN" ]]; then
+    echo "ERROR: VLLM_OPTIMIZATION_REPO_CONTAINER and VLLM_OPTIMIZATION_PLUGIN must be set together." >&2
+    exit 1
+  fi
+  if [[ ! -d "$OPTIMIZATION_REPO" ]]; then
+    echo "ERROR: optimization repository is not mounted in the container: $OPTIMIZATION_REPO" >&2
+    exit 1
+  fi
+  if ! optimization_plugin_installed; then
+    if [[ "$OPTIMIZATION_AUTO_INSTALL" == "true" || "$OPTIMIZATION_AUTO_INSTALL" == "1" ]]; then
+      echo "[container] installing optimization plugin from $OPTIMIZATION_REPO"
+      "$ENGINE_PYTHON" -m pip install -e "$OPTIMIZATION_REPO" --no-deps
+    else
+      echo "ERROR: optimization entry point $OPTIMIZATION_ENTRYPOINT_GROUP:$OPTIMIZATION_PLUGIN is not installed." >&2
+      echo "Enable VLLM_OPTIMIZATION_AUTO_INSTALL or install the repository into the engine Python environment." >&2
+      exit 1
+    fi
+  fi
+  if ! optimization_plugin_installed; then
+    echo "ERROR: optimization installation did not register $OPTIMIZATION_ENTRYPOINT_GROUP:$OPTIMIZATION_PLUGIN" >&2
+    exit 1
+  fi
+  echo "[container] verified optimization entry point: $OPTIMIZATION_ENTRYPOINT_GROUP:$OPTIMIZATION_PLUGIN"
 fi
 
 if [[ -f /usr/local/Ascend/ascend-toolkit/set_env.sh ]]; then
@@ -514,6 +559,11 @@ replace() {
 replace "__CONDA_ENV__" "$conda_env"
 replace "__CONDA_PREFIX__" "$conda_prefix"
 replace "__ENGINE_PYTHON__" "$engine_python"
+replace "__OPTIMIZATION_REPO__" "$optimization_repo_container"
+replace "__OPTIMIZATION_PLUGIN__" "$optimization_plugin"
+replace "__OPTIMIZATION_ENTRYPOINT_GROUP__" "$optimization_entrypoint_group"
+replace "__OPTIMIZATION_AUTO_INSTALL__" "$optimization_auto_install"
+replace "__OPTIMIZATION_ENTRYPOINT_PROBE__" "$optimization_entrypoint_probe"
 replace "__EXTRA_ENV_EXPORTS__" "$extra_env_exports"
 replace "__CONTAINER_LOG_FILE__" "$container_log_file"
 replace "__TARGET_DEVICE__" "$target_device"

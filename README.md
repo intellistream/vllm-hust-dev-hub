@@ -319,21 +319,40 @@ export VLLM_ENGINE_PYTHON=/usr/local/python3.12.13/bin/python
 export VLLM_OPTIMIZATION_REPO_CONTAINER=/workspace/<repo-name>
 export VLLM_OPTIMIZATION_SRC_SUBDIR=src
 export VLLM_OPTIMIZATION_PLUGIN=<plugin-entrypoint-name>
+export VLLM_OPTIMIZATION_ENTRYPOINT_GROUP=vllm.general_plugins
+export VLLM_OPTIMIZATION_AUTO_INSTALL=true
 export VLLM_OPTIMIZATION_ENV_PREFIX=<PLUGIN_PREFIX>_
 export <PLUGIN_PREFIX>_ENABLE=1
 
 ./manage.sh restart
 ```
 
-The launcher builds `PYTHONPATH` from:
+The launcher installs the repository into `VLLM_ENGINE_PYTHON` in editable,
+`--no-deps` mode when the requested entry point is missing, then verifies the
+exact entry-point group and name before starting vLLM. Set
+`VLLM_OPTIMIZATION_AUTO_INSTALL=false` to require a preinstalled package.
+
+For BidKV, use:
+
+```bash
+export VLLM_OPTIMIZATION_REPO_CONTAINER=/workspace/vllm-hust-bidkv
+export VLLM_OPTIMIZATION_PLUGIN=bidkv
+export VLLM_OPTIMIZATION_ENTRYPOINT_GROUP=vllm.victim_selector
+export VLLM_OPTIMIZATION_ENV_PREFIX=BIDKV_UTILITY_
+export BIDKV_UTILITY_ENABLE=1
+```
+
+The launcher also builds `PYTHONPATH` from:
 
 - `$VLLM_OPTIMIZATION_REPO_CONTAINER/src`
 - `$VLLM_OPTIMIZATION_REPO_CONTAINER`
 - `VLLM_ENGINE_BASE_PYTHONPATH`
 
-It also sets `VLLM_PLUGINS=ascend,<plugin>` when `VLLM_PLUGINS` is not
-explicitly provided. Use `VLLM_ENGINE_PYTHONPATH` or `VLLM_PLUGINS` only when
-you need full manual control.
+For `vllm.general_plugins` and `vllm.platform_plugins`, it adds the optimization
+plugin to `VLLM_PLUGINS`. This Ascend launcher always retains `ascend`, even
+when a caller provides an explicit plugin filter. Custom groups such as
+`vllm.victim_selector` are selected by their owning runtime component and are
+not added to `VLLM_PLUGINS`.
 
 ### Sync into an Offline Container
 
