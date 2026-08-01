@@ -58,6 +58,14 @@ Actions:
 
 Flags:
   --json       JSON output for status/health
+  --optimization <profile>
+               Load a sibling repository's .vllm-hust/optimization.json
+  --draft-model <path>
+               Convenience parameter for the diffspec profile
+  --offload-gb <GiB>
+               Convenience parameter for the latchmoe profile
+  --optimization-param <name=value>
+               Pass a manifest-declared profile parameter
 
 Required .env:
   VLLM_HUST_API_KEY=<real non-EMPTY key>
@@ -94,13 +102,49 @@ fi
 action="$1"
 shift
 json_output=false
-for arg in "$@"; do
-  case "$arg" in
-    --json) json_output=true ;;
+optimization_profile="${VLLM_OPTIMIZATION_PROFILE:-}"
+optimization_params=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --json) json_output=true; shift ;;
+    --optimization)
+      [[ $# -ge 2 ]] || { echo "--optimization requires a profile" >&2; exit 1; }
+      optimization_profile="$2"
+      shift 2
+      ;;
+    --draft-model)
+      [[ $# -ge 2 ]] || { echo "--draft-model requires a path" >&2; exit 1; }
+      optimization_params+=("draft_model=$2")
+      shift 2
+      ;;
+    --offload-gb)
+      [[ $# -ge 2 ]] || { echo "--offload-gb requires a value" >&2; exit 1; }
+      optimization_params+=("offload_gb=$2")
+      shift 2
+      ;;
+    --optimization-param)
+      [[ $# -ge 2 ]] || { echo "--optimization-param requires name=value" >&2; exit 1; }
+      optimization_params+=("$2")
+      shift 2
+      ;;
     -h|--help) usage; exit 0 ;;
-    *) echo "Unknown flag: $arg" >&2; usage >&2; exit 1 ;;
+    *) echo "Unknown flag: $1" >&2; usage >&2; exit 1 ;;
   esac
 done
+
+if [[ -n "$optimization_profile" ]]; then
+  profile_command=(
+    python3 "$repo_root/scripts/optimization_profile.py"
+    --profile "$optimization_profile"
+    --workspace-root "$repo_root/.."
+  )
+  for parameter in "${optimization_params[@]}"; do
+    profile_command+=(--param "$parameter")
+  done
+  profile_exports="$("${profile_command[@]}")"
+  eval "$profile_exports"
+  echo "[vllm-hust] optimization profile = $VLLM_OPTIMIZATION_PROFILE"
+fi
 
 write_unit_environment() {
   python3 - "$unit_env_path" <<'PY'
