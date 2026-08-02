@@ -48,10 +48,29 @@ operator switches profiles.
 1. `manage.sh` resolves the named manifest from sibling repositories.
 2. The resolver produces the generic `VLLM_OPTIMIZATION_*` contract.
 3. The systemd environment records the resolved configuration.
-4. The engine launcher installs the repository into `VLLM_ENGINE_PYTHON` when
-   the exact entry point is absent.
+4. When the exact entry point is absent, `VLLM_ENGINE_PYTHON` installs a
+   repository snapshot into a launch-unique, container-local target. The
+   engine prefix is never mutated and the target is removed when the service
+   exits. Persistent pip caching is disabled for this transient installation.
 5. Startup fails if installation does not register the declared group/name.
 6. vLLM starts with the manifest's activation environment and arguments.
+
+## Reproducible integration workspace
+
+Before collecting container or NPU evidence, verify the exact three Draft PR
+commits and require clean worktrees:
+
+```bash
+python3 scripts/verify_optimization_workspace.py \
+  --workspace-root /workspace \
+  --core-sha <core-pr-head> \
+  --dev-hub-sha <dev-hub-pr-head> \
+  --bidkv-sha <bidkv-pr-head> \
+  --output /workspace/evidence/optimization-workspace.json
+```
+
+The command fails closed on a SHA mismatch or dirty repository and records the
+resolved paths, branches, expected SHAs, actual SHAs, and cleanliness state.
 
 ## Compatibility policy
 

@@ -68,6 +68,7 @@ optimization_plugin="${VLLM_OPTIMIZATION_PLUGIN:-}"
 optimization_entrypoint_group="${VLLM_OPTIMIZATION_ENTRYPOINT_GROUP:-vllm.general_plugins}"
 optimization_auto_install="${VLLM_OPTIMIZATION_AUTO_INSTALL:-true}"
 optimization_entrypoint_probe="$(<"$repo_root/scripts/check_optimization_entrypoint.py")"
+optimization_installer="$(<"$repo_root/scripts/prepare_optimization_plugin.py")"
 optimization_env_prefix="${VLLM_OPTIMIZATION_ENV_PREFIX:-}"
 plugins="${VLLM_PLUGINS:-}"
 if [[ -z "$plugins" ]]; then
@@ -333,6 +334,14 @@ OPTIMIZATION_REPO="__OPTIMIZATION_REPO__"
 OPTIMIZATION_PLUGIN="__OPTIMIZATION_PLUGIN__"
 OPTIMIZATION_ENTRYPOINT_GROUP="__OPTIMIZATION_ENTRYPOINT_GROUP__"
 OPTIMIZATION_AUTO_INSTALL="__OPTIMIZATION_AUTO_INSTALL__"
+OPTIMIZATION_INSTALL_TARGET="__OPTIMIZATION_INSTALL_TARGET__"
+OPTIMIZATION_INSTALL_DIR=""
+cleanup_optimization_install() {
+  if [[ -n "$OPTIMIZATION_INSTALL_DIR" ]]; then
+    rm -rf -- "$OPTIMIZATION_INSTALL_DIR"
+  fi
+}
+trap cleanup_optimization_install EXIT
 if [[ -n "$CONDA_PREFIX_OVERRIDE" ]]; then
   export CONDA_PREFIX="$CONDA_PREFIX_OVERRIDE"
   export PATH="$CONDA_PREFIX/bin:$PATH"
@@ -372,15 +381,19 @@ if [[ -n "$OPTIMIZATION_REPO" || -n "$OPTIMIZATION_PLUGIN" ]]; then
     echo "ERROR: optimization repository is not mounted in the container: $OPTIMIZATION_REPO" >&2
     exit 1
   fi
-  if ! optimization_plugin_installed; then
-    if [[ "$OPTIMIZATION_AUTO_INSTALL" == "true" || "$OPTIMIZATION_AUTO_INSTALL" == "1" ]]; then
-      echo "[container] installing optimization plugin from $OPTIMIZATION_REPO"
-      "$ENGINE_PYTHON" -m pip install -e "$OPTIMIZATION_REPO" --no-deps
-    else
-      echo "ERROR: optimization entry point $OPTIMIZATION_ENTRYPOINT_GROUP:$OPTIMIZATION_PLUGIN is not installed." >&2
-      echo "Enable VLLM_OPTIMIZATION_AUTO_INSTALL or install the repository into the engine Python environment." >&2
-      exit 1
-    fi
+  OPTIMIZATION_INSTALL_DIR="$(
+    "$ENGINE_PYTHON" - \
+      --repo "$OPTIMIZATION_REPO" \
+      --group "$OPTIMIZATION_ENTRYPOINT_GROUP" \
+      --name "$OPTIMIZATION_PLUGIN" \
+      --auto-install "$OPTIMIZATION_AUTO_INSTALL" \
+      --target "$OPTIMIZATION_INSTALL_TARGET" <<'PY'
+__OPTIMIZATION_INSTALLER__
+PY
+  )"
+  if [[ -n "$OPTIMIZATION_INSTALL_DIR" ]]; then
+    export PYTHONPATH="$OPTIMIZATION_INSTALL_DIR:${PYTHONPATH:-}"
+    echo "[container] installed optimization plugin with $ENGINE_PYTHON into isolated target $OPTIMIZATION_INSTALL_DIR"
   fi
   if ! optimization_plugin_installed; then
     echo "ERROR: optimization installation did not register $OPTIMIZATION_ENTRYPOINT_GROUP:$OPTIMIZATION_PLUGIN" >&2
@@ -546,7 +559,28 @@ PY
   args+=("${extra_args[@]}")
 fi
 
-exec "${args[@]}"
+engine_pid=""
+forward_engine_signal() {
+  local signal="$1"
+  if [[ -n "$engine_pid" ]]; then
+    kill "-$signal" -- "-$engine_pid" 2>/dev/null || true
+  fi
+}
+trap 'forward_engine_signal TERM' TERM
+trap 'forward_engine_signal INT' INT
+
+setsid "${args[@]}" &
+engine_pid=$!
+set +e
+wait "$engine_pid"
+engine_rc=$?
+set -e
+if [[ "$engine_rc" -ne 0 ]]; then
+  kill -TERM -- "-$engine_pid" 2>/dev/null || true
+  sleep 1
+  kill -KILL -- "-$engine_pid" 2>/dev/null || true
+fi
+exit "$engine_rc"
 BASH
 )
 
@@ -564,6 +598,7 @@ replace "__OPTIMIZATION_PLUGIN__" "$optimization_plugin"
 replace "__OPTIMIZATION_ENTRYPOINT_GROUP__" "$optimization_entrypoint_group"
 replace "__OPTIMIZATION_AUTO_INSTALL__" "$optimization_auto_install"
 replace "__OPTIMIZATION_ENTRYPOINT_PROBE__" "$optimization_entrypoint_probe"
+replace "__OPTIMIZATION_INSTALLER__" "$optimization_installer"
 replace "__EXTRA_ENV_EXPORTS__" "$extra_env_exports"
 replace "__CONTAINER_LOG_FILE__" "$container_log_file"
 replace "__TARGET_DEVICE__" "$target_device"
@@ -593,8 +628,48 @@ replace "__EXPERT_PARALLEL__" "$expert_parallel"
 replace "__QUANTIZATION__" "$quantization"
 
 tmp_host_script="$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/vllm-hust-engine.XXXXXX.sh")"
+launch_id="$(basename "$tmp_host_script" .sh)"
+optimization_install_target="/tmp/${launch_id}.optimization"
+optimization_source_snapshot="/tmp/.${launch_id}.optimization.source"
+replace "__OPTIMIZATION_INSTALL_TARGET__" "$optimization_install_target"
+container_script=""
+cleanup_container_launch() {
+  [[ -n "$container_script" ]] || return 0
+  "${docker_cmd[@]}" exec "$container" sh -c '
+script="$1"
+target="$2"
+snapshot="$3"
+port="$4"
+self=$$
+case "$script" in /tmp/vllm-hust-engine.*.sh) ;; *) exit 64 ;; esac
+case "$target" in /tmp/vllm-hust-engine.*.optimization) ;; *) exit 64 ;; esac
+case "$snapshot" in /tmp/.vllm-hust-engine.*.optimization.source) ;; *) exit 64 ;; esac
+
+pids="$(ps -eo pid=,args= | awk -v self="$self" -v script="$script" -v target="$target" -v port="$port" '\''
+  $1 != self && (index($0, script) || index($0, target) ||
+    ($0 ~ /vllm/ && $0 ~ / serve / &&
+      ($0 ~ ("--port " port) || $0 ~ ("--port=" port)))) { print $1 }
+'\'')"
+for _ in 1 2 3 4 5; do
+  descendants=""
+  for parent in $pids; do
+    children="$(ps -eo pid=,ppid= | awk -v parent="$parent" '\''$2 == parent { print $1 }'\'')"
+    descendants="$descendants $children"
+  done
+  pids="$pids $descendants"
+done
+if [ -n "$pids" ]; then
+  kill $pids 2>/dev/null || true
+  sleep 1
+  kill -9 $pids 2>/dev/null || true
+fi
+rm -rf -- "$script" "$target" "$snapshot"
+' sh "$container_script" "$optimization_install_target" \
+    "$optimization_source_snapshot" "$port" >/dev/null 2>&1 || true
+}
 cleanup() {
   rm -f "$tmp_host_script"
+  cleanup_container_launch
 }
 trap cleanup EXIT
 
@@ -604,7 +679,8 @@ chmod +x "$tmp_host_script"
 container_script="/tmp/$(basename "$tmp_host_script")"
 "${docker_cmd[@]}" cp "$tmp_host_script" "$container:$container_script"
 
-exec "${docker_cmd[@]}" exec \
+set +e
+"${docker_cmd[@]}" exec \
   --env "VLLM_TARGET_DEVICE=$target_device" \
   --env "ASCEND_RT_VISIBLE_DEVICES=$npu_devices" \
   --env "ASCEND_VISIBLE_DEVICES=$npu_devices" \
@@ -612,3 +688,7 @@ exec "${docker_cmd[@]}" exec \
   --env "VLLM_ENGINE_EXTRA_ARGS_JSON=${VLLM_ENGINE_EXTRA_ARGS_JSON:-}" \
   --env "VLLM_USE_SIMPLE_KV_OFFLOAD=$simple_kv_offload" \
   "$container" bash "$container_script"
+engine_rc=$?
+set -e
+
+exit "$engine_rc"

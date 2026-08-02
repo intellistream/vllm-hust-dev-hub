@@ -14,7 +14,9 @@ ENV_TEMPLATE = REPO_ROOT / ".env.template"
 README = REPO_ROOT / "README.md"
 SMOKE_PROFILE = REPO_ROOT / "profiles" / "smoke-qwen2.5-7b-npu1.env"
 ENTRYPOINT_PROBE = REPO_ROOT / "scripts" / "check_optimization_entrypoint.py"
+OPTIMIZATION_INSTALLER = REPO_ROOT / "scripts" / "prepare_optimization_plugin.py"
 OPTIMIZATION_PLUGIN_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "optimization_plugins"
+NPU_FAILURE_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "npu_allocating_failure.py"
 
 
 class ManageEngineGuardTests(unittest.TestCase):
@@ -171,12 +173,25 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("optimization_src_subdir", script)
         self.assertIn("optimization_entrypoint_group", script)
         self.assertIn("optimization_plugin_installed", script)
-        self.assertIn('pip install -e "$OPTIMIZATION_REPO" --no-deps', script)
+        self.assertIn("prepare_optimization_plugin.py", OPTIMIZATION_INSTALLER.name)
+        self.assertIn("OPTIMIZATION_INSTALL_TARGET", script)
+        self.assertIn("cleanup_optimization_install", script)
+        self.assertIn("cleanup_container_launch", script)
+        self.assertIn("optimization_source_snapshot", script)
+        self.assertIn('export PYTHONPATH="$OPTIMIZATION_INSTALL_DIR', script)
         self.assertIn("installation did not register", script)
         self.assertIn("engine_base_pythonpath", script)
         self.assertIn('plugins="ascend,${plugins}"', script)
         self.assertIn('plugins="${plugins},${optimization_plugin}"', script)
         self.assertIn('[[ ",$plugins," != *",$optimization_plugin,"* ]]', script)
+
+    def test_npu_failure_fixture_is_explicit_and_bounded(self) -> None:
+        fixture = NPU_FAILURE_FIXTURE.read_text()
+
+        self.assertIn("VLLM_TEST_NPU_ALLOCATION_READY", fixture)
+        self.assertIn("VLLM_TEST_NPU_ALLOCATION_MIB", fixture)
+        self.assertIn("VLLM_TEST_NPU_HOLD_SECONDS", fixture)
+        self.assertIn("raise SystemExit(42)", fixture)
 
     def test_entrypoint_probe_matches_exact_group_and_name(self) -> None:
         env = os.environ.copy()
