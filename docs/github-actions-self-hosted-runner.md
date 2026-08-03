@@ -84,6 +84,51 @@ bash scripts/setup-github-actions-runner.sh stop
 bash scripts/setup-github-actions-runner.sh restart
 ```
 
+## NPU 作业结束后的显存清理
+
+普通 GitHub Actions 进程清理依赖 runner tracking 环境变量。vLLM 等加速器
+worker 在异常退出或作业取消时可能脱离 `Runner.Worker`，从而在作业结束后继续
+占用 NPU 显存。NPU runner 应配置仓库内的 completed-job hook：
+
+```bash
+install -m 0755 \
+  scripts/ci/cleanup_runner_npu_processes.py \
+  "$GITHUB_RUNNER_DIR/job-completed-npu-cleanup.py"
+install -m 0755 \
+  scripts/ci/job-completed-npu-cleanup.sh \
+  "$GITHUB_RUNNER_DIR/job-completed-npu-cleanup.sh"
+
+cat >> "$GITHUB_RUNNER_DIR/.env" <<EOF
+ACTIONS_RUNNER_HOOK_JOB_COMPLETED=$GITHUB_RUNNER_DIR/job-completed-npu-cleanup.sh
+RUNNER_NAME=<registered-runner-name>
+RUNNER_NPU_DEVICES=<physical-device-ids，例如 2,3>
+EOF
+```
+
+GitHub Actions Runner 的 completed hook 只接受 `.sh`、`.ps1` 或 `.js`；Python
+清理逻辑必须由上面的 `.sh` wrapper 调用，不能把 `.py` 路径直接写入 `.env`。
+
+修改 `.env` 后必须重启 runner。钩子会在作业成功、失败或取消后的 completed-job
+阶段执行，并完成两类清理：
+
+- 删除带有 `org.vllm-hust.runner=<registered-runner-name>` 标签的作业子容器；
+- 对指定物理 NPU 上、且在 runner PID namespace 内仍可见的残留进程先发送
+  `SIGTERM`，超时后再发送 `SIGKILL`。
+
+可在不执行清理的情况下核对识别结果：
+
+```bash
+RUNNER_NAME=<registered-runner-name> \
+RUNNER_NPU_DEVICES=<physical-device-ids> \
+"$GITHUB_RUNNER_DIR/job-completed-npu-cleanup.sh" --dry-run
+```
+
+宿主机 watchdog 作为第二道兜底时，不应仅根据显存用量判断污染。对合法 runner
+容器内的进程，只有同时满足以下条件才能清理：GitHub 连续确认 runner 为
+`online + busy=false` 并超过空闲宽限期、本地不存在 `Runner.Worker`、cgroup 与
+物理设备映射属于该 runner。GitHub 或本地状态无法确认时必须失败关闭，不执行
+清理。这样可避免把正常运行中的多卡作业误判为污染。
+
 ## 自定义安装目录或 runner 名称
 
 ```bash
