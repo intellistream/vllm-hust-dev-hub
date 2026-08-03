@@ -50,11 +50,19 @@ for _ in 1 2 3; do
       }
     }
   '"'"' | tr "\n" " ")"
-  launchers="$(ps -eo pid=,args= | awk '"'"'
-    /bash \/tmp\/vllm-hust-engine\.[A-Za-z0-9]+\.sh/ {
-      print $1
-    }
-  '"'"' | tr "\n" " ")"
+  launchers="$(
+    ps -eo pid=,args= | while read -r launcher_pid launcher_args; do
+      case "$launcher_args" in
+        bash\ /tmp/vllm-hust-engine.*.sh*)
+          launcher_script=${launcher_args#bash }
+          launcher_script=${launcher_script%% *}
+          if [ -r "$launcher_script" ] && grep -Fq -- "--port \"$port\"" "$launcher_script"; then
+            printf "%s " "$launcher_pid"
+          fi
+          ;;
+      esac
+    done
+  )"
   matches="$matches $launchers"
   if [ "${VLLM_ENGINE_AGGRESSIVE_CLEANUP:-0}" = "1" ] || [ "${VLLM_ENGINE_AGGRESSIVE_CLEANUP:-false}" = "true" ]; then
     orphans="$(ps -eo pid=,args= | awk '"'"'
