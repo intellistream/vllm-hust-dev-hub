@@ -19,8 +19,13 @@ load_dotenv() {
     local key="${line%%=*}"
     key="${key// /}"
     [[ -z "$key" ]] && continue
-    [[ "$overwrite" != "true" && -n "${!key:-}" ]] && continue
-    export "$line"
+    if [[ "$overwrite" == "true" ]]; then
+      export "$line"
+      continue
+    fi
+    if [[ "${!key+x}" != "x" ]]; then
+      export "$line"
+    fi
   done < "$env_file"
 }
 
@@ -184,6 +189,7 @@ if [[ -z "$npu_devices" ]]; then
   exit 1
 fi
 runtime_visible_devices="${VLLM_ENGINE_RUNTIME_VISIBLE_DEVICES:-$npu_devices}"
+host_visible_devices="${VLLM_ENGINE_HOST_VISIBLE_NPU_DEVICES:-$npu_devices}"
 
 docker_cmd=(docker)
 if ! command -v docker >/dev/null 2>&1; then
@@ -235,6 +241,8 @@ ensure_container_ready() {
   CONTAINER_NAME="$container" \
   IMAGE="$container_image" \
   VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE="$container_non_interactive" \
+  ASCEND_RT_VISIBLE_DEVICES="$host_visible_devices" \
+  ASCEND_VISIBLE_DEVICES="$host_visible_devices" \
     "$repo_root/scripts/ascend-official-container.sh" start
 
   if ! container_is_running; then
