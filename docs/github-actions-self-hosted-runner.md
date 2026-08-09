@@ -129,6 +129,33 @@ RUNNER_NPU_DEVICES=<physical-device-ids> \
 物理设备映射属于该 runner。GitHub 或本地状态无法确认时必须失败关闭，不执行
 清理。这样可避免把正常运行中的多卡作业误判为污染。
 
+## Benchmark runner 的持久模型缓存
+
+运行真实模型 benchmark 的容器化 runner 应把宿主机上的缓存目录以读写方式
+挂载到固定容器路径。例如，当前 Ascend benchmark runner 使用：
+
+```text
+宿主机：/data/cache/huggingface
+容器内：/root/.cache/huggingface
+挂载模式：rw
+```
+
+同时在 runner 安装目录的 `.env` 中显式写入：
+
+```bash
+HF_HOME=/root/.cache/huggingface
+HF_HUB_CACHE=/root/.cache/huggingface/hub
+```
+
+修改 `.env` 后必须等待 runner 在 GitHub 上显示 `online + busy=false`，并确认
+容器内不存在 `Runner.Worker`，再滚动重启 runner。不要为了使缓存配置生效而
+中断正在运行的 benchmark。
+
+多个 runner 可以共享同一宿主机 Hugging Face Hub 缓存；Hugging Face 的 blob、
+snapshot 和 lock 布局会避免为同一 revision 保存多份完整权重。预置模型时必须
+核对 snapshot 中 tokenizer、config、权重索引以及全部 safetensors 分片均存在，
+不能只根据缓存目录或部分 blob 已创建就判断下载完成。
+
 ## 自定义安装目录或 runner 名称
 
 ```bash
