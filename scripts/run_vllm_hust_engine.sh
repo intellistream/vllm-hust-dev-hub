@@ -49,6 +49,7 @@ dtype="${VLLM_ENGINE_DTYPE:-${DTYPE:-bfloat16}}"
 load_format="${VLLM_ENGINE_LOAD_FORMAT:-${LOAD_FORMAT:-auto}}"
 quantization="${VLLM_ENGINE_QUANTIZATION:-${QUANTIZATION:-}}"
 compilation_config="${VLLM_ENGINE_COMPILATION_CONFIG:-}"
+vllm_compat_version="${VLLM_ENGINE_VLLM_VERSION:-}"
 vllm_bin="${VLLM_ENGINE_BIN:-vllm-hust}"
 vllm_script="${VLLM_ENGINE_SCRIPT:-}"
 conda_prefix="${VLLM_ENGINE_CONDA_PREFIX:-}"
@@ -73,6 +74,7 @@ if [[ -z "$plugins" ]]; then
     plugins="${plugins},${optimization_plugin}"
   fi
 fi
+container_workspace_root="${CONTAINER_WORKSPACE_ROOT:-/workspace}"
 engine_base_pythonpath="${VLLM_ENGINE_BASE_PYTHONPATH-/workspace/vllm-hust:/workspace/vllm-ascend-hust}"
 pythonpath="${VLLM_ENGINE_PYTHONPATH:-}"
 if [[ -z "$pythonpath" ]]; then
@@ -177,12 +179,11 @@ fi
 
 npu_devices="${VLLM_ENGINE_NPU_DEVICES:-${ASCEND_RT_VISIBLE_DEVICES:-}}"
 if [[ -z "$npu_devices" ]]; then
-  if (( tp_size > 1 )); then
-    npu_devices="$(seq -s, 0 $((tp_size - 1)))"
-  else
-    npu_devices="0"
-  fi
+  echo "ERROR: VLLM_ENGINE_NPU_DEVICES or ASCEND_RT_VISIBLE_DEVICES must be set." >&2
+  echo "Select devices through the deployment profile; the launcher does not choose physical NPUs." >&2
+  exit 1
 fi
+runtime_visible_devices="${VLLM_ENGINE_RUNTIME_VISIBLE_DEVICES:-$npu_devices}"
 
 docker_cmd=(docker)
 if ! command -v docker >/dev/null 2>&1; then
@@ -251,6 +252,7 @@ echo "[vllm-hust] served_model_name = $served_model_name"
 echo "[vllm-hust] host:port         = $host:$port"
 echo "[vllm-hust] tp_size           = $tp_size"
 echo "[vllm-hust] npu_devices       = $npu_devices"
+echo "[vllm-hust] runtime_devices   = $runtime_visible_devices"
 echo "[vllm-hust] max_model_len     = $max_model_len"
 echo "[vllm-hust] max_num_seqs      = $max_num_seqs"
 echo "[vllm-hust] prefix_cache      = $enable_prefix_caching"
@@ -260,6 +262,9 @@ if [[ -n "$compilation_config" ]]; then
   echo "[vllm-hust] compilation_config = set"
 fi
 echo "[vllm-hust] plugins          = $plugins"
+if [[ -n "$vllm_compat_version" ]]; then
+  echo "[vllm-hust] vllm_compat      = $vllm_compat_version"
+fi
 
 if [[ "$replace_existing" == "true" ]]; then
 cleanup_script='
@@ -374,6 +379,51 @@ export COMPILE_CUSTOM_KERNELS="${COMPILE_CUSTOM_KERNELS:-1}"
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
 export PYTHONPATH="__PYTHONPATH__:${PYTHONPATH:-}"
+if [[ -n "__VLLM_VERSION__" ]]; then
+  export VLLM_VERSION="__VLLM_VERSION__"
+fi
+
+repair_editable_imports() {
+  local workspace_root="$1"
+  local site_roots
+  local root
+  local finder_file
+
+  if [[ -z "$workspace_root" ]]; then
+    workspace_root="/workspace"
+  fi
+  site_roots="$("$ENGINE_PYTHON" - <<'PY'
+import site
+for path in site.getsitepackages():
+    if "site-packages" in path:
+        print(path)
+PY
+)"
+
+  for root in $site_roots; do
+    for finder_file in "$root"/__editable___vllm*_finder.py; do
+      [[ -f "$finder_file" ]] || continue
+      "$ENGINE_PYTHON" - "$finder_file" "$workspace_root" <<'PY'
+import pathlib
+import sys
+
+finder_file = pathlib.Path(sys.argv[1])
+workspace_root = sys.argv[2].rstrip("/")
+text = finder_file.read_text()
+text = text.replace(
+    "/vllm-workspace/vllm/vllm", f"{workspace_root}/vllm-hust/vllm"
+)
+text = text.replace(
+    "/vllm-workspace/vllm-ascend/vllm_ascend",
+    f"{workspace_root}/vllm-ascend-hust/vllm_ascend",
+)
+finder_file.write_text(text)
+PY
+    done
+  done
+}
+
+repair_editable_imports "__CONTAINER_WORKSPACE_ROOT__"
 
 if [[ "${VLLM_ENGINE_DISCOVER_TORCH_LIBS:-0}" == "1" ]]; then
   torch_lib="$("$ENGINE_PYTHON" -c 'import os, torch; print(os.path.join(os.path.dirname(torch.__file__), "lib"))' 2>/dev/null || true)"
@@ -517,11 +567,13 @@ replace "__ENGINE_PYTHON__" "$engine_python"
 replace "__EXTRA_ENV_EXPORTS__" "$extra_env_exports"
 replace "__CONTAINER_LOG_FILE__" "$container_log_file"
 replace "__TARGET_DEVICE__" "$target_device"
-replace "__NPU_DEVICES__" "$npu_devices"
+replace "__NPU_DEVICES__" "$runtime_visible_devices"
 replace "__PLUGINS__" "$plugins"
 replace "__FLASHCOMM1__" "$flashcomm1"
 replace "__FUSED_MC2__" "$fused_mc2"
 replace "__PYTHONPATH__" "$pythonpath"
+replace "__CONTAINER_WORKSPACE_ROOT__" "$container_workspace_root"
+replace "__VLLM_VERSION__" "$vllm_compat_version"
 replace "__VLLM_BIN__" "$vllm_bin"
 replace "__VLLM_SCRIPT__" "$vllm_script"
 replace "__MODEL_PATH__" "$model_path"
@@ -556,8 +608,8 @@ container_script="/tmp/$(basename "$tmp_host_script")"
 
 exec "${docker_cmd[@]}" exec \
   --env "VLLM_TARGET_DEVICE=$target_device" \
-  --env "ASCEND_RT_VISIBLE_DEVICES=$npu_devices" \
-  --env "ASCEND_VISIBLE_DEVICES=$npu_devices" \
+  --env "ASCEND_RT_VISIBLE_DEVICES=$runtime_visible_devices" \
+  --env "ASCEND_VISIBLE_DEVICES=$runtime_visible_devices" \
   --env "VLLM_ENGINE_COMPILATION_CONFIG=$compilation_config" \
   --env "VLLM_ENGINE_EXTRA_ARGS_JSON=${VLLM_ENGINE_EXTRA_ARGS_JSON:-}" \
   --env "VLLM_USE_SIMPLE_KV_OFFLOAD=$simple_kv_offload" \
