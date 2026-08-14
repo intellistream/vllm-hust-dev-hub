@@ -460,7 +460,42 @@ export VLLM_ASCEND_TORCH_PREFLIGHT="${VLLM_ASCEND_TORCH_PREFLIGHT:-0}"
 export COMPILE_CUSTOM_KERNELS="${COMPILE_CUSTOM_KERNELS:-1}"
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
-export PYTHONPATH="__PYTHONPATH__:${PYTHONPATH:-}"
+requested_pythonpath="__PYTHONPATH__"
+inherited_pythonpath="${PYTHONPATH:-}"
+if [[ "${VLLM_ENGINE_INHERIT_PYTHONPATH:-0}" == "1" ]]; then
+  export PYTHONPATH="$requested_pythonpath${inherited_pythonpath:+:$inherited_pythonpath}"
+else
+  # Ascend's set_env.sh contributes required CANN Python directories, but some
+  # images also inject an old vLLM/vllm-ascend checkout. Preserve runtime-only
+  # entries while rejecting any undeclared engine/plugin source tree.
+  export PYTHONPATH="$("$ENGINE_PYTHON" - "$requested_pythonpath" "$inherited_pythonpath" <<'PY'
+import pathlib
+import sys
+
+requested, inherited = sys.argv[1:3]
+entries: list[str] = []
+
+
+def append(entry: str, *, reject_engine_sources: bool) -> None:
+    if not entry or entry in entries:
+        return
+    path = pathlib.Path(entry)
+    if reject_engine_sources and any(
+        (path / package / "__init__.py").is_file()
+        for package in ("vllm", "vllm_ascend")
+    ):
+        return
+    entries.append(entry)
+
+
+for entry in requested.split(":"):
+    append(entry, reject_engine_sources=False)
+for entry in inherited.split(":"):
+    append(entry, reject_engine_sources=True)
+print(":".join(entries))
+PY
+)"
+fi
 if [[ -n "__VLLM_VERSION__" ]]; then
   export VLLM_VERSION="__VLLM_VERSION__"
 fi
@@ -573,8 +608,37 @@ else
   echo "[container] using vLLM binary: $VLLM_BIN"
 fi
 echo "[container] python: $ENGINE_PYTHON"
-echo "[container] vllm: $("$ENGINE_PYTHON" -c 'import vllm; print(vllm.__file__)' 2>/dev/null || echo 'N/A')"
-echo "[container] vllm_ascend: $("$ENGINE_PYTHON" -c 'import vllm_ascend; print(vllm_ascend.__file__)' 2>/dev/null || echo 'N/A')"
+"$ENGINE_PYTHON" - <<'PY'
+import importlib
+import os
+import pathlib
+
+pythonpath = [
+    pathlib.Path(entry).resolve()
+    for entry in os.environ.get("PYTHONPATH", "").split(":")
+    if entry
+]
+for module_name in ("vllm", "vllm_ascend"):
+    expected_root = next(
+        (
+            root
+            for root in pythonpath
+            if (root / module_name / "__init__.py").is_file()
+        ),
+        None,
+    )
+    if expected_root is None:
+        raise SystemExit(
+            f"ERROR: {module_name} has no declared source root in PYTHONPATH"
+        )
+    module = importlib.import_module(module_name)
+    origin = pathlib.Path(module.__file__).resolve()
+    if not origin.is_relative_to(expected_root):
+        raise SystemExit(
+            f"ERROR: {module_name} imported from {origin}, expected {expected_root}"
+        )
+    print(f"[container] {module_name}: {origin}")
+PY
 
 if [[ -n "$VLLM_SCRIPT" ]]; then
   args=("$VLLM_BIN" "$VLLM_SCRIPT")
