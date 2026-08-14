@@ -178,8 +178,13 @@ if [[ -z "$served_model_name" ]]; then
   served_model_name="$(basename "$model_path")"
 fi
 
-if (( max_num_batched_tokens < max_model_len )); then
-  max_num_batched_tokens="$max_model_len"
+# Respect an explicitly configured scheduler budget.  Large-context models often
+# need max_model_len > max_num_batched_tokens to keep warmup/compile shapes bounded;
+# the previous implicit promotion made that tuning impossible and could trigger
+# Ascend dynamic-shape compilation failures at the full context length.
+if ! [[ "$max_num_batched_tokens" =~ ^[0-9]+$ ]] || (( max_num_batched_tokens < 1 )); then
+  echo "ERROR: VLLM_ENGINE_MAX_NUM_BATCHED_TOKENS must be a positive integer (got '$max_num_batched_tokens')." >&2
+  exit 1
 fi
 
 npu_devices="${VLLM_ENGINE_NPU_DEVICES:-${ASCEND_RT_VISIBLE_DEVICES:-}}"
