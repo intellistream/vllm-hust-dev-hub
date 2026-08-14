@@ -40,6 +40,8 @@ container="${VLLM_ENGINE_CONTAINER:-${DOCKER_CONTAINER:-vllm-ascend-dev}}"
 container_image="${VLLM_ENGINE_IMAGE:-${IMAGE:-quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler}}"
 auto_create_container="${VLLM_ENGINE_AUTO_CREATE_CONTAINER:-true}"
 container_non_interactive="${VLLM_ENGINE_CONTAINER_NON_INTERACTIVE:-1}"
+container_shm_size="${VLLM_ENGINE_CONTAINER_SHM_SIZE:-${SHM_SIZE:-16g}}"
+container_ld_preload="${VLLM_ENGINE_CONTAINER_LD_PRELOAD:-}"
 recreate_container="${VLLM_ENGINE_RECREATE_CONTAINER:-false}"
 model_path="${VLLM_ENGINE_MODEL_PATH:-${MODEL_ID:-}}"
 served_model_name="${VLLM_ENGINE_SERVED_MODEL_NAME:-${SERVED_MODEL_NAME:-}}"
@@ -51,6 +53,8 @@ max_num_batched_tokens="${VLLM_ENGINE_MAX_NUM_BATCHED_TOKENS:-${MAX_NUM_BATCHED_
 gpu_mem_util="${VLLM_ENGINE_GPU_MEM_UTIL:-${GPU_MEM_UTIL:-0.85}}"
 max_num_seqs="${VLLM_ENGINE_MAX_NUM_SEQS:-${MAX_NUM_SEQS:-16}}"
 dtype="${VLLM_ENGINE_DTYPE:-${DTYPE:-bfloat16}}"
+kv_cache_dtype="${VLLM_ENGINE_KV_CACHE_DTYPE:-}"
+kv_cache_memory_bytes="${VLLM_ENGINE_KV_CACHE_MEMORY_BYTES:-}"
 load_format="${VLLM_ENGINE_LOAD_FORMAT:-${LOAD_FORMAT:-auto}}"
 quantization="${VLLM_ENGINE_QUANTIZATION:-${QUANTIZATION:-}}"
 compilation_config="${VLLM_ENGINE_COMPILATION_CONFIG:-}"
@@ -74,7 +78,11 @@ optimization_plugin="${VLLM_OPTIMIZATION_PLUGIN:-}"
 optimization_env_prefix="${VLLM_OPTIMIZATION_ENV_PREFIX:-}"
 plugins="${VLLM_PLUGINS:-}"
 if [[ -z "$plugins" ]]; then
-  plugins="ascend"
+  # VLLM_PLUGINS filters entry-point names across both platform and general
+  # plugin groups. Loading only `ascend` activates the NPU platform but drops
+  # `ascend_model`, causing supported models such as DeepSeek-V4 to fall back
+  # to an upstream CUDA implementation.
+  plugins="ascend,ascend_kv_connector,ascend_model,ascend_model_loader,ascend_service_profiling"
   if [[ -n "$optimization_plugin" ]]; then
     plugins="${plugins},${optimization_plugin}"
   fi
@@ -117,13 +125,23 @@ explicit = {
     "HUGGINGFACE_HUB_CACHE",
     "HF_DATASETS_CACHE",
     "HCCL_OP_EXPANSION_MODE",
+    "HCCL_BUFFSIZE",
+    "HCCL_CONNECT_TIMEOUT",
+    "HCCL_EXEC_TIMEOUT",
+    "OMP_NUM_THREADS",
+    "OMP_PROC_BIND",
     "PYTORCH_NPU_ALLOC_CONF",
+    "TASK_QUEUE_ENABLE",
     "TORCH_DEVICE_BACKEND_AUTOLOAD",
     "TRANSFORMERS_OFFLINE",
+    "VLLM_ASCEND_ENABLE_MLAPO",
+    "VLLM_ASCEND_KV_CACHE_FREE_MEMORY_FRACTION",
     "VLLM_ASCEND_TORCH_PREFLIGHT",
+    "VLLM_ENGINE_CONTAINER_HOME",
     "VLLM_ENGINE_EXTRA_ARGS_JSON",
     "VLLM_USE_SIMPLE_KV_OFFLOAD",
     "VLLM_USE_V1",
+    "VLLM_WORKER_MULTIPROC_METHOD",
 }
 prefixes = ()
 extra_keys = {
@@ -176,6 +194,51 @@ if [[ -z "$model_path" ]]; then
 fi
 if [[ -z "$served_model_name" ]]; then
   served_model_name="$(basename "$model_path")"
+fi
+
+# DeepSeek-V4 DSpark and legacy MTP are different draft architectures.  A
+# DSpark checkpoint carries multiple mtp.<stage> blocks plus dspark metadata;
+# declaring it as method=mtp can appear to start but loads those weights into
+# the wrong model.  Fail before reserving NPUs when a local checkpoint makes
+# this mismatch observable.  DSpark-capable runtimes should use method=dspark.
+if [[ -f "$model_path/config.json" && -n "${VLLM_ENGINE_EXTRA_ARGS_JSON:-}" ]]; then
+  dspark_mtp_mismatch=$(python3 - "$model_path/config.json" <<'PY'
+import json
+import os
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    model_config = json.load(handle)
+
+try:
+    extra_args = json.loads(os.environ.get("VLLM_ENGINE_EXTRA_ARGS_JSON", "[]"))
+except json.JSONDecodeError:
+    print("false")
+    raise SystemExit
+
+spec_config = None
+for index, item in enumerate(extra_args[:-1]):
+    if item == "--speculative-config":
+        try:
+            spec_config = json.loads(extra_args[index + 1])
+        except (TypeError, json.JSONDecodeError):
+            pass
+        break
+
+is_dspark = any(
+    key in model_config
+    for key in ("dspark_block_size", "dspark_target_layer_ids", "dspark_markov_rank")
+)
+print(str(is_dspark and isinstance(spec_config, dict) and spec_config.get("method") == "mtp").lower())
+PY
+  )
+  if [[ "$dspark_mtp_mismatch" == "true" ]]; then
+    echo "ERROR: the selected checkpoint contains DeepSeek-V4 DSpark metadata but" >&2
+    echo "VLLM_ENGINE_EXTRA_ARGS_JSON requests legacy method=mtp." >&2
+    echo "Use a DSpark-capable Ascend runtime with method=dspark, or remove the" >&2
+    echo "speculative config and serve the target model without draft decoding." >&2
+    exit 1
+  fi
 fi
 
 # Respect an explicitly configured scheduler budget.  Large-context models often
@@ -246,6 +309,7 @@ ensure_container_ready() {
   CONTAINER_NAME="$container" \
   IMAGE="$container_image" \
   VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE="$container_non_interactive" \
+  SHM_SIZE="$container_shm_size" \
   ASCEND_RT_VISIBLE_DEVICES="$host_visible_devices" \
   ASCEND_VISIBLE_DEVICES="$host_visible_devices" \
     "$repo_root/scripts/ascend-official-container.sh" start
@@ -260,6 +324,7 @@ ensure_container_ready
 
 echo "[vllm-hust] container        = $container"
 echo "[vllm-hust] image            = ${container_image:-auto-detect official Ascend image}"
+echo "[vllm-hust] container_shm    = $container_shm_size"
 echo "[vllm-hust] model_path       = $model_path"
 echo "[vllm-hust] served_model_name = $served_model_name"
 echo "[vllm-hust] host:port         = $host:$port"
@@ -364,6 +429,10 @@ fi
 
 if [[ -f /usr/local/Ascend/ascend-toolkit/set_env.sh ]]; then
   source /usr/local/Ascend/ascend-toolkit/set_env.sh
+fi
+
+if [[ -n "__CONTAINER_LD_PRELOAD__" ]]; then
+  export LD_PRELOAD="__CONTAINER_LD_PRELOAD__"
 fi
 
 if [[ -n "${HUST_ATB_SET_ENV:-}" && -f "${HUST_ATB_SET_ENV}" ]]; then
@@ -530,6 +599,9 @@ args+=(
   --api-key "__API_KEY__"
 )
 
+[[ -n "__KV_CACHE_DTYPE__" ]] && args+=(--kv-cache-dtype "__KV_CACHE_DTYPE__")
+[[ -n "__KV_CACHE_MEMORY_BYTES__" ]] && args+=(--kv-cache-memory-bytes "__KV_CACHE_MEMORY_BYTES__")
+
 if [[ "__ENABLE_PREFIX_CACHING__" == "1" ]]; then
   args+=(--enable-prefix-caching)
 else
@@ -579,6 +651,7 @@ replace "__CONDA_PREFIX__" "$conda_prefix"
 replace "__ENGINE_PYTHON__" "$engine_python"
 replace "__EXTRA_ENV_EXPORTS__" "$extra_env_exports"
 replace "__CONTAINER_LOG_FILE__" "$container_log_file"
+replace "__CONTAINER_LD_PRELOAD__" "$container_ld_preload"
 replace "__TARGET_DEVICE__" "$target_device"
 replace "__NPU_DEVICES__" "$runtime_visible_devices"
 replace "__PLUGINS__" "$plugins"
@@ -598,6 +671,8 @@ replace "__MAX_MODEL_LEN__" "$max_model_len"
 replace "__MAX_NUM_BATCHED_TOKENS__" "$max_num_batched_tokens"
 replace "__GPU_MEM_UTIL__" "$gpu_mem_util"
 replace "__DTYPE__" "$dtype"
+replace "__KV_CACHE_DTYPE__" "$kv_cache_dtype"
+replace "__KV_CACHE_MEMORY_BYTES__" "$kv_cache_memory_bytes"
 replace "__LOAD_FORMAT__" "$load_format"
 replace "__MAX_NUM_SEQS__" "$max_num_seqs"
 replace "__API_KEY__" "$api_key"
