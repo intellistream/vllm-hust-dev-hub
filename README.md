@@ -333,7 +333,11 @@ The launcher builds `PYTHONPATH` from:
 
 It also sets `VLLM_PLUGINS=ascend,<plugin>` when `VLLM_PLUGINS` is not
 explicitly provided. Use `VLLM_ENGINE_PYTHONPATH` or `VLLM_PLUGINS` only when
-you need full manual control.
+you need full manual control. By default, inherited `PYTHONPATH` entries that
+contain another `vllm` or `vllm_ascend` package are removed, while CANN-only
+runtime paths are retained. Set `VLLM_ENGINE_INHERIT_PYTHONPATH=1` only for an
+intentional overlay; startup validates that both engine packages resolve from
+the first declared source roots before serving traffic.
 
 ### Sync into an Offline Container
 

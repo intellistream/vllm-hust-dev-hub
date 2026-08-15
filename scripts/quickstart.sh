@@ -2566,6 +2566,9 @@ install_editable_repo_into_env() {
   fi
 
   pip_args=(-v -e "$editable_target")
+  if [[ "$(basename "$repo_path")" == "vllm-hust" ]]; then
+    pip_args=(--no-deps "${pip_args[@]}")
+  fi
   if repo_prefers_no_build_isolation "$repo_path"; then
     pip_args=(--no-build-isolation "${pip_args[@]}")
   fi

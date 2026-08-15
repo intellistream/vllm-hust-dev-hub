@@ -19,8 +19,13 @@ load_dotenv() {
     local key="${line%%=*}"
     key="${key// /}"
     [[ -z "$key" ]] && continue
-    [[ "$overwrite" != "true" && -n "${!key:-}" ]] && continue
-    export "$line"
+    if [[ "$overwrite" == "true" ]]; then
+      export "$line"
+      continue
+    fi
+    if [[ "${!key+x}" != "x" ]]; then
+      export "$line"
+    fi
   done < "$env_file"
 }
 
@@ -35,6 +40,8 @@ container="${VLLM_ENGINE_CONTAINER_NAME:-${VLLM_ENGINE_CONTAINER:-${DOCKER_CONTA
 container_image="${VLLM_ENGINE_IMAGE:-${IMAGE:-quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler}}"
 auto_create_container="${VLLM_ENGINE_AUTO_CREATE_CONTAINER:-true}"
 container_non_interactive="${VLLM_ENGINE_CONTAINER_NON_INTERACTIVE:-1}"
+container_shm_size="${VLLM_ENGINE_CONTAINER_SHM_SIZE:-${SHM_SIZE:-16g}}"
+container_ld_preload="${VLLM_ENGINE_CONTAINER_LD_PRELOAD:-}"
 recreate_container="${VLLM_ENGINE_RECREATE_CONTAINER:-false}"
 model_path="${VLLM_ENGINE_MODEL_PATH:-${MODEL_ID:-}}"
 served_model_name="${VLLM_ENGINE_SERVED_MODEL_NAME:-${SERVED_MODEL_NAME:-}}"
@@ -46,9 +53,12 @@ max_num_batched_tokens="${VLLM_ENGINE_MAX_NUM_BATCHED_TOKENS:-${MAX_NUM_BATCHED_
 gpu_mem_util="${VLLM_ENGINE_GPU_MEM_UTIL:-${GPU_MEM_UTIL:-0.85}}"
 max_num_seqs="${VLLM_ENGINE_MAX_NUM_SEQS:-${MAX_NUM_SEQS:-16}}"
 dtype="${VLLM_ENGINE_DTYPE:-${DTYPE:-bfloat16}}"
+kv_cache_dtype="${VLLM_ENGINE_KV_CACHE_DTYPE:-}"
+kv_cache_memory_bytes="${VLLM_ENGINE_KV_CACHE_MEMORY_BYTES:-}"
 load_format="${VLLM_ENGINE_LOAD_FORMAT:-${LOAD_FORMAT:-auto}}"
 quantization="${VLLM_ENGINE_QUANTIZATION:-${QUANTIZATION:-}}"
 compilation_config="${VLLM_ENGINE_COMPILATION_CONFIG:-}"
+vllm_compat_version="${VLLM_ENGINE_VLLM_VERSION:-}"
 vllm_bin="${VLLM_ENGINE_BIN:-vllm-hust}"
 vllm_script="${VLLM_ENGINE_SCRIPT:-}"
 conda_prefix="${VLLM_ENGINE_CONDA_PREFIX:-}"
@@ -68,11 +78,16 @@ optimization_plugin="${VLLM_OPTIMIZATION_PLUGIN:-}"
 optimization_env_prefix="${VLLM_OPTIMIZATION_ENV_PREFIX:-}"
 plugins="${VLLM_PLUGINS:-}"
 if [[ -z "$plugins" ]]; then
-  plugins="ascend"
+  # VLLM_PLUGINS filters entry-point names across both platform and general
+  # plugin groups. Loading only `ascend` activates the NPU platform but drops
+  # `ascend_model`, causing supported models such as DeepSeek-V4 to fall back
+  # to an upstream CUDA implementation.
+  plugins="ascend,ascend_kv_connector,ascend_model,ascend_model_loader,ascend_service_profiling"
   if [[ -n "$optimization_plugin" ]]; then
     plugins="${plugins},${optimization_plugin}"
   fi
 fi
+container_workspace_root="${CONTAINER_WORKSPACE_ROOT:-/workspace}"
 engine_base_pythonpath="${VLLM_ENGINE_BASE_PYTHONPATH-/workspace/vllm-hust:/workspace/vllm-ascend-hust}"
 pythonpath="${VLLM_ENGINE_PYTHONPATH:-}"
 if [[ -z "$pythonpath" ]]; then
@@ -110,13 +125,24 @@ explicit = {
     "HUGGINGFACE_HUB_CACHE",
     "HF_DATASETS_CACHE",
     "HCCL_OP_EXPANSION_MODE",
+    "HCCL_BUFFSIZE",
+    "HCCL_CONNECT_TIMEOUT",
+    "HCCL_EXEC_TIMEOUT",
+    "OMP_NUM_THREADS",
+    "OMP_PROC_BIND",
     "PYTORCH_NPU_ALLOC_CONF",
+    "TASK_QUEUE_ENABLE",
     "TORCH_DEVICE_BACKEND_AUTOLOAD",
     "TRANSFORMERS_OFFLINE",
+    "VLLM_ASCEND_ENABLE_MLAPO",
+    "VLLM_ASCEND_KV_CACHE_FREE_MEMORY_FRACTION",
     "VLLM_ASCEND_TORCH_PREFLIGHT",
+    "VLLM_ENGINE_CONTAINER_HOME",
     "VLLM_ENGINE_EXTRA_ARGS_JSON",
+    "VLLM_ENGINE_INSTALLED_MODULES_JSON",
     "VLLM_USE_SIMPLE_KV_OFFLOAD",
     "VLLM_USE_V1",
+    "VLLM_WORKER_MULTIPROC_METHOD",
 }
 prefixes = ()
 extra_keys = {
@@ -171,18 +197,68 @@ if [[ -z "$served_model_name" ]]; then
   served_model_name="$(basename "$model_path")"
 fi
 
-if (( max_num_batched_tokens < max_model_len )); then
-  max_num_batched_tokens="$max_model_len"
+# DeepSeek-V4 DSpark and legacy MTP are different draft architectures.  A
+# DSpark checkpoint carries multiple mtp.<stage> blocks plus dspark metadata;
+# declaring it as method=mtp can appear to start but loads those weights into
+# the wrong model.  Fail before reserving NPUs when a local checkpoint makes
+# this mismatch observable.  DSpark-capable runtimes should use method=dspark.
+if [[ -f "$model_path/config.json" && -n "${VLLM_ENGINE_EXTRA_ARGS_JSON:-}" ]]; then
+  dspark_mtp_mismatch=$(python3 - "$model_path/config.json" <<'PY'
+import json
+import os
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    model_config = json.load(handle)
+
+try:
+    extra_args = json.loads(os.environ.get("VLLM_ENGINE_EXTRA_ARGS_JSON", "[]"))
+except json.JSONDecodeError:
+    print("false")
+    raise SystemExit
+
+spec_config = None
+for index, item in enumerate(extra_args[:-1]):
+    if item == "--speculative-config":
+        try:
+            spec_config = json.loads(extra_args[index + 1])
+        except (TypeError, json.JSONDecodeError):
+            pass
+        break
+
+is_dspark = any(
+    key in model_config
+    for key in ("dspark_block_size", "dspark_target_layer_ids", "dspark_markov_rank")
+)
+print(str(is_dspark and isinstance(spec_config, dict) and spec_config.get("method") == "mtp").lower())
+PY
+  )
+  if [[ "$dspark_mtp_mismatch" == "true" ]]; then
+    echo "ERROR: the selected checkpoint contains DeepSeek-V4 DSpark metadata but" >&2
+    echo "VLLM_ENGINE_EXTRA_ARGS_JSON requests legacy method=mtp." >&2
+    echo "Use a DSpark-capable Ascend runtime with method=dspark, or remove the" >&2
+    echo "speculative config and serve the target model without draft decoding." >&2
+    exit 1
+  fi
+fi
+
+# Respect an explicitly configured scheduler budget.  Large-context models often
+# need max_model_len > max_num_batched_tokens to keep warmup/compile shapes bounded;
+# the previous implicit promotion made that tuning impossible and could trigger
+# Ascend dynamic-shape compilation failures at the full context length.
+if ! [[ "$max_num_batched_tokens" =~ ^[0-9]+$ ]] || (( max_num_batched_tokens < 1 )); then
+  echo "ERROR: VLLM_ENGINE_MAX_NUM_BATCHED_TOKENS must be a positive integer (got '$max_num_batched_tokens')." >&2
+  exit 1
 fi
 
 npu_devices="${VLLM_ENGINE_NPU_DEVICES:-${ASCEND_RT_VISIBLE_DEVICES:-}}"
 if [[ -z "$npu_devices" ]]; then
-  if (( tp_size > 1 )); then
-    npu_devices="$(seq -s, 0 $((tp_size - 1)))"
-  else
-    npu_devices="0"
-  fi
+  echo "ERROR: VLLM_ENGINE_NPU_DEVICES or ASCEND_RT_VISIBLE_DEVICES must be set." >&2
+  echo "Select devices through the deployment profile; the launcher does not choose physical NPUs." >&2
+  exit 1
 fi
+runtime_visible_devices="${VLLM_ENGINE_RUNTIME_VISIBLE_DEVICES:-$npu_devices}"
+host_visible_devices="${VLLM_ENGINE_HOST_VISIBLE_NPU_DEVICES:-$npu_devices}"
 
 docker_cmd=(docker)
 if ! command -v docker >/dev/null 2>&1; then
@@ -234,6 +310,9 @@ ensure_container_ready() {
   VLLM_ENGINE_CONTAINER_NAME="$container" \
   IMAGE="$container_image" \
   VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE="$container_non_interactive" \
+  SHM_SIZE="$container_shm_size" \
+  ASCEND_RT_VISIBLE_DEVICES="$host_visible_devices" \
+  ASCEND_VISIBLE_DEVICES="$host_visible_devices" \
     "$repo_root/scripts/ascend-official-container.sh" start
 
   if ! container_is_running; then
@@ -246,11 +325,13 @@ ensure_container_ready
 
 echo "[vllm-hust] container        = $container"
 echo "[vllm-hust] image            = ${container_image:-auto-detect official Ascend image}"
+echo "[vllm-hust] container_shm    = $container_shm_size"
 echo "[vllm-hust] model_path       = $model_path"
 echo "[vllm-hust] served_model_name = $served_model_name"
 echo "[vllm-hust] host:port         = $host:$port"
 echo "[vllm-hust] tp_size           = $tp_size"
 echo "[vllm-hust] npu_devices       = $npu_devices"
+echo "[vllm-hust] runtime_devices   = $runtime_visible_devices"
 echo "[vllm-hust] max_model_len     = $max_model_len"
 echo "[vllm-hust] max_num_seqs      = $max_num_seqs"
 echo "[vllm-hust] prefix_cache      = $enable_prefix_caching"
@@ -260,6 +341,9 @@ if [[ -n "$compilation_config" ]]; then
   echo "[vllm-hust] compilation_config = set"
 fi
 echo "[vllm-hust] plugins          = $plugins"
+if [[ -n "$vllm_compat_version" ]]; then
+  echo "[vllm-hust] vllm_compat      = $vllm_compat_version"
+fi
 
 if [[ "$replace_existing" == "true" ]]; then
 cleanup_script='
@@ -356,6 +440,10 @@ if [[ -f /usr/local/Ascend/ascend-toolkit/set_env.sh ]]; then
   source /usr/local/Ascend/ascend-toolkit/set_env.sh
 fi
 
+if [[ -n "__CONTAINER_LD_PRELOAD__" ]]; then
+  export LD_PRELOAD="__CONTAINER_LD_PRELOAD__"
+fi
+
 if [[ -n "${HUST_ATB_SET_ENV:-}" && -f "${HUST_ATB_SET_ENV}" ]]; then
   set +u
   source "${HUST_ATB_SET_ENV}" --cxx_abi=1
@@ -381,7 +469,87 @@ export VLLM_ASCEND_TORCH_PREFLIGHT="${VLLM_ASCEND_TORCH_PREFLIGHT:-0}"
 export COMPILE_CUSTOM_KERNELS="${COMPILE_CUSTOM_KERNELS:-1}"
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
 export TRANSFORMERS_OFFLINE="${TRANSFORMERS_OFFLINE:-1}"
-export PYTHONPATH="__PYTHONPATH__:${PYTHONPATH:-}"
+requested_pythonpath="__PYTHONPATH__"
+inherited_pythonpath="${PYTHONPATH:-}"
+if [[ "${VLLM_ENGINE_INHERIT_PYTHONPATH:-0}" == "1" ]]; then
+  export PYTHONPATH="$requested_pythonpath${inherited_pythonpath:+:$inherited_pythonpath}"
+else
+  # Ascend's set_env.sh contributes required CANN Python directories, but some
+  # images also inject an old vLLM/vllm-ascend checkout. Preserve runtime-only
+  # entries while rejecting any undeclared engine/plugin source tree.
+  export PYTHONPATH="$("$ENGINE_PYTHON" - "$requested_pythonpath" "$inherited_pythonpath" <<'PY'
+import pathlib
+import sys
+
+requested, inherited = sys.argv[1:3]
+entries: list[str] = []
+
+
+def append(entry: str, *, reject_engine_sources: bool) -> None:
+    if not entry or entry in entries:
+        return
+    path = pathlib.Path(entry)
+    if reject_engine_sources and any(
+        (path / package / "__init__.py").is_file()
+        for package in ("vllm", "vllm_ascend")
+    ):
+        return
+    entries.append(entry)
+
+
+for entry in requested.split(":"):
+    append(entry, reject_engine_sources=False)
+for entry in inherited.split(":"):
+    append(entry, reject_engine_sources=True)
+print(":".join(entries))
+PY
+)"
+fi
+if [[ -n "__VLLM_VERSION__" ]]; then
+  export VLLM_VERSION="__VLLM_VERSION__"
+fi
+
+repair_editable_imports() {
+  local workspace_root="$1"
+  local site_roots
+  local root
+  local finder_file
+
+  if [[ -z "$workspace_root" ]]; then
+    workspace_root="/workspace"
+  fi
+  site_roots="$("$ENGINE_PYTHON" - <<'PY'
+import site
+for path in site.getsitepackages():
+    if "site-packages" in path:
+        print(path)
+PY
+)"
+
+  for root in $site_roots; do
+    for finder_file in "$root"/__editable___vllm*_finder.py; do
+      [[ -f "$finder_file" ]] || continue
+      "$ENGINE_PYTHON" - "$finder_file" "$workspace_root" <<'PY'
+import pathlib
+import sys
+
+finder_file = pathlib.Path(sys.argv[1])
+workspace_root = sys.argv[2].rstrip("/")
+text = finder_file.read_text()
+text = text.replace(
+    "/vllm-workspace/vllm/vllm", f"{workspace_root}/vllm-hust/vllm"
+)
+text = text.replace(
+    "/vllm-workspace/vllm-ascend/vllm_ascend",
+    f"{workspace_root}/vllm-ascend-hust/vllm_ascend",
+)
+finder_file.write_text(text)
+PY
+    done
+  done
+}
+
+repair_editable_imports "__CONTAINER_WORKSPACE_ROOT__"
 
 if [[ "${VLLM_ENGINE_DISCOVER_TORCH_LIBS:-0}" == "1" ]]; then
   torch_lib="$("$ENGINE_PYTHON" -c 'import os, torch; print(os.path.join(os.path.dirname(torch.__file__), "lib"))' 2>/dev/null || true)"
@@ -449,8 +617,100 @@ else
   echo "[container] using vLLM binary: $VLLM_BIN"
 fi
 echo "[container] python: $ENGINE_PYTHON"
-echo "[container] vllm: $("$ENGINE_PYTHON" -c 'import vllm; print(vllm.__file__)' 2>/dev/null || echo 'N/A')"
-echo "[container] vllm_ascend: $("$ENGINE_PYTHON" -c 'import vllm_ascend; print(vllm_ascend.__file__)' 2>/dev/null || echo 'N/A')"
+"$ENGINE_PYTHON" - <<'PY'
+import importlib
+import importlib.metadata
+import json
+import os
+import pathlib
+
+pythonpath = [
+    pathlib.Path(entry).resolve()
+    for entry in os.environ.get("PYTHONPATH", "").split(":")
+    if entry
+]
+try:
+    installed_contract = json.loads(
+        os.environ.get("VLLM_ENGINE_INSTALLED_MODULES_JSON", "{}")
+    )
+except json.JSONDecodeError as exc:
+    raise SystemExit(
+        f"ERROR: invalid VLLM_ENGINE_INSTALLED_MODULES_JSON: {exc}"
+    ) from exc
+if not isinstance(installed_contract, dict):
+    raise SystemExit("ERROR: VLLM_ENGINE_INSTALLED_MODULES_JSON must be an object")
+
+for module_name in ("vllm", "vllm_ascend"):
+    expected_root = next(
+        (
+            root
+            for root in pythonpath
+            if (root / module_name / "__init__.py").is_file()
+        ),
+        None,
+    )
+    module = importlib.import_module(module_name)
+    origin = pathlib.Path(module.__file__).resolve()
+    if expected_root is not None:
+        if not origin.is_relative_to(expected_root):
+            raise SystemExit(
+                f"ERROR: {module_name} imported from {origin}, expected {expected_root}"
+            )
+        print(f"[container] {module_name}: {origin} (declared source)")
+        continue
+
+    contract = installed_contract.get(module_name)
+    if not isinstance(contract, dict):
+        raise SystemExit(
+            f"ERROR: {module_name} has no declared source root in PYTHONPATH "
+            "and no installed-distribution contract"
+        )
+    distribution_name = contract.get("distribution")
+    expected_version = contract.get("version")
+    if not isinstance(distribution_name, str) or not distribution_name:
+        raise SystemExit(
+            f"ERROR: installed contract for {module_name} needs distribution"
+        )
+    if not isinstance(expected_version, str) or not expected_version:
+        raise SystemExit(
+            f"ERROR: installed contract for {module_name} needs exact version"
+        )
+    try:
+        distribution = importlib.metadata.distribution(distribution_name)
+    except importlib.metadata.PackageNotFoundError as exc:
+        raise SystemExit(
+            f"ERROR: installed distribution {distribution_name} for {module_name} not found"
+        ) from exc
+    actual_version = distribution.version
+    if actual_version != expected_version:
+        raise SystemExit(
+            f"ERROR: installed distribution {distribution_name} version "
+            f"{actual_version}, expected {expected_version}"
+        )
+    distribution_root = pathlib.Path(distribution.locate_file("")).resolve()
+    try:
+        relative_origin = origin.relative_to(distribution_root)
+    except ValueError as exc:
+        raise SystemExit(
+            f"ERROR: {module_name} imported from {origin}, outside installed "
+            f"distribution root {distribution_root}"
+        ) from exc
+    distribution_files = {
+        pathlib.PurePosixPath(str(item)) for item in (distribution.files or ())
+    }
+    if pathlib.PurePosixPath(relative_origin.as_posix()) not in distribution_files:
+        raise SystemExit(
+            f"ERROR: {module_name} origin {relative_origin} is not owned by "
+            f"installed distribution {distribution_name}"
+        )
+    print(
+        f"[container] {module_name}: {origin} "
+        f"(installed {distribution_name}=={actual_version})"
+    )
+PY
+# The contract belongs to the launcher preflight, not to vLLM itself. Avoid
+# leaking launcher-only variables into vLLM's environment validator.
+unset VLLM_ENGINE_INSTALLED_MODULES_JSON
 
 if [[ -n "$VLLM_SCRIPT" ]]; then
   args=("$VLLM_BIN" "$VLLM_SCRIPT")
@@ -474,6 +734,9 @@ args+=(
   --max-num-seqs "__MAX_NUM_SEQS__"
   --api-key "__API_KEY__"
 )
+
+[[ -n "__KV_CACHE_DTYPE__" ]] && args+=(--kv-cache-dtype "__KV_CACHE_DTYPE__")
+[[ -n "__KV_CACHE_MEMORY_BYTES__" ]] && args+=(--kv-cache-memory-bytes "__KV_CACHE_MEMORY_BYTES__")
 
 if [[ "__ENABLE_PREFIX_CACHING__" == "1" ]]; then
   args+=(--enable-prefix-caching)
@@ -524,12 +787,15 @@ replace "__CONDA_PREFIX__" "$conda_prefix"
 replace "__ENGINE_PYTHON__" "$engine_python"
 replace "__EXTRA_ENV_EXPORTS__" "$extra_env_exports"
 replace "__CONTAINER_LOG_FILE__" "$container_log_file"
+replace "__CONTAINER_LD_PRELOAD__" "$container_ld_preload"
 replace "__TARGET_DEVICE__" "$target_device"
-replace "__NPU_DEVICES__" "$npu_devices"
+replace "__NPU_DEVICES__" "$runtime_visible_devices"
 replace "__PLUGINS__" "$plugins"
 replace "__FLASHCOMM1__" "$flashcomm1"
 replace "__FUSED_MC2__" "$fused_mc2"
 replace "__PYTHONPATH__" "$pythonpath"
+replace "__CONTAINER_WORKSPACE_ROOT__" "$container_workspace_root"
+replace "__VLLM_VERSION__" "$vllm_compat_version"
 replace "__VLLM_BIN__" "$vllm_bin"
 replace "__VLLM_SCRIPT__" "$vllm_script"
 replace "__MODEL_PATH__" "$model_path"
@@ -541,6 +807,8 @@ replace "__MAX_MODEL_LEN__" "$max_model_len"
 replace "__MAX_NUM_BATCHED_TOKENS__" "$max_num_batched_tokens"
 replace "__GPU_MEM_UTIL__" "$gpu_mem_util"
 replace "__DTYPE__" "$dtype"
+replace "__KV_CACHE_DTYPE__" "$kv_cache_dtype"
+replace "__KV_CACHE_MEMORY_BYTES__" "$kv_cache_memory_bytes"
 replace "__LOAD_FORMAT__" "$load_format"
 replace "__MAX_NUM_SEQS__" "$max_num_seqs"
 replace "__API_KEY__" "$api_key"
@@ -564,8 +832,8 @@ container_script="/tmp/$(basename "$tmp_host_script")"
 
 exec "${docker_cmd[@]}" exec \
   --env "VLLM_TARGET_DEVICE=$target_device" \
-  --env "ASCEND_RT_VISIBLE_DEVICES=$npu_devices" \
-  --env "ASCEND_VISIBLE_DEVICES=$npu_devices" \
+  --env "ASCEND_RT_VISIBLE_DEVICES=$runtime_visible_devices" \
+  --env "ASCEND_VISIBLE_DEVICES=$runtime_visible_devices" \
   --env "VLLM_ENGINE_COMPILATION_CONFIG=$compilation_config" \
   --env "VLLM_ENGINE_EXTRA_ARGS_JSON=${VLLM_ENGINE_EXTRA_ARGS_JSON:-}" \
   --env "VLLM_USE_SIMPLE_KV_OFFLOAD=$simple_kv_offload" \
