@@ -301,6 +301,28 @@ VLLM_PLUGINS=ascend
 
 If the container is missing or stopped, `manage.sh start` pulls/creates it automatically through `scripts/ascend-official-container.sh`.
 
+### Record a Verified Deployment Receipt
+
+After health, model-card, dialogue, device-mapping, and import-origin checks
+pass, write those sanitized results to the versioned receipt contract. The
+tool rejects unknown or credential-like fields and adds a deterministic ID plus
+a SHA-256 content digest:
+
+```bash
+python3 scripts/deployment_receipt.py create \
+  --input verified-deployment.json \
+  --output artifacts/deployment-receipt.json
+python3 scripts/deployment_receipt.py verify artifacts/deployment-receipt.json
+```
+
+The input contains exactly these sections: `status`, `model`, `engine`,
+`hardware`, `parallelism`, `execution`, `speculative`, and `provenance`.
+Lifecycle state is one of `active`, `superseded`, or `failed`. Import origins
+belong in `provenance.import_origins`; API keys, tokens, passwords, private
+keys, and arbitrary extra fields are rejected. The receipt only proves the
+facts supplied by a successful verifier—it must not be emitted before the
+online acceptance gates pass.
+
 ### Use Optimization Repositories
 
 `manage.sh` is intentionally optimization-repo agnostic. Keep repo-specific
