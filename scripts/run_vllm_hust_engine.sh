@@ -139,6 +139,7 @@ explicit = {
     "VLLM_ASCEND_TORCH_PREFLIGHT",
     "VLLM_ENGINE_CONTAINER_HOME",
     "VLLM_ENGINE_EXTRA_ARGS_JSON",
+    "VLLM_ENGINE_INSTALLED_MODULES_JSON",
     "VLLM_USE_SIMPLE_KV_OFFLOAD",
     "VLLM_USE_V1",
     "VLLM_WORKER_MULTIPROC_METHOD",
@@ -610,6 +611,8 @@ fi
 echo "[container] python: $ENGINE_PYTHON"
 "$ENGINE_PYTHON" - <<'PY'
 import importlib
+import importlib.metadata
+import json
 import os
 import pathlib
 
@@ -618,6 +621,17 @@ pythonpath = [
     for entry in os.environ.get("PYTHONPATH", "").split(":")
     if entry
 ]
+try:
+    installed_contract = json.loads(
+        os.environ.get("VLLM_ENGINE_INSTALLED_MODULES_JSON", "{}")
+    )
+except json.JSONDecodeError as exc:
+    raise SystemExit(
+        f"ERROR: invalid VLLM_ENGINE_INSTALLED_MODULES_JSON: {exc}"
+    ) from exc
+if not isinstance(installed_contract, dict):
+    raise SystemExit("ERROR: VLLM_ENGINE_INSTALLED_MODULES_JSON must be an object")
+
 for module_name in ("vllm", "vllm_ascend"):
     expected_root = next(
         (
@@ -627,18 +641,68 @@ for module_name in ("vllm", "vllm_ascend"):
         ),
         None,
     )
-    if expected_root is None:
-        raise SystemExit(
-            f"ERROR: {module_name} has no declared source root in PYTHONPATH"
-        )
     module = importlib.import_module(module_name)
     origin = pathlib.Path(module.__file__).resolve()
-    if not origin.is_relative_to(expected_root):
+    if expected_root is not None:
+        if not origin.is_relative_to(expected_root):
+            raise SystemExit(
+                f"ERROR: {module_name} imported from {origin}, expected {expected_root}"
+            )
+        print(f"[container] {module_name}: {origin} (declared source)")
+        continue
+
+    contract = installed_contract.get(module_name)
+    if not isinstance(contract, dict):
         raise SystemExit(
-            f"ERROR: {module_name} imported from {origin}, expected {expected_root}"
+            f"ERROR: {module_name} has no declared source root in PYTHONPATH "
+            "and no installed-distribution contract"
         )
-    print(f"[container] {module_name}: {origin}")
+    distribution_name = contract.get("distribution")
+    expected_version = contract.get("version")
+    if not isinstance(distribution_name, str) or not distribution_name:
+        raise SystemExit(
+            f"ERROR: installed contract for {module_name} needs distribution"
+        )
+    if not isinstance(expected_version, str) or not expected_version:
+        raise SystemExit(
+            f"ERROR: installed contract for {module_name} needs exact version"
+        )
+    try:
+        distribution = importlib.metadata.distribution(distribution_name)
+    except importlib.metadata.PackageNotFoundError as exc:
+        raise SystemExit(
+            f"ERROR: installed distribution {distribution_name} for {module_name} not found"
+        ) from exc
+    actual_version = distribution.version
+    if actual_version != expected_version:
+        raise SystemExit(
+            f"ERROR: installed distribution {distribution_name} version "
+            f"{actual_version}, expected {expected_version}"
+        )
+    distribution_root = pathlib.Path(distribution.locate_file("")).resolve()
+    try:
+        relative_origin = origin.relative_to(distribution_root)
+    except ValueError as exc:
+        raise SystemExit(
+            f"ERROR: {module_name} imported from {origin}, outside installed "
+            f"distribution root {distribution_root}"
+        ) from exc
+    distribution_files = {
+        pathlib.PurePosixPath(str(item)) for item in (distribution.files or ())
+    }
+    if pathlib.PurePosixPath(relative_origin.as_posix()) not in distribution_files:
+        raise SystemExit(
+            f"ERROR: {module_name} origin {relative_origin} is not owned by "
+            f"installed distribution {distribution_name}"
+        )
+    print(
+        f"[container] {module_name}: {origin} "
+        f"(installed {distribution_name}=={actual_version})"
+    )
 PY
+# The contract belongs to the launcher preflight, not to vLLM itself. Avoid
+# leaking launcher-only variables into vLLM's environment validator.
+unset VLLM_ENGINE_INSTALLED_MODULES_JSON
 
 if [[ -n "$VLLM_SCRIPT" ]]; then
   args=("$VLLM_BIN" "$VLLM_SCRIPT")
