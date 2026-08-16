@@ -732,7 +732,6 @@ args+=(
   --load-format "__LOAD_FORMAT__"
   --trust-remote-code
   --max-num-seqs "__MAX_NUM_SEQS__"
-  --api-key "__API_KEY__"
 )
 
 [[ -n "__KV_CACHE_DTYPE__" ]] && args+=(--kv-cache-dtype "__KV_CACHE_DTYPE__")
@@ -811,7 +810,6 @@ replace "__KV_CACHE_DTYPE__" "$kv_cache_dtype"
 replace "__KV_CACHE_MEMORY_BYTES__" "$kv_cache_memory_bytes"
 replace "__LOAD_FORMAT__" "$load_format"
 replace "__MAX_NUM_SEQS__" "$max_num_seqs"
-replace "__API_KEY__" "$api_key"
 replace "__ENABLE_PREFIX_CACHING__" "$enable_prefix_caching"
 replace "__ENABLE_CHUNKED_PREFILL__" "$enable_chunked_prefill"
 replace "__ENFORCE_EAGER__" "$enforce_eager"
@@ -830,7 +828,12 @@ chmod +x "$tmp_host_script"
 container_script="/tmp/$(basename "$tmp_host_script")"
 "${docker_cmd[@]}" cp "$tmp_host_script" "$container:$container_script"
 
+# vLLM natively supports VLLM_API_KEY. Keep the credential out of the generated
+# script and process argv: passing only the variable name asks Docker to copy the
+# value from this launcher's environment without exposing it in `ps` or status.
+export VLLM_API_KEY="$api_key"
 exec "${docker_cmd[@]}" exec \
+  --env VLLM_API_KEY \
   --env "VLLM_TARGET_DEVICE=$target_device" \
   --env "ASCEND_RT_VISIBLE_DEVICES=$runtime_visible_devices" \
   --env "ASCEND_VISIBLE_DEVICES=$runtime_visible_devices" \

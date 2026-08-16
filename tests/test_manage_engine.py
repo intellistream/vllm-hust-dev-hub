@@ -49,6 +49,21 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("real API key", result.stderr)
         self.assertNotIn("Docker container", result.stderr)
 
+    def test_engine_credentials_never_enter_process_arguments(self) -> None:
+        launcher = ENGINE_SCRIPT.read_text()
+        manager = (REPO_ROOT / "scripts" / "manage-container.sh").read_text()
+
+        self.assertNotIn('--api-key "__API_KEY__"', launcher)
+        self.assertNotIn('replace "__API_KEY__"', launcher)
+        self.assertIn('export VLLM_API_KEY="$api_key"', launcher)
+        self.assertIn('--env VLLM_API_KEY', launcher)
+
+        build_args = manager.split("build_vllm_args()", 1)[1].split(
+            "export_engine_env()", 1
+        )[0]
+        self.assertNotIn("--api-key", build_args)
+        self.assertIn('export VLLM_API_KEY="$API_KEY"', manager)
+
     def test_env_template_exposes_host_managed_docker_knobs(self) -> None:
         template = ENV_TEMPLATE.read_text()
 

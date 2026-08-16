@@ -621,7 +621,6 @@ build_vllm_args() {
     --gpu-memory-utilization "$GPU_MEM_UTIL"
     --dtype "$DTYPE" --load-format "$LOAD_FORMAT"
     --trust-remote-code
-    --api-key "$API_KEY"
   )
   if [[ "$PREFIX_CACHING" == "1" ]]; then VLLM_ARGS+=(--enable-prefix-caching); else VLLM_ARGS+=(--no-enable-prefix-caching); fi
   if [[ "$CHUNKED_PREFILL" == "1" ]]; then VLLM_ARGS+=(--enable-chunked-prefill); else VLLM_ARGS+=(--no-enable-chunked-prefill); fi
@@ -642,6 +641,9 @@ build_vllm_args() {
 }
 
 export_engine_env() {
+  # vLLM's native environment contract avoids publishing the credential in
+  # process argv, manager logs, profiler application strings, or status output.
+  export VLLM_API_KEY="$API_KEY"
   export VLLM_PLUGINS="$PLUGINS"
   export VLLM_TARGET_DEVICE=npu
   export ASCEND_RT_VISIBLE_DEVICES="$NPU_DEVICES"
