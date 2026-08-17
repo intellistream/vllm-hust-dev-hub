@@ -1,11 +1,11 @@
 .vscode/
 *.log
 *.tmp
-fusion_result.json
 .DS_Store
 .env
 __pycache__/
 *.py[cod]
+.pytest_cache/
 Ascend-Machine/results/*
 Ascend-Machine/build/*
 

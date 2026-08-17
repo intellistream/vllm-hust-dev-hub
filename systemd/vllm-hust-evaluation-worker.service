@@ -1,0 +1,24 @@
+[Unit]
+Description=vLLM-HUST 112 evaluation worker
+After=vllm-hust-evaluation-api.service
+Requires=vllm-hust-evaluation-api.service
+
+[Service]
+Type=simple
+User=shuhao
+Group=shuhao
+WorkingDirectory=/opt/vllm-hust-evaluation/dev-hub
+EnvironmentFile=/etc/vllm-hust-evaluation/secrets.env
+ExecStart=/usr/bin/python3 -m scripts.evaluation_machine.worker --config /etc/vllm-hust-evaluation/config.json
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+KillMode=mixed
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/data/vllm-hust-evaluation /tmp
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
