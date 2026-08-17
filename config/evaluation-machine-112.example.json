@@ -1,0 +1,17 @@
+{
+  "listen": "127.0.0.1:9112",
+  "state_dir": "/data/vllm-hust-evaluation/state",
+  "artifact_dir": "/data/vllm-hust-evaluation/artifacts",
+  "managed_npus": [0, 1, 2, 3, 4, 5, 6, 7],
+  "default_npu_count": 1,
+  "allowed_repositories": [
+    "vLLM-HUST/vllm-hust",
+    "vLLM-HUST/vllm-ascend-hust"
+  ],
+  "token_env": "EVALUATION_API_TOKEN",
+  "hmac_secret_env": "EVALUATION_HMAC_SECRET",
+  "npu_process_command": ["npu-smi", "info"],
+  "runner_command": [
+    "/opt/vllm-hust-evaluation/bin/run-official-request"
+  ]
+}

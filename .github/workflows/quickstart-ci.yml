@@ -12,7 +12,6 @@ permissions:
 
 jobs:
   quickstart-ubuntu:
-    if: ${{ false }}
     name: quickstart (ubuntu)
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -66,83 +65,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: quickstart-ci-ubuntu-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ci-results
-          if-no-files-found: warn
-          retention-days: 14
-
-  quickstart-self-hosted:
-    if: ${{ github.event_name != 'pull_request' }}
-    name: quickstart (self-hosted)
-    runs-on:
-      - self-hosted
-      - linux
-    timeout-minutes: 150
-
-    defaults:
-      run:
-        shell: bash
-        working-directory: vllm-hust-dev-hub
-
-    steps:
-      - name: Checkout vllm-hust-dev-hub
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
-          path: vllm-hust-dev-hub
-          ssh-key: ${{ secrets.VLLM_HUST_CI_SSH_PRIVATE_KEY }}
-
-      - name: Prepare GitHub SSH key for downstream clones
-        env:
-          HOME: ${{ github.workspace }}/.ci-home
-          VLLM_HUST_CI_SSH_PRIVATE_KEY: ${{ secrets.VLLM_HUST_CI_SSH_PRIVATE_KEY }}
-        run: |
-          if [[ -z "${VLLM_HUST_CI_SSH_PRIVATE_KEY:-}" ]]; then
-            echo "Missing secrets.VLLM_HUST_CI_SSH_PRIVATE_KEY for self-hosted quickstart CI" >&2
-            exit 1
-          fi
-
-          install -d -m 700 "$HOME/.ssh"
-          printf '%s\n' "$VLLM_HUST_CI_SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/id_ed25519"
-          chmod 600 "$HOME/.ssh/id_ed25519"
-          ssh-keyscan github.com > "$HOME/.ssh/known_hosts"
-          chmod 644 "$HOME/.ssh/known_hosts"
-
-      - name: Ensure conda is available
-        env:
-          HOME: ${{ github.workspace }}/.ci-home
-          XDG_CACHE_HOME: ${{ github.workspace }}/.ci-home/.cache
-          XDG_CONFIG_HOME: ${{ github.workspace }}/.ci-home/.config
-          CONDA_SOLVER: classic
-        run: |
-          mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME"
-          if command -v conda >/dev/null 2>&1 || [[ -x "$HOME/miniconda3/bin/conda" ]]; then
-            exit 0
-          fi
-
-          bash scripts/install-miniconda.sh --yes --prefix "$HOME/miniconda3"
-          echo "$HOME/miniconda3/bin" >> "$GITHUB_PATH"
-
-      - name: Run quickstart CI bootstrap and tests
-        env:
-          HOME: ${{ github.workspace }}/.ci-home
-          XDG_CACHE_HOME: ${{ github.workspace }}/.ci-home/.cache
-          XDG_CONFIG_HOME: ${{ github.workspace }}/.ci-home/.config
-          CONDA_SOLVER: classic
-          RUNNER_FLAVOR: self-hosted
-          PYTHON_VERSION: '3.11'
-          INSTALL_SCOPE: full
-          RESULTS_ROOT: ${{ github.workspace }}/ci-results
-          GITHUB_TOKEN: ''
-          CI_GITHUB_TOKEN: ''
-          HUST_DEV_HUB_GIT_AUTH_MODE: ssh
-        run: bash scripts/ci/quickstart_ci.sh
-
-      - name: Upload quickstart CI artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: quickstart-ci-self-hosted-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ci-results
           if-no-files-found: warn
