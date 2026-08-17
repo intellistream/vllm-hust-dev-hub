@@ -1,0 +1,97 @@
+name: Submit evaluation request
+
+on:
+  workflow_call:
+    inputs:
+      repository:
+        type: string
+        required: true
+      core_revision:
+        type: string
+        required: true
+      plugin_repository:
+        type: string
+        required: true
+      plugin_revision:
+        type: string
+        required: true
+      target_id:
+        type: string
+        required: true
+      target_registry_version:
+        type: string
+        required: true
+      repeat_count:
+        type: number
+        default: 3
+      npu_count:
+        type: number
+        default: 1
+      priority:
+        type: string
+        default: normal
+    secrets:
+      evaluation_api_url:
+        required: true
+      evaluation_api_token:
+        required: true
+      evaluation_hmac_secret:
+        required: true
+  workflow_dispatch:
+    inputs:
+      repository:
+        description: owner/repository containing the core revision
+        required: true
+        default: vLLM-HUST/vllm-hust
+      core_revision:
+        description: Full core commit SHA
+        required: true
+      plugin_repository:
+        required: true
+        default: vLLM-HUST/vllm-ascend-hust
+      plugin_revision:
+        description: Full plugin commit SHA
+        required: true
+      target_id:
+        required: true
+      target_registry_version:
+        required: true
+      repeat_count:
+        type: number
+        default: 3
+      npu_count:
+        type: number
+        default: 1
+      priority:
+        type: choice
+        options: [release, required, normal, diagnostic]
+        default: normal
+
+permissions:
+  contents: read
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Submit immutable request to the 112 evaluation machine
+        env:
+          EVALUATION_API_URL: ${{ secrets.evaluation_api_url }}
+          EVALUATION_API_TOKEN: ${{ secrets.evaluation_api_token }}
+          EVALUATION_HMAC_SECRET: ${{ secrets.evaluation_hmac_secret }}
+        run: |
+          python3 scripts/ci/submit_evaluation_request.py \
+            --repository '${{ inputs.repository }}' \
+            --core-revision '${{ inputs.core_revision }}' \
+            --plugin-repository '${{ inputs.plugin_repository }}' \
+            --plugin-revision '${{ inputs.plugin_revision }}' \
+            --target-id '${{ inputs.target_id }}' \
+            --target-registry-version '${{ inputs.target_registry_version }}' \
+            --repeat-count '${{ inputs.repeat_count }}' \
+            --npu-count '${{ inputs.npu_count }}' \
+            --priority '${{ inputs.priority }}' \
+            --requested-by '${{ github.actor }}' \
+            --source-url '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}' \
+            --idempotency-key '${{ github.repository }}:${{ github.run_id }}:${{ github.run_attempt }}:${{ inputs.target_id }}'

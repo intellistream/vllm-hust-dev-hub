@@ -1,10 +1,9 @@
-from pathlib import Path
 import re
 import shlex
 import subprocess
 import tempfile
 import unittest
-
+from pathlib import Path
 
 WORKFLOW_PATH = Path(__file__).resolve().parents[1] / ".github/workflows/quickstart-ci.yml"
 QUICKSTART_SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts/quickstart.sh"
@@ -32,21 +31,11 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         self.assertIn('1) 一键初始化（同步仓库 + 创建/修复环境 + 安装核心仓库）', script_text)
         self.assertIn('UPDATE_BASHRC=1', script_text)
 
-    def test_self_hosted_job_keeps_ssh_clone_guards(self) -> None:
+    def test_workflow_never_routes_to_self_hosted_runner(self) -> None:
         workflow_text = WORKFLOW_PATH.read_text()
-        self_hosted_block = _extract_block(workflow_text, "quickstart-self-hosted")
-
-        self.assertIn(
-            "ssh-key: ${{ secrets.VLLM_HUST_CI_SSH_PRIVATE_KEY }}",
-            self_hosted_block,
-        )
-        self.assertIn(
-            "- name: Prepare GitHub SSH key for downstream clones",
-            self_hosted_block,
-        )
-        self.assertIn("GITHUB_TOKEN: ''", self_hosted_block)
-        self.assertIn("CI_GITHUB_TOKEN: ''", self_hosted_block)
-        self.assertIn("HUST_DEV_HUB_GIT_AUTH_MODE: ssh", self_hosted_block)
+        self.assertNotIn("self-hosted", workflow_text)
+        self.assertNotIn("quickstart-self-hosted", workflow_text)
+        self.assertIn("runs-on: ubuntu-latest", workflow_text)
 
     def test_quickstart_ci_script_still_supports_ssh_mode(self) -> None:
         script_text = SCRIPT_PATH.read_text()

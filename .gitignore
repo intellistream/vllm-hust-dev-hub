@@ -3,6 +3,9 @@
 *.tmp
 .DS_Store
 .env
+__pycache__/
+*.py[cod]
+.pytest_cache/
 Ascend-Machine/results/*
 Ascend-Machine/build/*
 
