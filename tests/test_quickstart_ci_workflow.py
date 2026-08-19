@@ -71,6 +71,12 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
             quickstart_text.index("ensure_vllm_hust_runtime_python_packages() {")
         ]
         self.assertIn("\n    torch\n", editable_build_requirements)
+        self.assertEqual(
+            quickstart_text.count(
+                'if install_editable_repo_into_env "$repo_path" "$reconcile_mode"; then'
+            ),
+            2,
+        )
         self.assertLess(
             main_flow.index('if ! install_smoke_test_dependencies "$conda_bin"; then'),
             main_flow.index('"runtime check"'),
