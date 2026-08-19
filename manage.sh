@@ -64,7 +64,7 @@ Required .env:
 
 Common .env knobs:
   VLLM_ENGINE_CONTAINER_NAME=vllm-ascend-dev
-  VLLM_ENGINE_IMAGE=quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler
+  VLLM_ENGINE_IMAGE=quay.io/ascend/vllm-ascend:v0.23.0-openeuler
   VLLM_ENGINE_ENV_FILE=profiles/smoke-qwen2.5-7b-npu1.env
   VLLM_ENGINE_AUTO_CREATE_CONTAINER=true
   VLLM_ENGINE_RECREATE_CONTAINER=false
@@ -74,7 +74,7 @@ Common .env knobs:
   VLLM_ENGINE_TP_SIZE=4
   VLLM_ENGINE_NPU_DEVICES=0,1,2,3
   VLLM_ENGINE_PYTHON=/usr/local/python3.12.13/bin/python
-  VLLM_ENGINE_CONDA_ENV=vllm-hust-dev
+  # VLLM_ENGINE_CONDA_ENV is optional; omit it for the image-native runtime.
 	  VLLM_ENGINE_COMPILATION_CONFIG='{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[1,2,4,8,16],"max_cudagraph_capture_size":16}'
 	  VLLM_PLUGINS=ascend
 	  VLLM_ENGINE_BASE_PYTHONPATH=/workspace/vllm-hust:/workspace/vllm-ascend-hust
