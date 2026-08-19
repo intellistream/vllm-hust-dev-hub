@@ -26,7 +26,7 @@ load_dotenv() {
 load_dotenv "$repo_root/.env"
 
 container="${VLLM_ENGINE_CONTAINER:-${DOCKER_CONTAINER:-vllm-ascend-dev}}"
-container_image="${VLLM_ENGINE_IMAGE:-${IMAGE:-quay.io/ascend/vllm-ascend:v0.21.0rc1-openeuler}}"
+container_image="${VLLM_ENGINE_IMAGE:-${IMAGE:-quay.io/ascend/vllm-ascend:v0.23.0-openeuler}}"
 auto_create_container="${VLLM_ENGINE_AUTO_CREATE_CONTAINER:-true}"
 container_non_interactive="${VLLM_ENGINE_CONTAINER_NON_INTERACTIVE:-1}"
 recreate_container="${VLLM_ENGINE_RECREATE_CONTAINER:-false}"
@@ -46,7 +46,7 @@ compilation_config="${VLLM_ENGINE_COMPILATION_CONFIG:-}"
 vllm_bin="${VLLM_ENGINE_BIN:-vllm-hust}"
 vllm_script="${VLLM_ENGINE_SCRIPT:-}"
 conda_prefix="${VLLM_ENGINE_CONDA_PREFIX:-}"
-conda_env="${VLLM_ENGINE_CONDA_ENV:-${CONDA_ENV:-vllm-hust-dev}}"
+conda_env="${VLLM_ENGINE_CONDA_ENV:-${CONDA_ENV:-}}"
 engine_python="${VLLM_ENGINE_PYTHON:-}"
 pip_install="${VLLM_ENGINE_PIP_INSTALL:-}"
 import_preflight="${VLLM_ENGINE_IMPORT_PREFLIGHT:-}"
@@ -703,16 +703,16 @@ elif [[ -n "$CONDA_PREFIX_OVERRIDE" ]]; then
   export CONDA_PREFIX="$CONDA_PREFIX_OVERRIDE"
   export PATH="$CONDA_PREFIX/bin:$PATH"
   export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH:-}"
-elif [[ -f /root/miniconda3/etc/profile.d/conda.sh ]]; then
+elif [[ -n "$CONDA_ENV" && -f /root/miniconda3/etc/profile.d/conda.sh ]]; then
   source /root/miniconda3/etc/profile.d/conda.sh
   conda activate "$CONDA_ENV"
-elif [[ -f /opt/conda/etc/profile.d/conda.sh ]]; then
+elif [[ -n "$CONDA_ENV" && -f /opt/conda/etc/profile.d/conda.sh ]]; then
   source /opt/conda/etc/profile.d/conda.sh
   conda activate "$CONDA_ENV"
 elif [[ -n "${CONDA_PREFIX:-}" ]]; then
   echo "[container] conda already active: $CONDA_PREFIX"
 else
-  echo "[container] WARNING: no conda activation path found; relying on current PATH" >&2
+  echo "[container] using the official image's native Python/CANN runtime"
 fi
 if [[ -n "$ENGINE_PYTHON" ]]; then
   if [[ ! -x "$ENGINE_PYTHON" ]]; then

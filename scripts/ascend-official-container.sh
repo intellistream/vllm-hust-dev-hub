@@ -8,7 +8,7 @@ HUB_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 WORKSPACE_ROOT="$(cd -- "$HUB_ROOT/.." && pwd)"
 MANAGER_SRC="$WORKSPACE_ROOT/ascend-runtime-manager/src"
 
-IMAGE="${IMAGE:-}"
+IMAGE="${IMAGE:-quay.io/ascend/vllm-ascend:v0.23.0-openeuler}"
 CONTAINER_NAME="${CONTAINER_NAME:-vllm-ascend-dev}"
 HOST_WORKSPACE_ROOT="${HOST_WORKSPACE_ROOT:-$WORKSPACE_ROOT}"
 CONTAINER_WORKSPACE_ROOT="${CONTAINER_WORKSPACE_ROOT:-/workspace}"
@@ -344,7 +344,8 @@ main() {
   local -a manager_cmd
 
   python_bin="$(find_python)"
-  if [[ "${HUST_ASCEND_MANAGER_CONTAINER_SECURITY_PROFILE:-}" == "explicit-devices-nonprivileged-v1" ]]; then
+  if [[ "${HUST_ASCEND_MANAGER_CONTAINER_SECURITY_PROFILE:-}" == "explicit-devices-nonprivileged-v1" || \
+        "${HUST_ASCEND_MANAGER_CONTAINER_SECURITY_PROFILE:-}" == "driver-compatible-visible-devices-v1" ]]; then
     if [[ -z "${HUST_ASCEND_MANAGER_EXPECTED_COMMIT:-}" ]]; then
       echo "ERROR: explicit-device profile lacks pinned manager commit." >&2
       return 1

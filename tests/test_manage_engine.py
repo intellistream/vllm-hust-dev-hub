@@ -296,7 +296,7 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("EnvironmentFile=-", MANAGE_SCRIPT.read_text())
         self.assertIn("write_unit_environment", MANAGE_SCRIPT.read_text())
         self.assertIn('"KEY"', MANAGE_SCRIPT.read_text())
-        self.assertIn("v0.21.0rc1-openeuler", script)
+        self.assertIn("v0.23.0-openeuler", script)
         self.assertIn("VLLM_ENGINE_COMPILATION_CONFIG", script)
         self.assertIn("VLLM_ENGINE_CONTAINER_LOG_FILE", script)
         self.assertIn("VLLM_ENGINE_HOST_LOG_FILE", script)
