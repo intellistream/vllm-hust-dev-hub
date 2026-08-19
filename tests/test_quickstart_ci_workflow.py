@@ -223,6 +223,48 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         self.assertIn('${CONDA_PREFIX:-}/Ascend/cann/compiler/version.info', script_text)
         self.assertIn('${CONDA_PREFIX:-}/Ascend/cann/opp/version.info', script_text)
 
+    def test_quickstart_preserves_env_local_cann_runtime_paths(self) -> None:
+        script_text = QUICKSTART_SCRIPT_PATH.read_text()
+
+        runtime_builder = script_text[
+            script_text.index('build_runtime_ld_library_path_for_env() {') :
+            script_text.index('run_with_heartbeat() {')
+        ]
+        self.assertIn('"$env_prefix/Ascend/cann"', runtime_builder)
+        self.assertIn('"$ascend_root/runtime/lib64"', runtime_builder)
+        self.assertIn('"$ascend_root/hccl/lib64"', runtime_builder)
+        self.assertIn('/usr/local/Ascend/driver/lib64/driver', runtime_builder)
+
+        activate_hook = script_text[
+            script_text.index("cat > \"$activate_script\" <<'EOF'") :
+            script_text.index("cat > \"$deactivate_script\" <<'EOF'")
+        ]
+        self.assertIn('"${CONDA_PREFIX:-}/Ascend/cann"', activate_hook)
+        self.assertIn('export ASCEND_HOME_PATH="$_hust_dev_hub_ascend_root"', activate_hook)
+        self.assertIn('"$_hust_dev_hub_ascend_root/runtime/lib64"', activate_hook)
+        self.assertIn('"$_hust_dev_hub_ascend_root/hccl/lib64"', activate_hook)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prefix = Path(tmpdir)
+            (prefix / "lib").mkdir()
+            (prefix / "Ascend/cann/runtime/lib64").mkdir(parents=True)
+            (prefix / "Ascend/cann/hccl/lib64").mkdir(parents=True)
+            command = (
+                f"source <(sed '/^main() {{/,$d' {shlex.quote(str(QUICKSTART_SCRIPT_PATH))}); "
+                f"get_conda_env_prefix() {{ printf '%s\\n' {shlex.quote(tmpdir)}; }}; "
+                "get_conda_env_python_bin() { return 1; }; "
+                "LD_LIBRARY_PATH= build_runtime_ld_library_path_for_env synthetic"
+            )
+            result = subprocess.run(
+                ["bash", "-lc", command],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            entries = result.stdout.strip().split(":")
+            self.assertIn(str(prefix / "Ascend/cann/runtime/lib64"), entries)
+            self.assertIn(str(prefix / "Ascend/cann/hccl/lib64"), entries)
+
     def test_quickstart_reads_setup_py_variable_backed_project_name(self) -> None:
         synthetic_setup_py = (
             'PROJECT_NAME = "my-test-project"\n'
