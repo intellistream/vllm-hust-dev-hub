@@ -8,6 +8,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MANAGE_SCRIPT = REPO_ROOT / "manage.sh"
 ENGINE_SCRIPT = REPO_ROOT / "scripts" / "run_vllm_hust_engine.sh"
+ENV_EXPORT_SCRIPT = REPO_ROOT / "scripts" / "container_env_exports.py"
 CLEANUP_SCRIPT = REPO_ROOT / "scripts" / "cleanup_vllm_hust_engine.sh"
 ENV_TEMPLATE = REPO_ROOT / ".env.template"
 README = REPO_ROOT / "README.md"
@@ -124,9 +125,10 @@ class ManageEngineGuardTests(unittest.TestCase):
         manage = MANAGE_SCRIPT.read_text()
         self.assertIn("VLLM_ENGINE_EXTRA_ENV_KEYS", manage)
         self.assertIn("VLLM_ENGINE_EXTRA_ENV_PREFIXES", manage)
-        self.assertIn('"VLLM_ASCEND_ENABLE_MLAPO"', script)
-        self.assertIn('"VLLM_ASCEND_KV_CACHE_FREE_MEMORY_FRACTION"', script)
-        self.assertIn('"VLLM_ENGINE_CONTAINER_HOME"', script)
+        env_exporter = ENV_EXPORT_SCRIPT.read_text()
+        self.assertIn('"VLLM_ASCEND_ENABLE_MLAPO"', env_exporter)
+        self.assertIn('"VLLM_ASCEND_KV_CACHE_FREE_MEMORY_FRACTION"', env_exporter)
+        self.assertIn('"VLLM_ENGINE_CONTAINER_HOME"', env_exporter)
         self.assertIn("VLLM_ENGINE_ENV_FILE", manage)
         self.assertIn("VLLM_OPTIMIZATION_", manage)
         self.assertIn("TORCH_DEVICE_BACKEND_AUTOLOAD", manage)

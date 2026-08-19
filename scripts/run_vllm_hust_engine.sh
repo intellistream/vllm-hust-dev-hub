@@ -112,73 +112,7 @@ container_log_file="${VLLM_ENGINE_CONTAINER_LOG_FILE:-}"
 simple_kv_offload="${VLLM_USE_SIMPLE_KV_OFFLOAD:-0}"
 
 container_extra_env_exports() {
-  python3 - <<'PY'
-import os
-import shlex
-
-explicit = {
-    "COMPILE_CUSTOM_KERNELS",
-    "HF_HUB_OFFLINE",
-    "HF_ENDPOINT",
-    "HF_HOME",
-    "HF_HUB_CACHE",
-    "HUGGINGFACE_HUB_CACHE",
-    "HF_DATASETS_CACHE",
-    "HCCL_OP_EXPANSION_MODE",
-    "HCCL_BUFFSIZE",
-    "HCCL_CONNECT_TIMEOUT",
-    "HCCL_EXEC_TIMEOUT",
-    "OMP_NUM_THREADS",
-    "OMP_PROC_BIND",
-    "PYTORCH_NPU_ALLOC_CONF",
-    "TASK_QUEUE_ENABLE",
-    "TORCH_DEVICE_BACKEND_AUTOLOAD",
-    "TRANSFORMERS_OFFLINE",
-    "VLLM_ASCEND_ENABLE_MLAPO",
-    "VLLM_ASCEND_KV_CACHE_FREE_MEMORY_FRACTION",
-    "VLLM_ASCEND_TORCH_PREFLIGHT",
-    "VLLM_ENGINE_CONTAINER_HOME",
-    "VLLM_ENGINE_EXTRA_ARGS_JSON",
-    "VLLM_ENGINE_INSTALLED_MODULES_JSON",
-    "VLLM_USE_SIMPLE_KV_OFFLOAD",
-    "VLLM_USE_V1",
-    "VLLM_WORKER_MULTIPROC_METHOD",
-}
-prefixes = ()
-extra_keys = {
-    item.strip()
-    for item in os.environ.get("VLLM_ENGINE_EXTRA_ENV_KEYS", "").split(",")
-    if item.strip()
-}
-extra_prefixes = tuple(
-    item.strip()
-    for item in os.environ.get("VLLM_ENGINE_EXTRA_ENV_PREFIXES", "").split(",")
-    if item.strip()
-)
-safe_token_keys = {
-    "MAX_NUM_BATCHED_TOKENS",
-    "VLLM_ENGINE_MAX_NUM_BATCHED_TOKENS",
-}
-
-keys = []
-for key in os.environ:
-    upper = key.upper()
-    if (
-        key not in safe_token_keys
-        and ("KEY" in upper or "TOKEN" in upper or "SECRET" in upper)
-    ):
-        continue
-    if (
-        key in explicit
-        or key in extra_keys
-        or key.startswith(prefixes)
-        or key.startswith(extra_prefixes)
-    ):
-        keys.append(key)
-
-for key in sorted(keys):
-    print(f"export {key}={shlex.quote(os.environ[key])}")
-PY
+  python3 "$repo_root/scripts/container_env_exports.py"
 }
 
 extra_env_exports="$(container_extra_env_exports)"
