@@ -8,8 +8,8 @@ place.
 Use this repo when you need to:
 
 - clone or refresh the standard vLLM-HUST multi-repo workspace
-- create or repair the `vllm-hust-dev` conda environment
-- start the official Ascend development container
+- create or repair the optional host-side `vllm-hust-dev` tooling environment
+- start the official Ascend 0.23 development/runtime container
 - launch or manage a host-managed vLLM-HUST engine service
 - prepare offline assets for an Ascend docker instance
 - install a GitHub Actions self-hosted runner for the workspace
@@ -17,7 +17,8 @@ Use this repo when you need to:
 Agent workflow note: on any prepared dev-hub Ascend development machine,
 use this repo's `./manage.sh` as the first-choice entrypoint for launching,
 restarting, health-checking, and testing the prepared vLLM-HUST service. Avoid
-ad-hoc host environment setup unless `manage.sh` is insufficient for the task.
+ad-hoc host accelerator environments: NPU execution belongs in the official
+container, while the host supplies Docker, NPU devices, and driver interfaces.
 
 ## Quick Start
 
@@ -154,10 +155,10 @@ Install scopes:
 - `full`: core repos plus installable extra local repos such as workstation,
   docs, website, EvoScientist, and TraceLoom
 
-Quickstart is intentionally user-space first. It does not run `sudo`, `sg`,
-`HwHiAiUser`, or host-level Ascend setup by default. If a machine still needs
-system packages, permissions, or CANN setup, run `hust-ascend-manager setup`
-manually with the appropriate privileges.
+Quickstart is intentionally user-space first. It does not run `sudo`, `sg`, or
+`HwHiAiUser` setup by default. Formal NPU runs do not require a host CANN
+Toolkit/ops installation: the official image owns CANN, HCCL, Torch-NPU, vLLM,
+and vLLM-Ascend. Host-side CANN setup is a legacy bare-metal path only.
 
 ### Use the Official Ascend Container
 
@@ -188,7 +189,7 @@ Container behavior:
 - Mounts resolved external symlink targets under the workspace root.
 - Menu option 6 prompts for a container name. Pressing Enter uses the image
   basename/tag plus the current login username, normalized for Docker (for
-  example, `vllm-ascend-v0.17.0rc1-<username>`).
+  example, `vllm-ascend-v0.23.0-openeuler-<username>`).
 - If `ascend-runtime-manager` is missing, menu option 6 clones that dependency
   on demand.
 - `VLLM_ENGINE_CONTAINER_NAME` selects the container for later helper and
@@ -196,6 +197,8 @@ Container behavior:
   as a deprecated compatibility alias.
 - Sources Ascend toolkit and ATB environment scripts before shell or command
   execution.
+- Uses the image's CANN Toolkit/ops/HCCL and never bind-mounts a host CANN
+  Toolkit or host ops tree. Only driver/device interfaces come from the host.
 - Can auto-configure container SSH using host `authorized_keys`, discovered
   public keys, and `~/.ssh/vllm-ascend-extra-authorized_keys`.
 - Uses host port `2222` for ProxyJump-friendly SSH access when configured.
@@ -212,9 +215,10 @@ For direct SSH-to-container setup from remote Windows clients, see
 
 ### Launch an Ascend Model Service
 
-Host mode uses `hust-ascend-manager launch` and is intended for bare-metal
-Ascend machines where CANN, `torch_npu`, and `vllm-hust` live in the same conda
-environment:
+Host mode is retained only for legacy bare-metal debugging. It is not the
+formal or recommended NPU evidence path. Prefer `./manage.sh`, which launches
+inside `quay.io/ascend/vllm-ascend:v0.23.0-openeuler` using its native Python
+and CANN stack.
 
 ```bash
 bash scripts/launch_ascend_model_service.sh \

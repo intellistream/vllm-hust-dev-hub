@@ -12,9 +12,10 @@ CONTAINER_NAME_SCRIPT="$SCRIPT_DIR/container-name.sh"
 # shellcheck source=scripts/container-name.sh
 source "$CONTAINER_NAME_SCRIPT"
 
-IMAGE="${IMAGE:-}"
+DEFAULT_OFFICIAL_IMAGE="quay.io/ascend/vllm-ascend:v0.23.0-openeuler"
+IMAGE="${IMAGE:-$DEFAULT_OFFICIAL_IMAGE}"
 if ! CONTAINER_NAME="$(configured_vllm_engine_container_name)"; then
-  CONTAINER_NAME="$(container_name_from_image_and_user "${IMAGE:-quay.io/ascend/vllm-ascend:v0.17.0rc1}" "$(id -un 2>/dev/null || printf '%s' "${USER:-user}")")"
+  CONTAINER_NAME="$(container_name_from_image_and_user "$IMAGE" "$(id -un 2>/dev/null || printf '%s' "${USER:-user}")")"
 fi
 validate_docker_container_name "$CONTAINER_NAME"
 HOST_WORKSPACE_ROOT="${HOST_WORKSPACE_ROOT:-$WORKSPACE_ROOT}"
@@ -375,7 +376,7 @@ Actions:
 
 Environment:
   IMAGE                          Docker image (default:
-                                 quay.io/ascend/vllm-ascend:v0.17.0rc1)
+                                 quay.io/ascend/vllm-ascend:v0.23.0-openeuler)
   VLLM_ENGINE_CONTAINER_NAME     Custom container name
   VLLM_ENGINE_CONTAINER          (deprecated) Custom container name
   CONTAINER_NAME                 Fallback container name
