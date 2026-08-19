@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "diffspec",
+  "repository": "vllm-ascend-hust-diffspec",
+  "source_subdir": "",
+  "entrypoint": {"group": "vllm.general_plugins", "name": "diffspec"},
+  "parameters": {
+    "draft_model": {"flag": "--draft-model", "required": true}
+  },
+  "activation": {
+    "vllm_plugins": ["ascend", "diffspec"],
+    "environment": {
+      "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
+      "VLLM_ENGINE_ENABLE_PREFIX_CACHING": "0",
+      "VLLM_ENGINE_ENFORCE_EAGER": "1",
+      "VLLM_ENGINE_MAX_NUM_SEQS": "1"
+    },
+    "extra_env_keys": ["VLLM_ALLOW_LONG_MAX_MODEL_LEN"],
+    "extra_args": [
+      "--speculative-config",
+      {"method": "eagle3", "model": "${draft_model}", "num_speculative_tokens": 5, "enforce_eager": true, "draft_context_policy": "diffspec", "diffspec_verification_mode": "auto", "diffspec_chunk_size": 64, "diffspec_token_budget": 2048}
+    ]
+  },
+  "compatibility": {"incompatible_with": ["latchmoe"]}
+}

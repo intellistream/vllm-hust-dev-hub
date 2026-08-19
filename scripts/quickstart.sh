@@ -2438,6 +2438,7 @@ ensure_vllm_hust_editable_build_python_packages() {
     setuptools
     setuptools-scm
     setuptools-rust
+    torch
     wheel
     jinja2
   )
@@ -2932,8 +2933,11 @@ install_workspace_repos_into_env() {
       skipped_list+=("$repo_path ($project_name)")
       repo_result_messages+=("[$repo_index/$total_repo_count] skipped: $project_name")
     else
-      install_editable_repo_into_env "$repo_path" "$reconcile_mode"
-      install_rc=$?
+      if install_editable_repo_into_env "$repo_path" "$reconcile_mode"; then
+        install_rc=0
+      else
+        install_rc=$?
+      fi
       if [[ "$install_rc" -ne 0 ]]; then
         case "$install_rc" in
           10)
@@ -2984,8 +2988,11 @@ install_workspace_repos_into_env() {
       continue
     fi
 
-    install_editable_repo_into_env "$repo_path" "$reconcile_mode"
-    install_rc=$?
+    if install_editable_repo_into_env "$repo_path" "$reconcile_mode"; then
+      install_rc=0
+    else
+      install_rc=$?
+    fi
     if [[ "$install_rc" -ne 0 ]]; then
       case "$install_rc" in
         10)

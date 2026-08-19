@@ -1,0 +1,5 @@
+[vllm.general_plugins]
+sample_general = sample_plugin:register
+
+[vllm.victim_selector]
+sample_selector = sample_plugin:Selector

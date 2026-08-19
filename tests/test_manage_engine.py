@@ -2,6 +2,7 @@ from pathlib import Path
 import os
 import stat
 import subprocess
+import sys
 import unittest
 
 
@@ -13,6 +14,10 @@ CLEANUP_SCRIPT = REPO_ROOT / "scripts" / "cleanup_vllm_hust_engine.sh"
 ENV_TEMPLATE = REPO_ROOT / ".env.template"
 README = REPO_ROOT / "README.md"
 SMOKE_PROFILE = REPO_ROOT / "profiles" / "smoke-qwen2.5-7b-npu1.env"
+ENTRYPOINT_PROBE = REPO_ROOT / "scripts" / "check_optimization_entrypoint.py"
+OPTIMIZATION_INSTALLER = REPO_ROOT / "scripts" / "prepare_optimization_plugin.py"
+OPTIMIZATION_PLUGIN_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "optimization_plugins"
+NPU_FAILURE_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "npu_allocating_failure.py"
 
 
 class ManageEngineGuardTests(unittest.TestCase):
@@ -81,6 +86,8 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("VLLM_ENGINE_BASE_PYTHONPATH", template)
         self.assertIn("VLLM_OPTIMIZATION_REPO_CONTAINER", template)
         self.assertIn("VLLM_OPTIMIZATION_PLUGIN", template)
+        self.assertIn("VLLM_OPTIMIZATION_ENTRYPOINT_GROUP", template)
+        self.assertIn("VLLM_OPTIMIZATION_AUTO_INSTALL", template)
         self.assertIn("VLLM_OPTIMIZATION_ENV_PREFIX", template)
         self.assertIn("VLLM_ENGINE_PYTHONPATH", template)
         self.assertIn("VLLM_ENGINE_INHERIT_PYTHONPATH=0", template)
@@ -201,8 +208,54 @@ class ManageEngineGuardTests(unittest.TestCase):
 
         self.assertIn("optimization_repo_container", script)
         self.assertIn("optimization_src_subdir", script)
+        self.assertIn("optimization_entrypoint_group", script)
+        self.assertIn("optimization_plugin_installed", script)
+        self.assertIn("prepare_optimization_plugin.py", OPTIMIZATION_INSTALLER.name)
+        self.assertIn("OPTIMIZATION_INSTALL_TARGET", script)
+        self.assertIn("cleanup_optimization_install", script)
+        self.assertIn("cleanup_container_launch", script)
+        self.assertIn("optimization_source_snapshot", script)
+        self.assertIn('export PYTHONPATH="$OPTIMIZATION_INSTALL_DIR', script)
+        self.assertIn("installation did not register", script)
         self.assertIn("engine_base_pythonpath", script)
+        self.assertIn('plugins="ascend,${plugins}"', script)
         self.assertIn('plugins="${plugins},${optimization_plugin}"', script)
+        self.assertIn('[[ ",$plugins," != *",$optimization_plugin,"* ]]', script)
+
+    def test_npu_failure_fixture_is_explicit_and_bounded(self) -> None:
+        fixture = NPU_FAILURE_FIXTURE.read_text()
+
+        self.assertIn("VLLM_TEST_NPU_ALLOCATION_READY", fixture)
+        self.assertIn("VLLM_TEST_NPU_ALLOCATION_MIB", fixture)
+        self.assertIn("VLLM_TEST_NPU_HOLD_SECONDS", fixture)
+        self.assertIn("raise SystemExit(42)", fixture)
+
+    def test_entrypoint_probe_matches_exact_group_and_name(self) -> None:
+        env = os.environ.copy()
+        env["PYTHONPATH"] = str(OPTIMIZATION_PLUGIN_FIXTURE)
+
+        for group, name in (
+            ("vllm.general_plugins", "sample_general"),
+            ("vllm.victim_selector", "sample_selector"),
+        ):
+            result = subprocess.run(
+                [sys.executable, str(ENTRYPOINT_PROBE), group, name],
+                env=env,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, f"missing {group}:{name}")
+
+        for group, name in (
+            ("vllm.general_plugins", "sample_selector"),
+            ("vllm.victim_selector", "sample_general"),
+            ("vllm.victim_selector", "missing"),
+        ):
+            result = subprocess.run(
+                [sys.executable, str(ENTRYPOINT_PROBE), group, name],
+                env=env,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 1, f"unexpected {group}:{name}")
 
 
 if __name__ == "__main__":
