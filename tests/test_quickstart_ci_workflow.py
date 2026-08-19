@@ -61,10 +61,16 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
 
     def test_quickstart_ci_installs_smoke_deps_before_runtime_check(self) -> None:
         script_text = SCRIPT_PATH.read_text()
+        quickstart_text = QUICKSTART_SCRIPT_PATH.read_text()
         main_flow = script_text[script_text.index('conda_bin="$(resolve_conda_bin)"') :]
 
         self.assertIn("'setuptools-scm>=8.0' setuptools-rust", script_text)
         self.assertIn("VLLM_TARGET_DEVICE=empty VLLM_USE_PRECOMPILED=0", script_text)
+        editable_build_requirements = quickstart_text[
+            quickstart_text.index("ensure_vllm_hust_editable_build_python_packages() {") :
+            quickstart_text.index("ensure_vllm_hust_runtime_python_packages() {")
+        ]
+        self.assertIn("\n    torch\n", editable_build_requirements)
         self.assertLess(
             main_flow.index('if ! install_smoke_test_dependencies "$conda_bin"; then'),
             main_flow.index('"runtime check"'),

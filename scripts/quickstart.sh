@@ -2438,6 +2438,7 @@ ensure_vllm_hust_editable_build_python_packages() {
     setuptools
     setuptools-scm
     setuptools-rust
+    torch
     wheel
     jinja2
   )
