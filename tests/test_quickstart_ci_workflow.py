@@ -65,6 +65,10 @@ class QuickstartWorkflowGuardTests(unittest.TestCase):
         main_flow = script_text[script_text.index('conda_bin="$(resolve_conda_bin)"') :]
 
         self.assertIn("'setuptools-scm>=8.0' setuptools-rust", script_text)
+        self.assertIn(
+            "python -m pip install -e '$WORKSPACE_ROOT/vllm-hust-benchmark[test]' --no-build-isolation",
+            script_text,
+        )
         self.assertIn("VLLM_TARGET_DEVICE=empty VLLM_USE_PRECOMPILED=0", script_text)
         editable_build_requirements = quickstart_text[
             quickstart_text.index("ensure_vllm_hust_editable_build_python_packages() {") :

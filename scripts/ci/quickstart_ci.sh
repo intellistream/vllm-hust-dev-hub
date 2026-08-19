@@ -198,7 +198,7 @@ run_pytest_step() {
 
 install_smoke_test_dependencies() {
   local conda_bin="$1"
-  local install_command="python -m pip install jsonschema pytest 'setuptools-scm>=8.0' setuptools-rust"
+  local install_command="python -m pip install jsonschema pytest 'setuptools-scm>=8.0' setuptools-rust && python -m pip install -e '$WORKSPACE_ROOT/vllm-hust-benchmark[test]' --no-build-isolation"
 
   if ! install_scope_is_core; then
     install_command="$install_command && VLLM_TARGET_DEVICE=empty VLLM_USE_PRECOMPILED=0 python -m pip install -e '$WORKSPACE_ROOT/vllm-hust[ci-smoke]' --no-build-isolation"
