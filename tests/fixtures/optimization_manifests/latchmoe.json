@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "id": "latchmoe",
+  "repository": "vllm-ascend-hust-LatchMoE",
+  "source_subdir": "",
+  "entrypoint": {"group": "vllm.platform_plugins", "name": "moe_offload_ascend"},
+  "parameters": {
+    "offload_gb": {"flag": "--offload-gb", "default": "14"}
+  },
+  "activation": {
+    "vllm_plugins": ["ascend", "moe_offload_ascend"],
+    "environment": {
+      "VLLM_ASCEND_MOE_OFFLOAD_GB": "${offload_gb}",
+      "VLLM_ASCEND_MOE_OFFLOAD_SEW_DATAPLANE": "1",
+      "VLLM_ASCEND_MOE_OFFLOAD_MAX_NUM_SEQS_HINT": "1",
+      "VLLM_ENGINE_MAX_NUM_SEQS": "1"
+    },
+    "extra_env_prefixes": ["VLLM_ASCEND_MOE_OFFLOAD_"]
+  },
+  "compatibility": {"incompatible_with": ["diffspec"]}
+}
