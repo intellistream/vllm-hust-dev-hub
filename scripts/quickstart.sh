@@ -568,6 +568,9 @@ build_runtime_ld_library_path_for_env() {
   local env_python_bin=""
   local torch_lib=""
   local torch_npu_lib=""
+  local ascend_root=""
+  local ascend_runtime_dir=""
+  local ascend_runtime_candidates=()
   local seen_entries=""
 
   env_prefix="$(get_conda_env_prefix "$env_name" 2>/dev/null || true)"
@@ -605,6 +608,35 @@ PY
   if [[ -n "$torch_npu_lib" && -d "$torch_npu_lib" ]]; then
     prepend_entries+=("$torch_npu_lib")
   fi
+
+  # A user-space CANN install lives inside the conda environment.  Conda's
+  # activate hook may discover it, but run_conda_env_cmd deliberately supplies
+  # a sanitized LD_LIBRARY_PATH and would otherwise hide those paths again.
+  # Keep the driver support libraries before CANN, matching ascend-manager's
+  # runtime ordering, then include the layouts used by both pip and conda CANN.
+  for ascend_runtime_dir in \
+    /usr/local/Ascend/driver/lib64/common \
+    /usr/local/Ascend/driver/lib64/driver \
+    /usr/local/Ascend/driver/lib64; do
+    [[ -d "$ascend_runtime_dir" ]] && prepend_entries+=("$ascend_runtime_dir")
+  done
+
+  for ascend_root in \
+    "$env_prefix/Ascend/cann" \
+    "$env_prefix/Ascend/ascend-toolkit/latest"; do
+    [[ -d "$ascend_root" ]] || continue
+    ascend_runtime_candidates=(
+      "$ascend_root/runtime/lib64"
+      "$ascend_root/lib64"
+      "$ascend_root/compiler/lib64"
+      "$ascend_root/hccl/lib64"
+      "$ascend_root/aarch64-linux/lib64"
+    )
+    for ascend_runtime_dir in "${ascend_runtime_candidates[@]}"; do
+      [[ -d "$ascend_runtime_dir" ]] && prepend_entries+=("$ascend_runtime_dir")
+    done
+    break
+  done
 
   if [[ -n "$raw_ld_library_path" ]]; then
     IFS=':' read -r -a path_entries <<< "$raw_ld_library_path"
@@ -3120,6 +3152,7 @@ for _hust_dev_hub_var in \
   HF_HUB_CACHE \
   HF_TOKEN_PATH \
   ASCEND_HOME_PATH \
+  ASCEND_TOOLKIT_HOME \
   ASCEND_OPP_PATH \
   ASCEND_AICPU_PATH \
   TORCH_DEVICE_BACKEND_AUTOLOAD \
@@ -3166,7 +3199,7 @@ if [[ "${HUST_DEV_HUB_ENABLE_MANAGER_ENV_HOOK:-0}" == "1" ]] \
   _hust_dev_hub_manager_env="$(hust-ascend-manager env --shell 2>/dev/null || true)"
   if [[ -n "$_hust_dev_hub_manager_env" ]]; then
     _hust_dev_hub_manager_env_filtered="$(printf '%s\n' "$_hust_dev_hub_manager_env" | \
-      grep -E '^[[:space:]]*export[[:space:]]+(ASCEND_HOME_PATH|ASCEND_OPP_PATH|ASCEND_AICPU_PATH|TORCH_DEVICE_BACKEND_AUTOLOAD|HUST_ASCEND_RUNTIME_VERSION|HUST_ASCEND_HAS_STREAM_ATTR|HUST_ASCEND_OPP_OVERLAY_ROOT|HUST_ATB_SET_ENV|LD_LIBRARY_PATH|PYTHONPATH)=' || true)"
+      grep -E '^[[:space:]]*export[[:space:]]+(ASCEND_HOME_PATH|ASCEND_TOOLKIT_HOME|ASCEND_OPP_PATH|ASCEND_AICPU_PATH|TORCH_DEVICE_BACKEND_AUTOLOAD|HUST_ASCEND_RUNTIME_VERSION|HUST_ASCEND_HAS_STREAM_ATTR|HUST_ASCEND_OPP_OVERLAY_ROOT|HUST_ATB_SET_ENV|LD_LIBRARY_PATH|PYTHONPATH)=' || true)"
     if [[ -n "$_hust_dev_hub_manager_env_filtered" ]]; then
       eval "$_hust_dev_hub_manager_env_filtered"
     fi
@@ -3213,6 +3246,49 @@ if [[ -n "${CONDA_PREFIX:-}" && -d "${CONDA_PREFIX}/lib" ]]; then
     export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib"
   fi
 fi
+
+# Prefer a complete user-space CANN installation carried by this environment.
+# This is required on hosts where the system toolkit is compiler-only or lacks
+# libhccl.so.  Keep host driver libraries ahead of the env-local CANN runtime.
+_hust_dev_hub_ascend_root=""
+for _candidate in \
+  "${CONDA_PREFIX:-}/Ascend/cann" \
+  "${CONDA_PREFIX:-}/Ascend/ascend-toolkit/latest"; do
+  if [[ -n "${CONDA_PREFIX:-}" && -d "$_candidate" ]]; then
+    _hust_dev_hub_ascend_root="$_candidate"
+    break
+  fi
+done
+if [[ -n "$_hust_dev_hub_ascend_root" ]]; then
+  export ASCEND_HOME_PATH="$_hust_dev_hub_ascend_root"
+  export ASCEND_TOOLKIT_HOME="$_hust_dev_hub_ascend_root"
+  export ASCEND_AICPU_PATH="$_hust_dev_hub_ascend_root"
+  if [[ -d "$_hust_dev_hub_ascend_root/opp" ]]; then
+    export ASCEND_OPP_PATH="$_hust_dev_hub_ascend_root/opp"
+  fi
+
+  _hust_dev_hub_ascend_prepend=()
+  for _candidate in \
+    /usr/local/Ascend/driver/lib64/common \
+    /usr/local/Ascend/driver/lib64/driver \
+    /usr/local/Ascend/driver/lib64 \
+    "$_hust_dev_hub_ascend_root/runtime/lib64" \
+    "$_hust_dev_hub_ascend_root/lib64" \
+    "$_hust_dev_hub_ascend_root/compiler/lib64" \
+    "$_hust_dev_hub_ascend_root/hccl/lib64" \
+    "$_hust_dev_hub_ascend_root/aarch64-linux/lib64"; do
+    [[ -d "$_candidate" ]] && _hust_dev_hub_ascend_prepend+=("$_candidate")
+  done
+  if (( ${#_hust_dev_hub_ascend_prepend[@]} > 0 )); then
+    _hust_dev_hub_ascend_ld="$(IFS=':'; printf '%s' "${_hust_dev_hub_ascend_prepend[*]}")"
+    if [[ -n "${LD_LIBRARY_PATH:-}" ]]; then
+      export LD_LIBRARY_PATH="${_hust_dev_hub_ascend_ld}:${LD_LIBRARY_PATH}"
+    else
+      export LD_LIBRARY_PATH="$_hust_dev_hub_ascend_ld"
+    fi
+  fi
+fi
+unset _hust_dev_hub_ascend_root _hust_dev_hub_ascend_prepend _hust_dev_hub_ascend_ld _candidate
 
 # Prepend torch / torch_npu lib directories to LD_LIBRARY_PATH so that
 # compiled C extensions (e.g. vllm_ascend_C.so) can find libtorch.so and
@@ -3353,6 +3429,7 @@ for _hust_dev_hub_var in \
   HF_HUB_CACHE \
   HF_TOKEN_PATH \
   ASCEND_HOME_PATH \
+  ASCEND_TOOLKIT_HOME \
   ASCEND_OPP_PATH \
   ASCEND_AICPU_PATH \
   TORCH_DEVICE_BACKEND_AUTOLOAD \
