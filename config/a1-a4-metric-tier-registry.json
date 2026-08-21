@@ -1,0 +1,229 @@
+{
+  "schema_version": 1,
+  "organization": "A1-A4",
+  "freeze_rule": "Metric tiers and applicability are frozen before request materialization and cannot be changed after observing B0/B1 results.",
+  "tiers": {
+    "REQUIRED": {
+      "missing_result": "CANNOT_DETERMINE",
+      "enters_hard_gate": true,
+      "may_be_replaced_by_supplementary": false
+    },
+    "SUPPLEMENTARY": {
+      "missing_result": "REPORT_REASON",
+      "enters_hard_gate": false,
+      "may_be_replaced_by_supplementary": false
+    }
+  },
+  "required": {
+    "common_accounting": [
+      "planned_requests",
+      "sent_requests",
+      "completed_requests",
+      "successful_requests",
+      "failed_requests",
+      "total_input_tokens",
+      "total_output_tokens",
+      "measurement_wall_seconds",
+      "error_classification"
+    ],
+    "common_throughput": [
+      "request_throughput_rps",
+      "input_throughput_tps",
+      "output_throughput_tps",
+      "total_token_throughput_tps"
+    ],
+    "common_latency": [
+      "send_lag_mean_ms",
+      "send_lag_p50_ms",
+      "send_lag_p95_ms",
+      "send_lag_p99_ms",
+      "ttft_mean_ms",
+      "ttft_p50_ms",
+      "ttft_p95_ms",
+      "ttft_p99_ms",
+      "tpot_mean_ms",
+      "tpot_p50_ms",
+      "tpot_p95_ms",
+      "tpot_p99_ms",
+      "e2e_mean_ms",
+      "e2e_p50_ms",
+      "e2e_p95_ms",
+      "e2e_p99_ms"
+    ],
+    "streaming_only": [
+      "itl_mean_ms",
+      "itl_p50_ms",
+      "itl_p95_ms",
+      "itl_p99_ms"
+    ],
+    "rate_scan_only": [
+      "slo_goodput_rps",
+      "slo_compliance_rate",
+      "maximum_compliant_capacity_rps",
+      "average_concurrency",
+      "peak_concurrency",
+      "average_waiting_requests",
+      "peak_waiting_requests"
+    ],
+    "reliability": [
+      "send_rate",
+      "completion_rate",
+      "success_rate",
+      "error_rate",
+      "reject_rate",
+      "timeout_count",
+      "oom_count",
+      "crash_count",
+      "deadlock_count",
+      "silent_truncation_count"
+    ],
+    "comparison": [
+      "lifecycle_values",
+      "three_lifecycle_median",
+      "b1_over_b0_ratio",
+      "improvement_or_latency_reduction_percent",
+      "success_or_accuracy_percentage_point_delta",
+      "declared_cross_scenario_geometric_mean"
+    ],
+    "A1": [
+      "effective_flops",
+      "effective_tflops",
+      "mfu",
+      "profiler_flops_deviation_percent",
+      "primary_shape_latency",
+      "guard_shape_latency",
+      "hbm_peak_bytes"
+    ],
+    "A2_applicable_oracle": [
+      "dialogue_protocol_and_continuity",
+      "tool_agent_correctness",
+      "reasoning_official_score",
+      "json_parse_and_schema_conformance",
+      "code_compile_execute_pass",
+      "long_context_quality_and_canary",
+      "quality_and_success_wilson_95_interval"
+    ],
+    "A3": [
+      "hbm_peak_bytes",
+      "kv_cache_peak_utilization",
+      "context_length_bucket_metrics",
+      "oom_count",
+      "silent_truncation_count"
+    ],
+    "A3_mechanism_applicable": [
+      "prefix_cache_hit_and_reuse",
+      "kv_eviction",
+      "request_preemption_and_resume",
+      "kv_transfer_latency_and_bandwidth"
+    ],
+    "A4": [
+      "per_tenant_throughput_goodput_latency_success",
+      "worst_tenant_slo_rate",
+      "jain_fairness_index",
+      "mixed_workload_throughput_loss",
+      "mixed_workload_latency_inflation",
+      "cross_tenant_state_leak_count"
+    ],
+    "specialized_when_applicable": [
+      "logprobs_accuracy_and_overhead",
+      "speculative_acceptance_speedup_and_quality",
+      "model_or_kv_compression_ratio_memory_and_quality",
+      "scheduler_batch_and_queue_evidence",
+      "rag_memory_workflow_correctness",
+      "moe_eplb_alltoall_load_and_communication"
+    ],
+    "resource_observation": [
+      "npu_utilization_mean",
+      "npu_utilization_p95",
+      "hbm_peak_bytes",
+      "average_power_when_available",
+      "measurement_energy_when_available_or_required_by_cost_scope"
+    ],
+    "pricing": [
+      "resource_hourly_cost_scope",
+      "raw_saturation_token_throughput",
+      "slo_compliant_token_throughput",
+      "raw_cost_per_million_tokens",
+      "slo_cost_per_million_tokens",
+      "commercial_fill_rate",
+      "cloud_operations_rate_and_multiplier",
+      "profit_definition_and_rate",
+      "quoted_price_per_million_tokens"
+    ]
+  },
+  "supplementary": {
+    "distribution_and_variance": [
+      "one_second_peak_output_throughput",
+      "range",
+      "coefficient_of_variation",
+      "median_absolute_deviation",
+      "standard_deviation"
+    ],
+    "scheduler_diagnostics": [
+      "running_waiting_time_series",
+      "queue_depth_integral",
+      "batch_size_histogram",
+      "little_law_cross_check",
+      "fallback_path_counts"
+    ],
+    "startup_diagnostics": [
+      "weight_load_time",
+      "compile_time",
+      "graph_capture_time",
+      "first_second_request_warmup_delta"
+    ],
+    "hardware_diagnostics": [
+      "npu_utilization_distribution",
+      "hbm_bandwidth_utilization",
+      "temperature_distribution",
+      "power_time_series",
+      "communication_compute_overlap"
+    ],
+    "long_run_diagnostics": [
+      "hbm_growth_slope",
+      "throughput_decay",
+      "latency_inflation_over_time",
+      "mttf",
+      "mttr"
+    ],
+    "extension_coverage": [
+      "similarity_bucket_metrics",
+      "reuse_bucket_metrics",
+      "non_gate_paio_extensions",
+      "extra_non_contract_scorers"
+    ]
+  },
+  "dataset_config_overrides": [
+    {
+      "dataset_id": "PAIO-LONG-PREFILL-5000",
+      "config_scope": "A1-representative-prefill",
+      "test_tier": "SUPPLEMENTARY"
+    },
+    {
+      "dataset_id": "PAIO-LONG-PREFILL-5000",
+      "config_scope": "A2-long-capacity-qualified",
+      "test_tier": "REQUIRED"
+    },
+    {
+      "dataset_id": "PAIO-PREFIX-SHARED-5000",
+      "config_scope": "mechanism-extension",
+      "test_tier": "SUPPLEMENTARY"
+    },
+    {
+      "dataset_id": "PAIO-SEMANTIC-SIMILAR-5000",
+      "config_scope": "similarity-stability-extension",
+      "test_tier": "SUPPLEMENTARY"
+    },
+    {
+      "dataset_id": "PAIO-CODE-EVAL-1000",
+      "config_scope": "A2-reasoning-ttft",
+      "test_tier": "REQUIRED"
+    },
+    {
+      "dataset_id": "PAIO-CODE-EVAL-1000",
+      "config_scope": "A2-code-extension-only",
+      "test_tier": "SUPPLEMENTARY"
+    }
+  ],
+  "default_dataset_config_tier": "REQUIRED"
+}
