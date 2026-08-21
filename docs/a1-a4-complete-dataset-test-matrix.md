@@ -1,10 +1,10 @@
 # A1—A4 全量数据集测试矩阵
 
-> 状态：V4.5 派欧云八项物理资产已校验并纳入统一资产清单；授权、oracle、固定 tokenizer 与确定性转换资格项仍保持阻塞
+> 状态：派欧云八项物理资产已校验并纳入统一资产清单；授权、oracle、固定 tokenizer 与确定性转换资格项仍保持阻塞
 >
-> 组织原则：每个指标配置维护一组符合其合同的数据集；不指定唯一数据集，也不设置主数据集、备选、替代或 Legacy 等级。
+> 组织原则：每个指标配置维护一组符合其合同的数据集；测试只分 `REQUIRED`（必测）与 `SUPPLEMENTARY`（补充）两档，不按数据来源设置优先级。
 >
-> 执行原则：冻结到同一指标配置的多个数据集必须分别执行、分别报告；不得加权平均掩盖任何失败。公共工程健康数据与 A1—A4 验收合同保持分离。
+> 执行原则：冻结到同一指标配置的多个数据集必须分别执行、分别报告；不得加权平均掩盖任何失败。`SUPPLEMENTARY` 不能代替 `REQUIRED`，公共工程健康数据与 A1—A4 验收合同保持分离。
 
 ## 1. 共通规则
 
@@ -17,6 +17,19 @@
 7. 当前模型为文本模型，视觉数据不得转成纯文本冒充多模态结果；VisionArena 记为 `MODEL_MODALITY_NOT_APPLICABLE`，待多模态模型测试项执行。
 8. `coverage_role` 说明数据补充了哪种业务或机制覆盖，`contract_role` 说明它能否参与该指标合同；两者均不是优先级。正式 `config_id` 生成前从适用数据集组冻结合同所需资产，之后不得根据 B0/B1 结果换题。
 9. 企业接口请求、API 生成文本和 hybrid/synthetic 数据分别标识，不统称真实线上 trace。原始请求中的 `model`、`max_tokens`、`stream` 不直接重放。
+10. `test_tier` 在请求物化前冻结。`REQUIRED` 缺失或未完成使对应合同为 `CANNOT_DETERMINE`；`SUPPLEMENTARY` 单独报告，不进入硬门槛、几何平均或必测完成率。
+
+### 两档分配规则
+
+1. 本矩阵 A1—A4 表内条目默认是 `REQUIRED`：资产和模型适用时必须执行；处于授权、资产、qualification 或模型模态阻塞状态时保留在必测清单并如实报告，不能自动降档。
+2. 下列明确配置为 `SUPPLEMENTARY`：
+   - `PAIO-LONG-PREFILL-5000` 在 A1 代表性 Prefill 配置中的运行；其进入 A2 Long capacity 的合格配置仍为 `REQUIRED`；
+   - `PAIO-PREFIX-SHARED-5000` 的机制扩展运行；
+   - `PAIO-SEMANTIC-SIMILAR-5000` 的 similarity/稳定性扩展运行；
+   - `PAIO-CODE-EVAL-1000` 在 A2 Code 的 extension-only 引用；其 A2 Reasoning/TTFT 配置仍为 `REQUIRED`；
+   - `by-scope/extensions/` 中没有被正式合同提升为必测的其他配置。
+3. 同一物理数据集可以在不同 `config_id` 下有不同档位；结果中必须同时记录 `dataset_id`、`config_id`、`test_tier`、`contract_role` 和 `coverage_role`。
+4. 任何补充项要提升为必测，必须在查看 B0/B1 结果前完成书面变更、阈值冻结和重新 commissioning；测试后不得改档。
 
 统一资产入口：`/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/`。八个派欧云数据集以 `assets/paio-*` 与 ShareGPT、BFCL、LongBench 等原有资产并列存放；`assets/paio-cloud/20260820/` 只保存来源包、清单、README 和回指链接。按指标整理的只读引用位于 `by-scope/A1/`、`by-scope/A2/`、`by-scope/A3/`、`by-scope/A4/` 和 `by-scope/extensions/`。
 
