@@ -52,7 +52,8 @@ def record_count(path: Path) -> int | None:
     return None
 
 
-def iter_files(root: Path):
+def iter_files(root: Path, link_scope_root: Path | None = None):
+    resolved_root = (link_scope_root or root).resolve()
     for current, directories, files in os.walk(root, followlinks=False):
         directories[:] = sorted(
             d
@@ -61,17 +62,24 @@ def iter_files(root: Path):
         )
         for name in sorted(files):
             path = Path(current) / name
-            if path.is_symlink() or is_failed_artifact(name):
+            # Count external files intentionally exposed through the canonical
+            # asset root, but do not double-count an internal alias of a file that
+            # is already under the same asset directory.
+            if path.is_symlink():
+                target = path.resolve()
+                if not target.is_file() or target == resolved_root or resolved_root in target.parents:
+                    continue
+            if is_failed_artifact(name):
                 continue
             yield path
 
 
-def inspect_asset(path: Path) -> dict[str, Any]:
+def inspect_asset(path: Path, link_scope_root: Path | None = None) -> dict[str, Any]:
     if path.is_file():
         paths = [path]
         base = path.parent
     else:
-        paths = list(iter_files(path))
+        paths = list(iter_files(path, link_scope_root))
         base = path
     files: list[dict[str, Any]] = []
     for item in paths:
@@ -80,6 +88,8 @@ def inspect_asset(path: Path) -> dict[str, Any]:
             "size": item.stat().st_size,
             "sha256": sha256(item),
         }
+        if item.is_symlink():
+            entry["symlink_target"] = str(item.resolve())
         try:
             rows = record_count(item)
         except Exception as error:  # noqa: BLE001 - inventory must retain every parse failure.
@@ -207,7 +217,7 @@ def build_inventory(root: Path) -> dict[str, Any]:
                 }
             )
             continue
-        assets.append({"asset": path.name, **inspect_asset(path)})
+        assets.append({"asset": path.name, **inspect_asset(path, root)})
     read_error_count = sum(
         1
         for asset in assets

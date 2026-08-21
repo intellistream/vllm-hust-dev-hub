@@ -5,10 +5,20 @@
 结构固定为：
 
 - 纵向：档位、Metric、计算公式、单位、适用范围；
-- 横向：A1—A4 中每一个数据集或 workload；
+- 横向：机器上已物化且可读取的 44 个去重数据集/请求轨迹家族；
 - 单元格：填写该数据集的结果，推荐格式 `B0=值；B1=值；B1/B0=值`；
 - 不适用填 `N/A`，资产阻塞填具体状态，尚未测试留空；
-- `必测` 行进入正式验收，`补充` 行只用于诊断。
+- 最上面的 `REQUIRED` 行是第三方必须交付的结果；后面的 `ADDITIONAL` 行仅作附加分析。
+
+当前固定为 19 个 `REQUIRED` 和 10 个 `ADDITIONAL`。`REQUIRED` 中带适用
+条件的指标（例如正确率、静默截断率）在不适用的数据集上填 `N/A` 并说明原因，
+不能填 0；适用但缺失时，对应结论为 `CANNOT_DETERMINE`。
+
+列名权威来源为 `config/a1-a4-physical-dataset-registry.csv`。同一数据集被多个
+workload/configuration 引用时只占一列；合成长度、并发、request rate、prefix
+比例、调度方式等属于测试配置，不占数据集列。56 个顶层机器资产为何最终对应
+44 列，以及被排除或合并的资产，见
+`docs/a1-a4-machine-dataset-reconciliation.md`。
 
 最核心公式：
 
@@ -31,4 +41,6 @@
 | 报价（加价率） | `(C_slo/φ) × (1+c_cloud) × (1+r_markup)` |
 | 报价（会计毛利率） | `(C_slo/φ) × (1+c_cloud) / (1-m_gross)` |
 
-同一张表中不要混淆 input、output 和 total token 吞吐。报价默认使用满足 SLO 的 `C_slo`；`C_raw` 只表示极限跑满成本下界。
+同一张表中不要混淆 input、output 和 total token 吞吐。报价默认使用满足 SLO 的
+`C_slo`；`C_raw` 只表示极限跑满成本下界。加价率报价是主交付口径；会计毛利率
+报价是备选口径，只有合同明确选择它时才升级为 `REQUIRED`。

@@ -8,44 +8,41 @@
 
 ## 指标分档
 
-所有指标只分两档：
+对外结果只分两档，并按该顺序排列：
 
 | 档位 | 定义 | 对正式结论的影响 |
 |---|---|---|
-| `REQUIRED`（必测） | 共通计量指标，以及某个场景、功能或优化路径适用时必须采集的条件必测指标 | 缺失、口径不合格或规定 lifecycle 不完整时，对应测试为 `CANNOT_DETERMINE`；不得用补充指标代替 |
-| `SUPPLEMENTARY`（补充） | 用于根因诊断、趋势解释、运营参考或非门禁扩展的指标 | 单独报告，不进入硬门槛、几何平均或必测完成率；未取得时须说明原因，但不冒充通过/失败 |
+| `REQUIRED` | 第三方必须交付、能够直接形成验收结论的指标 | 适用但缺失时，对应结论为 `CANNOT_DETERMINE` |
+| `ADDITIONAL` | 根因诊断、硬件观察、稳定性趋势或备选财务口径 | 可附加报告，不影响必交完成率，不得代替 `REQUIRED` |
 
-“适用即必测”仍属于 `REQUIRED`。例如 Speculative Decoding 的接受率只在执行 speculative workload 时必测，MoE expert load 只在 MoE 模型上必测；不适用时记录明确的 `NOT_APPLICABLE`，不能降为补充项或填 0。
+“适用即必交”仍属于 `REQUIRED`。例如没有冻结 oracle 的数据集，其正确率填
+`NOT_APPLICABLE`；长上下文测试必须报告静默截断率，普通短请求则可以填
+`NOT_APPLICABLE`。不适用不能写成数值 0。
 
-### REQUIRED：必测指标
+### REQUIRED：19 个必交指标
 
-| 指标组 | 必测内容 |
+| 指标组 | REQUIRED 指标 |
 |---|---|
-| 请求 accounting | `N_plan`、`N_sent`、`N_done`、`N_ok`、输入/输出 token、测量墙钟、完整错误分类 |
-| 吞吐 | request/s、input tokens/s、output tokens/s、total tokens/s；rate scan 另含 SLO Goodput、最大合规容量、平均/峰值并发和平均/峰值 waiting |
-| 时延 | send lag、TTFT、TPOT、E2E 的 mean/p50/p95/p99；streaming 场景另含 ITL mean/p50/p95/p99 |
-| 可靠性 | 完成率、成功率、错误率、拒绝率、超时、OOM、崩溃、死锁、静默截断 |
-| 三轮与对比 | 每 lifecycle 原值、三轮中位数、B1/B0 比值、提升/改善率、百分点差；跨场景验收另含几何平均 |
-| A1 | effective FLOPs、有效 TFLOPS、MFU、主/辅助形状、profiler 校准偏差、HBM 峰值 |
-| A2 | 每个数据集适用的冻结 oracle：对话连续性、Tool/Agent 正确性、推理准确率、schema conformance、代码 pass、长文本质量 |
-| A3 | HBM/KV 峰值、长度桶、OOM/截断；目标机制涉及 cache/eviction/preemption/transfer 时，对应机制指标适用即必测 |
-| A4 | 每 tenant 吞吐、Goodput、TTFT/TPOT、成功率、最差 tenant SLO、Jain 公平指数、混跑损失、状态串扰 |
-| 专项优化 | Logprobs 精度、speculative 接受与质量、压缩率与质量、scheduler batch、RAG/memory/workflow、MoE/EPLB 指标在对应测试中适用即必测 |
-| 资源观测 | NPU 平均/p95 利用率、HBM 峰值；能够取得功耗计量时报告平均功耗和测量期能耗，价格成本包含电力时这些功耗字段必测 |
-| 商业模型 | `H` 口径、`Q_raw`、`Q_slo`、`C_raw_limit`、`C_slo_limit`、填平率、云服务倍率、利润定义和最终 `Price_1M` |
+| 吞吐（4） | 请求吞吐、输入吞吐、输出吞吐、总吞吐 |
+| 时延（3） | TTFT、TPOT、端到端时延 |
+| 质量与可靠性（4） | 成功率、正确率/官方任务得分、OOM、静默截断率 |
+| B0/B1 对比（4） | B1/B0 吞吐比、吞吐提升率、时延改善率、跨场景几何平均 |
+| 成本与报价（4） | 极限百万 token 成本、SLO 百万 token 成本、峰值填平率、加价率口径报价 |
 
-### SUPPLEMENTARY：补充指标
+### ADDITIONAL：10 个附加指标
 
-| 指标组 | 补充内容 |
+| 指标组 | ADDITIONAL 指标 |
 |---|---|
-| 瞬时与波动诊断 | 1 秒桶瞬时峰值、range、CV、MAD、标准差；质量/成功率等二项比例的 Wilson 区间属于必测，不在此档 |
-| 调度诊断 | running/waiting 时间序列、队列深度积分、batch histogram、Little 定律交叉检查、默认策略回退路径 |
-| 启动诊断 | 权重加载、compile、graph capture 分阶段时间、首次与第二次请求暖机差 |
-| 硬件诊断 | NPU/HBM 带宽利用率、温度、采样级功耗曲线、通信计算重叠；其中用于小时成本或能耗报价的字段在价格测试中提升为必测 |
-| 长稳诊断 | HBM 增长斜率、窗口吞吐衰减、MTTF/MTTR；正式长稳合同明确要求时提升为必测 |
-| 扩展覆盖 | similarity/reuse 分层、非门禁 PAIO 扩展、额外 scorer、非当前模型/硬件适用的机制观察 |
+| 容量/机制（2） | SLO Goodput、Cache 命中率 |
+| 硬件效率（3） | HBM 峰值、NPU 平均利用率、MFU |
+| 备选财务口径（1） | 会计毛利率口径报价 |
+| 稳定性与能耗（3） | 三轮变异系数、平均功耗、每百万 token 能耗 |
+| 多租户诊断（1） | Jain 公平指数 |
 
-每个结果字段必须带 `metric_tier=REQUIRED|SUPPLEMENTARY`；条件必测字段另带 `applicability=APPLICABLE|NOT_APPLICABLE` 和理由。不能在看到结果后修改档位。
+详细采集日志可以继续保存 send lag、ITL、队列、错误分类、硬件时间序列等底层
+字段，但它们不是大矩阵中的独立必交行。每个矩阵结果字段必须带
+`metric_tier=REQUIRED|ADDITIONAL`；条件必交字段另带
+`applicability=APPLICABLE|NOT_APPLICABLE` 和理由。不能在看到 B0/B1 结果后修改档位。
 
 ## 1. 符号、样本与统计规则
 
@@ -550,4 +547,4 @@ KV 指标同时报告 block 数和折算 token 数；不同 block size 的百分
 
 每 lifecycle 必须保存：三种 token 吞吐、request/s、Goodput、mean/p50/p95/p99 TTFT/TPOT/ITL/E2E/send-lag、成功/错误分子分母、质量分子分母、HBM/KV/NPU/功耗时间序列摘要、配置和请求 hash。
 
-最终报告必须保存全部 `REQUIRED` 字段：三轮原值、中位数、B1/B0 比值、提升或改善率、百分点差、二项比例的 Wilson 区间、几何平均、全部门禁、价格模型输入版本及公式版本。CV、MAD、瞬时峰值等 `SUPPLEMENTARY` 字段取得后同样保留，但不因其优劣改变硬门槛。私密价格数值可进入单独加密附件，公开报告必须保留非敏感公式、单位和所采用的利润定义。
+最终报告必须保存全部适用的 `REQUIRED` 字段、三轮原值与中位数、完整分子分母、配置/请求哈希和价格模型版本。`ADDITIONAL` 字段取得后同样保留，但不因其优劣改变硬门槛。私密价格数值可进入单独受限附件，公开报告必须保留非敏感公式、单位和所采用的利润定义。

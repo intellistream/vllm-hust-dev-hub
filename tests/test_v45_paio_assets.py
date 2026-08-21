@@ -148,3 +148,31 @@ def test_physical_inventory_does_not_count_internal_symlink_views(
     inspected = inspect_asset(tmp_path)
     assert inspected["file_count"] == 1
     assert inspected["files"][0]["path"] == "physical.jsonl"
+
+
+def test_physical_inventory_counts_external_dataset_symlinks(tmp_path: Path) -> None:
+    external = tmp_path / "external.jsonl"
+    external.write_text('{"id": 1}\n')
+    asset = tmp_path / "asset"
+    asset.mkdir()
+    (asset / "view.jsonl").symlink_to(external)
+
+    inspected = inspect_asset(asset)
+
+    assert inspected["file_count"] == 1
+    assert inspected["files"][0]["path"] == "view.jsonl"
+    assert inspected["files"][0]["symlink_target"] == str(external)
+
+
+def test_physical_inventory_skips_aliases_elsewhere_in_canonical_root(
+    tmp_path: Path,
+) -> None:
+    physical = tmp_path / "physical.jsonl"
+    physical.write_text('{"id": 1}\n')
+    alias_asset = tmp_path / "alias-asset"
+    alias_asset.mkdir()
+    (alias_asset / "view.jsonl").symlink_to(physical)
+
+    inspected = inspect_asset(alias_asset, link_scope_root=tmp_path)
+
+    assert inspected["file_count"] == 0

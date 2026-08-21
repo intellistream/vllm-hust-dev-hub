@@ -75,7 +75,7 @@ A1 不把语义问答数据强行填充成固定 token 形状；否则会改变�
 | A2-T-BFCL3 | BFCL v3 | 25 个任务分组、possible answers、multi-turn function docs 全部执行 | `gorilla-llm/Berkeley-Function-Calling-Leaderboard`；Apache-2.0 | `READY_LOCAL` |
 | A2-T-BFCL4 | BFCL v4 | 官方发布的全部 v4 分组 | `bfcl-eval==2025.12.17`；Berkeley 排行榜指定复现包 | `READY_OFFICIAL_PYPI_SNAPSHOT` |
 | A2-T-TAU2 | tau2-bench | 官方仓库所含全部 domain 和任务 | `sierra-research/tau2-bench`；MIT | `READY_OFFICIAL_REPOSITORY` |
-| A2-T-TOOLBENCH | ToolBench | G1/G2/G3、工具环境、官方 test instruction 与评测数据 | `OpenBMB/ToolBench`；Apache-2.0 | `CODE_READY_OFFICIAL_DATA_LINK_UNAVAILABLE` |
+| A2-T-TOOLBENCH | ToolBench | G1/G2/G3、工具环境、官方 test instruction 与评测数据 | `OpenBMB/ToolBench`；Apache-2.0 | `READY_OFFICIAL_FULL_DATA` |
 | A2-T-EVOSCIENTIST | EvoScientist traces | custom 32 条及 ShareGPT 格式 trace 全部执行 | 本地 benchmark 仓库；授权凭证待补 | `READY_PROVENANCE_REVIEW` |
 | A2-T-SYFI | SyFi coding trace | gzip 中全部 session、round 和 tool event | 本地 benchmark Trace；授权凭证待补 | `READY_PROVENANCE_REVIEW` |
 | A2-T-HOTPOT-REACT | HotpotQA/ReAct | 本地 100 条 ReAct 资产及官方 HotpotQA 完整 split 分别执行 | HotpotQA CC-BY-SA-4.0 | `READY_LOCAL_SUBSET_AND_OFFICIAL_FULL` |
@@ -241,7 +241,7 @@ A4 还必须分别执行 `shared-prefix-multi-tenant-assistant`、`session-affin
 | BFCL v3 | 25 个任务组及配套答案/函数文档均通过既有资产核验 | 已落盘 |
 | BFCL v4 | 官方包 `bfcl-eval==2025.12.17`；wheel SHA-256 `8555bc9407a56682ceb7d969e87eb724f6b679deb0ef05114d9c6e786406b103` | v4 全部分组已从官方 wheel 解包落盘 |
 | tau2-bench | 官方仓库 commit `a2c024725189473d2d7cea3a5cfdbcc67478e41f` | 全部仓库 domain/data 已落盘 |
-| ToolBench | 官方仓库 commit `d56fdd89faf8c91fa135090b212bb9057ee5cfc2`；README 指定 Google Drive ID 返回 404，`gdown` 亦报告无公开访问权限 | 代码已落盘；G1/G2/G3 完整数据仍为上游不可取得 |
+| ToolBench | 官方仓库 commit `d56fdd89faf8c91fa135090b212bb9057ee5cfc2`；官方 Drive 文件 ID `1ceLQ9S1IkFTiWeJ3G1FArsD4zY6WYiLa`；ZIP 1,761,298,101 bytes；SHA-256 `df035ef91551d5cdc9e66d782dc12c821c81e830da2e7d05f633c7b26ae06016` | 官方完整数据已落盘；G1/G2/G3 instruction 分别 88,995 / 87,070 / 25,709 条，六个 test split 共 1,100 条 |
 | HotpotQA | HF revision `1908d6afbbead072334abe2965f91bd2709910ab`；9 文件；746,637,047 bytes | 官方完整快照及本地 ReAct 100 条均已落盘 |
 | GSM8K | HF revision `740312add88f781978c0658806c59bc2815b9866` | main/socratic 全 split 已落盘 |
 | MATH-500 | HF revision `6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be`；500 条 | 已落盘；数据卡未声明许可，凭证复核中 |

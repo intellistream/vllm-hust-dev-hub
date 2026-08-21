@@ -1,0 +1,45 @@
+dataset_id,machine_asset,asset_type,A1_A4_scope,admission_status,notes
+AI2-ARC,ai2-arc,public_dataset,A2,READY_PUBLIC_FROZEN,ARC reasoning evaluation data
+AIME-2024,aime-2024,public_dataset,A2,READY_PUBLIC_FROZEN,AIME 2024 problems
+BBH,bbh,public_dataset,A2,READY_PUBLIC_FROZEN,Big-Bench Hard tasks
+BFCL-V3,bfcl-v3,public_dataset,A2/A3,READY_PUBLIC_FROZEN,BFCL v3 tool and structured-call data
+BFCL-V4,bfcl-v4,public_dataset,A2/A3,READY_PUBLIC_FROZEN,BFCL v4 extracted data; wheel/source copies are not separate datasets
+BURSTGPT-TRACE,burstgpt.csv,arrival_trace,A4,READY_PUBLIC_FROZEN,Arrival trace rather than semantic prompt dataset
+EVOSCIENTIST,evoscientist,workload_trace,A2,READY_PROVENANCE_REVIEW,Two symlinked representations of one workload family
+GPQA,gpqa-official-data,public_dataset,A2,READY_PUBLIC_FROZEN,gpqa and gpqa-github are source/cache copies of this family
+GSM8K,gsm8k,public_dataset,A2,READY_PUBLIC_FROZEN,Main and Socratic configurations share this physical dataset family
+HOTPOT-QA,hotpot-qa,public_dataset,A2,READY_PUBLIC_FROZEN,Full HotpotQA data
+HOTPOTQA-REACT-100,hotpotqa-react-100.jsonl,derived_dataset,A2,READY_LOCAL_DERIVATIVE,Frozen ReAct-formatted 100-case derivative
+HUMANEVAL,humaneval,public_dataset,A2,READY_PUBLIC_FROZEN,Code evaluation data
+INFINITEBENCH,infinitebench-data,public_dataset,A3,READY_PUBLIC_FROZEN,infinitebench is the source repository and is not a second dataset
+INSTRUCTCODER,instructcoder,public_dataset,A2,READY_PUBLIC_FROZEN,Code instruction data
+JSONSCHEMABENCH,jsonschemabench,public_dataset,A2,READY_PUBLIC_FROZEN,JSON Schema evaluation data
+LIVECODEBENCH-CODE-GENERATION,livecodebench-code-generation,public_dataset,A2,READY_PUBLIC_FROZEN,LiveCodeBench code-generation split
+LIVECODEBENCH-EXECUTION,livecodebench-execution,public_dataset,A2,READY_PUBLIC_FROZEN,LiveCodeBench execution split
+LIVECODEBENCH-TEST-GENERATION,livecodebench-test-generation,public_dataset,A2,READY_PUBLIC_FROZEN,LiveCodeBench test-generation split
+LONGBENCH,longbench,public_dataset,A3,READY_PUBLIC_FROZEN,LongBench data
+LONGBENCH-V2,longbench-v2,public_dataset,A2/A3,READY_PUBLIC_FROZEN,LongBench-v2 data referenced by multiple configurations
+MATH-500,math-500,public_dataset,A2,READY_PUBLIC_FROZEN,MATH-500 reasoning data
+MBPP,mbpp,public_dataset,A2,READY_PUBLIC_FROZEN,Mostly Basic Python Problems
+MMLU-PRO,mmlu-pro,public_dataset,A2,READY_PUBLIC_FROZEN,MMLU-Pro data
+OASST1,oasst1,public_dataset,A2/A3,READY_PUBLIC_FROZEN,OpenAssistant conversations referenced by multiple configurations
+PAIO-CHAT-1000,paio-chat-1000,enterprise_dataset,A2,READY_QUALIFICATION_REQUIRED,Enterprise chat asset
+PAIO-CODE-EVAL-1000,paio-code-eval-1000,enterprise_dataset,A2,READY_QUALIFICATION_REQUIRED,Enterprise code-evaluation asset
+PAIO-JSON-500,paio-json-500,enterprise_dataset,A2,READY_QUALIFICATION_REQUIRED,Enterprise structured-output asset
+PAIO-LONG-PREFILL-5000,paio-long-prefill-5000,enterprise_dataset,A1/A3,READY_QUALIFICATION_REQUIRED,Enterprise long-prefill asset
+PAIO-LONGTEXT-4000,paio-longtext-4000,enterprise_dataset,A3,READY_QUALIFICATION_REQUIRED,Enterprise long-text asset
+PAIO-PREFIX-SHARED-5000,paio-prefix-shared-5000,enterprise_dataset,A1/A3,READY_QUALIFICATION_REQUIRED,Enterprise shared-prefix asset
+PAIO-REUSE-CONV-5000,paio-reuse-conv-5000,enterprise_dataset,A2/A4,READY_QUALIFICATION_REQUIRED,Enterprise conversation-reuse asset
+PAIO-SEMANTIC-SIMILAR-5000,paio-semantic-similar-5000,enterprise_dataset,A2/A4,READY_QUALIFICATION_REQUIRED,Enterprise semantic-similarity asset
+SCHEMASTORE,schemastore,public_dataset,A2,READY_PUBLIC_FROZEN,SchemaStore schemas
+SHAREGPT-V3,sharegpt-v3.json,public_dataset,A2/A4,READY_PUBLIC_FROZEN,One physical conversation corpus used by several online profiles
+SONNET,sonnet.txt,benchmark_text,A1/A3,READY_PUBLIC_FROZEN,Fixed benchmark text corpus
+STRUCTEVAL,structeval-data,public_dataset,A2,READY_PUBLIC_FROZEN,Code and zip assets are source/package copies and not separate datasets
+SZYN-OPENCODE-SWEBENCH-VERIFIED-500,suzhou-yunneng-opencode-oss-issues,enterprise_dataset,A2,READY_QUALIFICATION_REQUIRED,SWE-bench Verified task pool and associated local metadata
+SYFI-CODING-TRACE,syfi-coding-trace.jsonl.gz,workload_trace,A2/A3,READY_PROVENANCE_REVIEW,One physical trace referenced by tool coding and long-context profiles
+TAU2-BENCH,tau2-bench,public_dataset,A2,READY_PUBLIC_FROZEN,Domain data under the tau2 repository are one benchmark family
+TOOLBENCH,toolbench,public_dataset,A2,READY_PUBLIC_FROZEN,Official full data.zip with G1 G2 G3 instructions test splits tool environment and answers
+ULTRACHAT-200K,ultrachat-200k,public_dataset,A2,READY_PUBLIC_FROZEN,UltraChat 200K conversations
+VISIONARENA,visionarena,multimodal_dataset,A2,READY_MODALITY_GATED,Physical parquet is present via symlink; requires a supported multimodal model
+WILDCHAT,wildchat,public_dataset,A2/A4,READY_PUBLIC_FROZEN,WildChat corpus
+WILDCHAT-4.8M,wildchat-4.8m,public_dataset,A2/A4,READY_PUBLIC_FROZEN,WildChat 4.8M corpus
