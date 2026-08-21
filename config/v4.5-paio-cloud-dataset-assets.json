@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "inventory_version": "V4.5-PAIO-CLOUD-20260821.2",
+  "inventory_version": "V4.5-PAIO-CLOUD-20260821.3",
   "test_plan": {
     "path": "/data/vllm-hust-evaluation/staging/v4.5/plan/vLLM-HUST-standard-delivery-test-plan-V4.5.docx",
     "sha256": "aa65cd885aa9254095855f2a196e0875680d19eeb9fd427ffafa31c9ac6830c4"
@@ -15,7 +15,8 @@
     "single_prescribed_dataset": false,
     "reporting": "report_each_dataset_separately_without_weighted_average",
     "physical_storage": "one_physical_file_per_content_with_cross_scope_manifest_references",
-    "canonical_asset_root": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-cloud/20260820",
+    "canonical_asset_root": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets",
+    "source_package_receipt_root": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-cloud/20260820",
     "scope_view_root": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/by-scope",
     "formal_measurement": "inactive_until_all_contract_qualifications_are_satisfied"
   },
@@ -58,7 +59,7 @@
       "display_name": "派欧云企业场景问答接口请求 1000",
       "source_kind": "enterprise_interface_request",
       "physical_file": {
-        "path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-cloud/20260820/unpacked/派欧云/benchmark_test_datasdet_v1/可交付客户/normal_chat_1000.jsonl",
+        "path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-chat-1000/data.jsonl",
         "records": 1000,
         "size": 4510138,
         "sha256": "1097f4c57d3f958e726c4c671edafc301cd6152a1f9ce04231fd83e9531086bd"
@@ -90,7 +91,7 @@
       "display_name": "派欧云流式代码评判与短输出请求 1000",
       "source_kind": "enterprise_interface_request",
       "physical_file": {
-        "path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-cloud/20260820/unpacked/派欧云/benchmark_test_datasdet_v1/可交付客户/code_eval_ttft_1000.jsonl",
+        "path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-code-eval-1000/data.jsonl",
         "records": 1000,
         "size": 3850582,
         "sha256": "dc22bd65cbea0fa61d436282178a30d728d2e3a0ed3f4269361601b43177bbc8"
@@ -134,7 +135,7 @@
       "display_name": "派欧云结构化输出请求 500",
       "source_kind": "enterprise_interface_request",
       "physical_file": {
-        "path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-cloud/20260820/unpacked/派欧云/benchmark_test_datasdet_v1/可交付客户/json_requests_500.jsonl",
+        "path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-json-500/data.jsonl",
         "records": 500,
         "size": 2874769,
         "sha256": "7090c161d155be77af77f96a22900643145dd583944a2df959a94f362dba4640"
@@ -170,7 +171,7 @@
       "display_name": "派欧云混合合成长 Prefill 请求 5000",
       "source_kind": "hybrid_synthetic",
       "physical_file": {
-        "path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-cloud/20260820/unpacked/派欧云/final_workloaddata_v2/final_workloaddata_v2/long_prefill.jsonl",
+        "path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-long-prefill-5000/data.jsonl",
         "records": 5000,
         "size": 445973290,
         "sha256": "11baa5e4b25fc760a14517b734c5ce0ceb1abf8e0361697fbeef66e0f48e14c1"
@@ -206,7 +207,7 @@
       "display_name": "派欧云混合合成共享前缀请求 5000",
       "source_kind": "hybrid_synthetic",
       "physical_file": {
-        "path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-cloud/20260820/unpacked/派欧云/final_workloaddata_v2/final_workloaddata_v2/prefix_shared.jsonl",
+        "path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-prefix-shared-5000/data.jsonl",
         "records": 5000,
         "size": 171146840,
         "sha256": "355ed42e0050bd178bee74f616d16c6036117f2eea338bb30eff0f941b86027e"
@@ -246,7 +247,7 @@
       "display_name": "派欧云混合合成会话复用请求 5000",
       "source_kind": "hybrid_synthetic",
       "physical_file": {
-        "path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-cloud/20260820/unpacked/派欧云/final_workloaddata_v2/final_workloaddata_v2/reuse_conversation.jsonl",
+        "path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-reuse-conv-5000/data.jsonl",
         "records": 5000,
         "size": 171944203,
         "sha256": "3b69ef16266945121df6d752367c9d132f3a21de2dea0158fcd03f2014649a77"
@@ -287,7 +288,7 @@
       "display_name": "派欧云混合合成语义相似请求 5000",
       "source_kind": "hybrid_synthetic",
       "physical_file": {
-        "path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-cloud/20260820/unpacked/派欧云/final_workloaddata_v2/final_workloaddata_v2/semantic_similar.jsonl",
+        "path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-semantic-similar-5000/data.jsonl",
         "records": 5000,
         "size": 143669868,
         "sha256": "eecb069a51af828f3388525fcaf84f82cb15a56116fdffc293a69dd77bc9a746"
@@ -320,7 +321,7 @@
       "display_name": "派欧云 API 生成长文本 4000",
       "source_kind": "api_generated_text",
       "physical_file": {
-        "path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-cloud/20260820/unpacked/派欧云/long_text_dataset/超长文本数据集/api_long_text_merged_4000.jsonl",
+        "path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-longtext-4000/data.jsonl",
         "records": 4000,
         "size": 1233081610,
         "sha256": "97d40d4f66eb184ea13e24397b57614c70aedf2c9dea0d0f970c5b3547d6779c"

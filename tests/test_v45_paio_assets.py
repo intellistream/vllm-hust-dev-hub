@@ -6,6 +6,7 @@ import pytest
 
 from scripts.evaluation_machine.inventory_a1_a4_assets import (
     extend_inventory,
+    inspect_asset,
     load_logical_assets,
 )
 
@@ -20,7 +21,7 @@ def load_manifest() -> dict:
 def test_v45_paio_manifest_has_eight_unique_single_file_assets() -> None:
     manifest = load_manifest()
     assets = manifest["assets"]
-    assert manifest["inventory_version"] == "V4.5-PAIO-CLOUD-20260821.2"
+    assert manifest["inventory_version"] == "V4.5-PAIO-CLOUD-20260821.3"
     assert manifest["test_plan"]["sha256"] == (
         "aa65cd885aa9254095855f2a196e0875680d19eeb9fd427ffafa31c9ac6830c4"
     )
@@ -42,10 +43,10 @@ def test_v45_admission_receipt_binds_the_logical_manifest() -> None:
     manifest_sha256 = hashlib.sha256(MANIFEST.read_bytes()).hexdigest()
     receipt = ADMISSION_RECEIPT.read_text()
     assert manifest_sha256 == (
-        "9317f4d95a2b11750ce1047cca2f9af5cfa457ebf911a35eefa541173fa7c35c"
+        "c9e0ee43dc7abacadc6cddca88df5d5b5f0114b97f25c644b527dcb2d9370a81"
     )
     assert manifest_sha256 in receipt
-    assert "afa800c1d666f09e6cccde615105e2338f6a04ebf588616cd95304bbaeb8368a" in receipt
+    assert "e7304041acf6f241988575590e8843476c8ee2a5fef938778acc3e492504508e" in receipt
 
 
 def test_v45_paio_references_preserve_scope_and_contract_boundaries() -> None:
@@ -87,7 +88,8 @@ def test_v45_paio_policy_has_no_dataset_priority_hierarchy() -> None:
         "single_prescribed_dataset": False,
         "reporting": "report_each_dataset_separately_without_weighted_average",
         "physical_storage": "one_physical_file_per_content_with_cross_scope_manifest_references",
-        "canonical_asset_root": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-cloud/20260820",
+        "canonical_asset_root": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets",
+        "source_package_receipt_root": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-cloud/20260820",
         "scope_view_root": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/by-scope",
         "formal_measurement": "inactive_until_all_contract_qualifications_are_satisfied",
     }
@@ -133,3 +135,16 @@ def test_logical_asset_loader_verifies_file_and_rejects_duplicate_ownership(
     manifest_path.write_text(json.dumps(manifest))
     with pytest.raises(ValueError, match="physical file is already owned"):
         load_logical_assets(manifest_path)
+
+
+def test_physical_inventory_does_not_count_internal_symlink_views(
+    tmp_path: Path,
+) -> None:
+    physical = tmp_path / "physical.jsonl"
+    physical.write_text('{"id": 1}\n')
+    aliases = tmp_path / "aliases"
+    aliases.mkdir()
+    (aliases / "view.jsonl").symlink_to(physical)
+    inspected = inspect_asset(tmp_path)
+    assert inspected["file_count"] == 1
+    assert inspected["files"][0]["path"] == "physical.jsonl"

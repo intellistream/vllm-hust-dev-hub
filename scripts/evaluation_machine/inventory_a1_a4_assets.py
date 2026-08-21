@@ -53,11 +53,15 @@ def record_count(path: Path) -> int | None:
 
 
 def iter_files(root: Path):
-    for current, directories, files in os.walk(root, followlinks=True):
-        directories[:] = sorted(d for d in directories if d not in EXCLUDED_DIRS)
+    for current, directories, files in os.walk(root, followlinks=False):
+        directories[:] = sorted(
+            d
+            for d in directories
+            if d not in EXCLUDED_DIRS and not (Path(current) / d).is_symlink()
+        )
         for name in sorted(files):
             path = Path(current) / name
-            if is_failed_artifact(name):
+            if path.is_symlink() or is_failed_artifact(name):
                 continue
             yield path
 
