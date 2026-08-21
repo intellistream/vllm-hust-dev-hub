@@ -46,7 +46,7 @@ def test_v45_admission_receipt_binds_the_logical_manifest() -> None:
         "c9e0ee43dc7abacadc6cddca88df5d5b5f0114b97f25c644b527dcb2d9370a81"
     )
     assert manifest_sha256 in receipt
-    assert "e7304041acf6f241988575590e8843476c8ee2a5fef938778acc3e492504508e" in receipt
+    assert "43c7dd8f96c66c70c3623cf2413d06442d33aa68aef58f2fe9a4b8f762737db6" in receipt
 
 
 def test_v45_paio_references_preserve_scope_and_contract_boundaries() -> None:

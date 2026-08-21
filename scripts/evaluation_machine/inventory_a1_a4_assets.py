@@ -259,6 +259,7 @@ def main() -> None:
     source.add_argument("--root", type=Path)
     source.add_argument("--base-inventory", type=Path)
     parser.add_argument("--logical-manifest", type=Path)
+    parser.add_argument("--inventory-version")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.base_inventory:
@@ -267,6 +268,8 @@ def main() -> None:
         result = build_inventory(args.root)
     if args.logical_manifest:
         result = extend_inventory(result, args.logical_manifest)
+    if args.inventory_version:
+        result["inventory_version"] = args.inventory_version
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
         json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n"

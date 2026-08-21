@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "asset_id": "SZYN-OPENCODE-SWEBENCH-VERIFIED-500",
+  "display_name": "苏州云能 OpenCode 开源 Issue 解决生产优化数据集",
+  "owner_and_producer": "苏州云能",
+  "purpose": "production_optimization",
+  "source_content_ownership": "retained_per_upstream_repository_and_SWE_bench_provenance",
+  "source_kind": "real_open_source_issue_with_generated_agent_execution_trace",
+  "asset_root": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/suzhou-yunneng-opencode-oss-issues",
+  "task_source": {
+    "dataset": "princeton-nlp/SWE-bench_Verified",
+    "revision": "c104f840cc67f8b6eec6f759ebc8b2693d585d4a",
+    "records": 500,
+    "parquet_sha256": "a45b1fe4e2f0c8390b2b2938ac83e92ed5979000856808f3679c07812e9e6dcd"
+  },
+  "collector": {
+    "name": "OpenCode",
+    "version": "1.18.19",
+    "release_commit": "2b72179c663cadcb54f54d9f19221b3fb3d11fb6",
+    "platform": "linux-arm64",
+    "archive_sha256": "506f98a1f618551f1f6fc5dcf591f824bef9d6819d40b27928ad7febcb7c363b",
+    "binary_sha256": "c34a30f5567f989d9a089cc4a0bf5860d81273fc6644de96671bd5cbe5dd31ec",
+    "binary_path": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/tools/opencode/v1.18.19/opencode"
+  },
+  "contract_roles": [
+    {
+      "scope": "A2",
+      "cell": "tool_agent_extension",
+      "contract_role": "production_optimization_extension_not_BFCL_replacement"
+    },
+    {
+      "scope": "A2",
+      "cell": "reasoning_code_extension",
+      "contract_role": "production_optimization_extension"
+    },
+    {
+      "scope": "A4",
+      "cell": "tool_reasoning_tenant_extension",
+      "contract_role": "production_optimization_extension_reported_separately"
+    },
+    {
+      "scope": "EXTENSION",
+      "cell": "code_and_long_horizon_code_agent",
+      "contract_role": "production_optimization_workload"
+    }
+  ],
+  "trace_contract": {
+    "required": [
+      "ordered_input_prompt",
+      "repository_and_base_commit",
+      "opencode_event_stream",
+      "exported_session_json",
+      "tool_calls_and_results",
+      "file_reads_and_writes",
+      "generated_patch",
+      "test_commands_and_outputs",
+      "exit_status_and_failure_class",
+      "environment_manifest",
+      "model_provider_and_exact_model",
+      "all_file_sha256"
+    ],
+    "retain_all_attempts": true,
+    "gold_patch_visible_to_agent": false,
+    "secrets_redaction_required": true,
+    "report_each_repository_and_case_separately": true
+  },
+  "execution": {
+    "status": "INACTIVE_UNTIL_COLLECTION_MODEL_AND_SANDBOX_CONTRACT_FROZEN",
+    "collection_model": null,
+    "provider": null,
+    "reason": "OpenCode and the task pool are frozen; the collection model changes trace identity and must be explicitly selected before batch execution."
+  }
+}
