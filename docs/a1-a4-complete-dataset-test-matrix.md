@@ -18,7 +18,7 @@
 8. `coverage_role` 说明数据补充了哪种业务或机制覆盖，`contract_role` 说明它能否参与该指标合同；两者均不是优先级。正式 `config_id` 生成前从适用数据集组冻结合同所需资产，之后不得根据 B0/B1 结果换题。
 9. 企业接口请求、API 生成文本和 hybrid/synthetic 数据分别标识，不统称真实线上 trace。原始请求中的 `model`、`max_tokens`、`stream` 不直接重放。
 
-统一资产入口：`/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/`。
+统一资产入口：`/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/`。派欧云唯一物理副本位于 `assets/paio-cloud/20260820/`，按指标整理的只读引用位于 `by-scope/A1/`、`by-scope/A2/`、`by-scope/A3/`、`by-scope/A4/` 和 `by-scope/extensions/`。
 
 ## 2. A1：有效计算、固定形状与基础服务开销
 

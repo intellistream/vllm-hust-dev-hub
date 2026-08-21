@@ -20,7 +20,7 @@ def load_manifest() -> dict:
 def test_v45_paio_manifest_has_eight_unique_single_file_assets() -> None:
     manifest = load_manifest()
     assets = manifest["assets"]
-    assert manifest["inventory_version"] == "V4.5-PAIO-CLOUD-20260821.1"
+    assert manifest["inventory_version"] == "V4.5-PAIO-CLOUD-20260821.2"
     assert manifest["test_plan"]["sha256"] == (
         "aa65cd885aa9254095855f2a196e0875680d19eeb9fd427ffafa31c9ac6830c4"
     )
@@ -42,10 +42,10 @@ def test_v45_admission_receipt_binds_the_logical_manifest() -> None:
     manifest_sha256 = hashlib.sha256(MANIFEST.read_bytes()).hexdigest()
     receipt = ADMISSION_RECEIPT.read_text()
     assert manifest_sha256 == (
-        "72b41ef8fd0b6e207ac6c103cf5674076b2666f2e477f0b8ed5c9c59e1ccd137"
+        "9317f4d95a2b11750ce1047cca2f9af5cfa457ebf911a35eefa541173fa7c35c"
     )
     assert manifest_sha256 in receipt
-    assert "55da98c294dcfe357796b99dc80b0907507a9c8296ffbd71e46300cd14602716" in receipt
+    assert "afa800c1d666f09e6cccde615105e2338f6a04ebf588616cd95304bbaeb8368a" in receipt
 
 
 def test_v45_paio_references_preserve_scope_and_contract_boundaries() -> None:
@@ -87,6 +87,8 @@ def test_v45_paio_policy_has_no_dataset_priority_hierarchy() -> None:
         "single_prescribed_dataset": False,
         "reporting": "report_each_dataset_separately_without_weighted_average",
         "physical_storage": "one_physical_file_per_content_with_cross_scope_manifest_references",
+        "canonical_asset_root": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/assets/paio-cloud/20260820",
+        "scope_view_root": "/data/shared_datasets/vllm-hust-evaluation/a1-a4/by-scope",
         "formal_measurement": "inactive_until_all_contract_qualifications_are_satisfied",
     }
     assert manifest["package_boundaries"]["contains_tools_field"] is False
