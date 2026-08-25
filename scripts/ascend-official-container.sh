@@ -19,7 +19,7 @@ DEFAULT_DOCKER_DATA_ROOT="${DEFAULT_DOCKER_DATA_ROOT:-/data/docker}"
 MIN_DOCKER_PULL_FREE_BYTES="$((8 * 1024 * 1024 * 1024))"
 DEFAULT_CONTAINER_SSH_USER="${DEFAULT_CONTAINER_SSH_USER:-shuhao}"
 DEFAULT_CONTAINER_SSH_PORT="${DEFAULT_CONTAINER_SSH_PORT:-2222}"
-AUTO_ENABLE_CONTAINER_SSH="${VLLM_HUST_AUTO_ENABLE_CONTAINER_SSH:-1}"
+AUTO_ENABLE_CONTAINER_SSH="${VLLM_HUST_AUTO_ENABLE_CONTAINER_SSH:-}"
 
 log() {
   printf '[container] %s\n' "$1"
@@ -312,7 +312,17 @@ maybe_enable_container_ssh() {
       ;;
   esac
 
-  if [[ "$AUTO_ENABLE_CONTAINER_SSH" != "1" ]]; then
+  # Managed experiment containers are non-interactive and do not need an SSH
+  # daemon.  Avoid turning an ordinary `start` into `ssh-deploy` merely because
+  # the host workspace contains partial SSH material.  An operator can still
+  # request SSH explicitly; interactive developer starts retain the historical
+  # auto-detection behavior when the variable is unset.
+  if [[ "${VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE:-0}" == "1" && "$AUTO_ENABLE_CONTAINER_SSH" != "1" ]]; then
+    printf '%s\n' "$action"
+    return 0
+  fi
+
+  if [[ "$AUTO_ENABLE_CONTAINER_SSH" == "0" ]]; then
     printf '%s\n' "$action"
     return 0
   fi
