@@ -77,6 +77,21 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("VLLM_ENGINE_AUTO_CREATE_CONTAINER", script)
         self.assertIn("scripts/ascend-official-container.sh", script)
         self.assertIn("VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE", script)
+
+    def test_non_interactive_container_does_not_require_ssh_by_default(self):
+        script = ENGINE_SCRIPT.read_text()
+        container_script = (
+            REPO_ROOT / "scripts" / "ascend-official-container.sh"
+        ).read_text()
+        self.assertIn(
+            'AUTO_ENABLE_CONTAINER_SSH="${VLLM_HUST_AUTO_ENABLE_CONTAINER_SSH:-}"',
+            container_script,
+        )
+        self.assertIn(
+            '"${VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE:-0}" == "1" '
+            '&& "$AUTO_ENABLE_CONTAINER_SSH" != "1"',
+            container_script,
+        )
         self.assertIn("EnvironmentFile=-", MANAGE_SCRIPT.read_text())
         self.assertIn("write_unit_environment", MANAGE_SCRIPT.read_text())
         self.assertIn('"KEY"', MANAGE_SCRIPT.read_text())
