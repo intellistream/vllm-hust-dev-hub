@@ -144,11 +144,17 @@ extra_prefixes = tuple(
     for item in os.environ.get("VLLM_ENGINE_EXTRA_ENV_PREFIXES", "").split(",")
     if item.strip()
 )
+safe_metadata = {
+    "VLLM_ENGINE_EXTRA_ENV_KEYS",
+    "VLLM_ENGINE_EXTRA_ENV_PREFIXES",
+}
 
 keys = []
 for key in os.environ:
     upper = key.upper()
-    if "KEY" in upper or "TOKEN" in upper or "SECRET" in upper:
+    if key not in safe_metadata and (
+        "KEY" in upper or "TOKEN" in upper or "SECRET" in upper
+    ):
         continue
     if (
         key.startswith(prefixes)

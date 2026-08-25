@@ -158,6 +158,7 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("scripts/ascend-official-container.sh", script)
         self.assertIn("VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE", script)
         self.assertIn("EnvironmentFile=-", MANAGE_SCRIPT.read_text())
+
         self.assertIn("write_unit_environment", MANAGE_SCRIPT.read_text())
         self.assertIn('"KEY"', MANAGE_SCRIPT.read_text())
         self.assertIn("v0.21.0rc1-openeuler", script)
@@ -193,6 +194,13 @@ class ManageEngineGuardTests(unittest.TestCase):
             manage.index('load_dotenv "$repo_root/.env"'),
             manage.index('unit_name="${VLLM_ENGINE_SYSTEMD_UNIT'),
         )
+
+    def test_extra_env_key_metadata_survives_secret_name_filter(self) -> None:
+        manage = MANAGE_SCRIPT.read_text()
+
+        assert '"VLLM_ENGINE_EXTRA_ENV_KEYS",' in manage
+        assert "if key not in safe_metadata and (" in manage
+        assert '"KEY" in upper or "TOKEN" in upper' in manage
 
     def test_container_runtime_can_keep_alive_without_ssh_env(self) -> None:
         runtime = (REPO_ROOT / "scripts" / "ascend-container-runtime.sh").read_text()
