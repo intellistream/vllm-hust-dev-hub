@@ -107,6 +107,7 @@ optimization_repo_host="${VLLM_ENGINE_OPTIMIZATION_REPO_HOST:-}"
 optimization_src_host="${VLLM_ENGINE_OPTIMIZATION_SRC_HOST:-}"
 optimization_src_container="${VLLM_ENGINE_OPTIMIZATION_SRC_CONTAINER:-}"
 optimization_import_module="${VLLM_ENGINE_OPTIMIZATION_IMPORT_MODULE:-}"
+host_cache_dir="${VLLM_ENGINE_HOST_CACHE_DIR:-$HOME/.cache}"
 
 # Preserve launcher, bootstrap, docker-exec, and engine stderr even when the
 # generated in-container script never starts. The container-side log below is
@@ -407,6 +408,7 @@ ensure_container_ready() {
   VLLM_HUST_ASCEND_EXTRA_BIND_MOUNT="$manager_extra_bind" \
   VLLM_HUST_ASCEND_RUNTIME_BIND_MOUNT="$manager_runtime_bind" \
   VLLM_HUST_ASCEND_OPTIMIZATION_BIND_MOUNT="$manager_optimization_bind" \
+  HOST_CACHE_DIR="$host_cache_dir" \
   CONTAINER_WORKDIR="${runtime_carrier_container:-}" \
   VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE="$container_non_interactive" \
     "$repo_root/scripts/ascend-official-container.sh" start
