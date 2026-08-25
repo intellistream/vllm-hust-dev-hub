@@ -200,6 +200,28 @@ container_is_running() {
   [[ "$("${docker_cmd[@]}" inspect -f '{{.State.Running}}' "$container" 2>/dev/null || true)" == "true" ]]
 }
 
+assert_container_device_scope() {
+  local observed expected
+  observed="$(
+    "${docker_cmd[@]}" inspect \
+      --format '{{range .HostConfig.Devices}}{{println .PathOnHost}}{{end}}' \
+      "$container" \
+      | sed -nE 's#^/dev/davinci([0-9]+)$#\1#p' \
+      | sort -n \
+      | paste -sd, -
+  )"
+  expected="$(
+    tr ',' '\n' <<< "$npu_devices" \
+      | sed -nE '/^[0-9]+$/p' \
+      | sort -n -u \
+      | paste -sd, -
+  )"
+  if [[ -z "$expected" || "$observed" != "$expected" ]]; then
+    echo "ERROR: container compute-device scope mismatch: requested=$expected observed=$observed" >&2
+    exit 1
+  fi
+}
+
 ensure_container_ready() {
   if [[ "$recreate_container" == "true" || "$recreate_container" == "1" ]]; then
     if "${docker_cmd[@]}" inspect "$container" >/dev/null 2>&1; then
@@ -231,6 +253,8 @@ ensure_container_ready() {
   echo "[vllm-hust] image             = ${container_image:-auto-detect official Ascend image}"
   CONTAINER_NAME="$container" \
   IMAGE="$container_image" \
+  ASCEND_RT_VISIBLE_DEVICES="$npu_devices" \
+  ASCEND_VISIBLE_DEVICES="$npu_devices" \
   VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE="$container_non_interactive" \
     "$repo_root/scripts/ascend-official-container.sh" start
 
@@ -241,6 +265,7 @@ ensure_container_ready() {
 }
 
 ensure_container_ready
+assert_container_device_scope
 
 echo "[vllm-hust] container        = $container"
 echo "[vllm-hust] image            = ${container_image:-auto-detect official Ascend image}"

@@ -77,6 +77,19 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("VLLM_ENGINE_AUTO_CREATE_CONTAINER", script)
         self.assertIn("scripts/ascend-official-container.sh", script)
         self.assertIn("VLLM_HUST_ASCEND_CONTAINER_NON_INTERACTIVE", script)
+        bootstrap = script[script.index('CONTAINER_NAME="$container"') :]
+        self.assertIn('ASCEND_RT_VISIBLE_DEVICES="$npu_devices"', bootstrap)
+        self.assertIn('ASCEND_VISIBLE_DEVICES="$npu_devices"', bootstrap)
+        self.assertLess(
+            bootstrap.index('ASCEND_RT_VISIBLE_DEVICES="$npu_devices"'),
+            bootstrap.index('"$repo_root/scripts/ascend-official-container.sh" start'),
+        )
+        self.assertIn("assert_container_device_scope", script)
+        self.assertIn("container compute-device scope mismatch", script)
+        self.assertLess(
+            script.index("assert_container_device_scope\n"),
+            script.index('echo "[vllm-hust] container        = $container"'),
+        )
 
     def test_non_interactive_container_does_not_require_ssh_by_default(self):
         script = ENGINE_SCRIPT.read_text()
