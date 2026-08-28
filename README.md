@@ -5,6 +5,17 @@ It keeps the commonly used repositories, VS Code workspace, bootstrap scripts,
 Ascend container helpers, and one-command engine service management in one
 place.
 
+## Ecosystem classification
+
+This repository is the supported development and operations hub for workspace
+bootstrap, container lifecycle, service management, and explicit integration
+activation. It does not own vLLM domain contracts, classify ecosystem systems,
+or turn every installed package into an enabled plugin. Runtime and connector
+behavior remains in the owning repositories; this hub coordinates reproducible
+configuration, health checks, receipts, and rollback. See
+[`.vllm-hust/repository-profile.json`](./.vllm-hust/repository-profile.json)
+for the machine-readable boundary.
+
 Use this repo when you need to:
 
 - clone or refresh the standard vLLM-HUST multi-repo workspace

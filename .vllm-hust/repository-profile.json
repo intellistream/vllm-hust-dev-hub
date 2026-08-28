@@ -1,0 +1,41 @@
+{
+  "schema_version": "1.0",
+  "canonical_registry": "https://github.com/vLLM-HUST/vllm-hust-docs/tree/codex/ecosystem-architecture-reorganization/registry",
+  "repository": "https://github.com/vLLM-HUST/vllm-hust-dev-hub",
+  "repository_role": "development_tool",
+  "relation_to_runtime": "supports_runtime_delivery",
+  "lifecycle": "supported",
+  "artifacts": [
+    {
+      "id": "vllm-hust-dev-hub",
+      "artifact_type": "tool",
+      "system_role": "deployment_operations",
+      "delivery_model": "source_repository",
+      "execution_planes": ["offline"],
+      "integration_contracts": [],
+      "integration_surfaces": [
+        "workspace_bootstrap",
+        "container_lifecycle",
+        "runtime_service_management",
+        "optimization_profile_activation"
+      ]
+    }
+  ],
+  "system_boundaries": {
+    "is": [
+      "the supported developer-workspace bootstrap and runtime service operations hub",
+      "an explicit activation and rollback coordinator for installed integrations"
+    ],
+    "is_not": [
+      "the owner of runtime domain contracts",
+      "a plugin discovery mechanism or ecosystem registry",
+      "an authority to silently mutate user repositories or enable every installed extension"
+    ]
+  },
+  "validation": [
+    "python -m pytest -q",
+    "validate optimization profiles before service restart",
+    "preserve explicit repository and container lifecycle receipts"
+  ],
+  "compatibility_document": "README.md#common-workflows"
+}
