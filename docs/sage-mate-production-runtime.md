@@ -15,9 +15,9 @@ one `v0.23.0` label:
 
 The approved current-main candidate pins core
 `70081fe3d782c494cbd602973044a1202c0d4407` and plugin
-`df0870b176bdcc60a0a9663e0b654f875ed38a8a`. Its installed package versions are
+`a30611fcbe12ab1a249257aabd3f903649fc017f`. Its installed package versions are
 `0.28.1rc1.dev236+g70081fe3d.empty` and
-`0.19.1rc2.dev1850+gdf0870b17`, with Torch `2.13.0+cpu`, torch-npu
+`0.1.dev4951+ga30611fcb`, with Torch `2.13.0+cpu`, torch-npu
 `2.13.0rc1`, NumPy `2.2.6`, and source-built Triton Ascend
 `3.6.0+gitb52af7fc` from vLLM-HUST/triton-ascend-hust main commit
 `b52af7fc9a0377c6ed527a88a30df719874eeba9`. The Triton wheel keeps the

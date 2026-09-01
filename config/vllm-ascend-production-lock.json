@@ -19,13 +19,13 @@
   "vllm_ascend": {
     "repository": "git@github.com:vLLM-HUST/vllm-ascend-hust.git",
     "branch": "main",
-    "commit": "df0870b176bdcc60a0a9663e0b654f875ed38a8a",
-    "source_version": "0.19.1rc2.dev1850+gdf0870b17",
-    "package_version": "0.19.1rc2.dev1850+gdf0870b17",
+    "commit": "a30611fcbe12ab1a249257aabd3f903649fc017f",
+    "source_version": "0.1.dev4951+ga30611fcb",
+    "package_version": "0.1.dev4951+ga30611fcb",
     "verified_core_file": ".github/vllm-main-verified.commit",
     "artifact": {
-      "filename": "vllm_ascend-0.19.1rc2.dev1850+gdf0870b17-cp312-cp312-linux_aarch64.whl",
-      "sha256": "bf05c0bb48169e47fe5e202941f56922a252e35fb118c797b84c4cb24aad54aa"
+      "filename": "vllm_ascend-0.1.dev4951+ga30611fcb-cp312-cp312-linux_aarch64.whl",
+      "sha256": "7eb5b5755317caa35d6fd2f012e5ae6c45aa83123d3b265fc73d0ce16806148d"
     }
   },
   "python_stack": {
@@ -108,5 +108,5 @@
     "install_mode": "immutable-wheels",
     "artifact_directory": "/data/codex-build-artifacts/latest-main-20260901"
   },
-  "image_tag": "sage-mate/vllm-ascend-hust:core-70081fe3-plugin-df0870b1-cann9.1"
+  "image_tag": "sage-mate/vllm-ascend-hust:core-70081fe3-plugin-a30611fc-cann9.1"
 }
