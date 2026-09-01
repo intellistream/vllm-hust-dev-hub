@@ -14,6 +14,12 @@ Use this repo when you need to:
 - prepare offline assets for an Ascend docker instance
 - install a GitHub Actions self-hosted runner for the workspace
 
+The approved ARM64 Ascend image, CANN/HDK, Python and vLLM compatibility
+baseline is maintained in the
+[Ascend official runtime support matrix](docs/ascend-official-runtime-support-matrix.zh-CN.md).
+Use its immutable OCI digests for reproducible runs; image tags are display
+aliases only.
+
 Agent workflow note: on any prepared dev-hub Ascend development machine,
 use this repo's `./manage.sh` as the first-choice entrypoint for launching,
 restarting, health-checking, and testing the prepared vLLM-HUST service. Avoid

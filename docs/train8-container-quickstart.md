@@ -1,6 +1,6 @@
 # train8 官方 Ascend 容器运维手册
 
-本文面向需要在 `train8` 上长期维护官方 Ascend 开发容器的同学，目标不是一次性“跑起来”，而是把镜像选型、首次部署、SSH 接入、例行巡检、故障处理和回滚路径都讲清楚。当前默认基线已切换到 `quay.io/ascend/vllm-ascend:v0.17.0rc1` 家族，对应当前 `vllm-ascend-hust` 使用的 CANN 8.5.1 运行时预期。
+本文面向需要在 `train8` 上长期维护官方 Ascend 开发容器的同学，目标不是一次性“跑起来”，而是把镜像选型、首次部署、SSH 接入、例行巡检、故障处理和回滚路径都讲清楚。当前默认基线是 `quay.io/ascend/vllm-ascend:v0.23.0` 家族，对应 CANN 9.1.0。正式运行须按 [Ascend 官方运行环境支持矩阵](ascend-official-runtime-support-matrix.zh-CN.md)固定 OCI digest，下面的 tag 仅便于阅读。
 
 ## 1. 适用范围
 
@@ -20,10 +20,10 @@
 
 当前推荐基线如下：
 
-- 910B / Ubuntu: `quay.io/ascend/vllm-ascend:v0.17.0rc1`
-- 910B / openEuler: `quay.io/ascend/vllm-ascend:v0.17.0rc1-openeuler`
-- 910C / A3 / Ubuntu: `quay.io/ascend/vllm-ascend:v0.17.0rc1-a3`
-- 910C / A3 / openEuler: `quay.io/ascend/vllm-ascend:v0.17.0rc1-a3-openeuler`
+- 910B / Ubuntu: `quay.io/ascend/vllm-ascend:v0.23.0`
+- 910B / openEuler: `quay.io/ascend/vllm-ascend:v0.23.0-openeuler`
+- 910C / A3 / Ubuntu: `quay.io/ascend/vllm-ascend:v0.23.0-a3`
+- 910C / A3 / openEuler: `quay.io/ascend/vllm-ascend:v0.23.0-a3-openeuler`
 
 运行特性：
 
@@ -84,7 +84,7 @@ bash scripts/quickstart.sh
 这个流程会做以下事情：
 
 - 提示录入容器名；直接回车时使用“镜像 basename/tag + 当前登录用户名”并自动规范化为 Docker 合法名称
-- 交互式选择官方镜像变体；未额外指定时默认从 `v0.17.0rc1` 家族中按设备和 OS 选型
+- 交互式选择官方镜像变体；未额外指定时使用 `v0.23.0-openeuler`，其他设备/OS 按支持矩阵显式设置 `IMAGE`
 - 允许粘贴额外公钥，并保存到 `~/.ssh/vllm-ascend-extra-authorized_keys`
 - 在容器内安装并配置 `openssh-server`
 - 将容器 SSH 用户与 `/workspace` 的挂载所有权对齐，避免登录后工作区不可写
@@ -93,7 +93,7 @@ bash scripts/quickstart.sh
 如果你明确知道自己需要 openEuler 或 A3 变体，也可以在运行前固定镜像：
 
 ```bash
-export IMAGE=quay.io/ascend/vllm-ascend:v0.17.0rc1-openeuler
+export IMAGE=quay.io/ascend/vllm-ascend:v0.23.0-openeuler
 bash scripts/quickstart.sh
 ```
 
@@ -101,7 +101,7 @@ bash scripts/quickstart.sh
 `VLLM_ENGINE_CONTAINER` 在兼容期内仍可使用：
 
 ```bash
-export VLLM_ENGINE_CONTAINER_NAME=vllm-ascend-v0.17.0rc1-openeuler-gcw
+export VLLM_ENGINE_CONTAINER_NAME=vllm-ascend-v0.23.0-openeuler-gcw
 bash scripts/quickstart.sh
 ```
 
@@ -120,7 +120,7 @@ PYTHONPATH=src python3 -m hust_ascend_manager.cli container ssh-deploy \
 如果你要固定某个镜像变体，再补一个环境变量：
 
 ```bash
-export IMAGE=quay.io/ascend/vllm-ascend:v0.17.0rc1-openeuler
+export IMAGE=quay.io/ascend/vllm-ascend:v0.23.0-openeuler
 PYTHONPATH=src python3 -m hust_ascend_manager.cli container ssh-deploy \
   --host-workspace-root /home/shuhao \
   --ssh-user <ssh-user> \
@@ -252,7 +252,7 @@ PYTHONPATH=src python3 -m hust_ascend_manager.cli container ssh-deploy \
 
 ```bash
 cd /home/shuhao/vllm-hust-dev-hub
-export IMAGE=quay.io/ascend/vllm-ascend:v0.17.0rc1-openeuler
+export IMAGE=quay.io/ascend/vllm-ascend:v0.23.0-openeuler
 bash scripts/ascend-official-container.sh rm
 bash scripts/ascend-official-container.sh start
 ```
@@ -267,7 +267,7 @@ bash scripts/ascend-official-container.sh start
 export IMAGE=quay.io/ascend/vllm-ascend:<old-tag>
 ```
 
-然后重新创建容器。完成验证后应切回 `v0.17.0rc1` 家族，以免和当前 `vllm-ascend-hust` 的 CANN 8.5.1 预期脱节。
+然后重新创建容器。完成验证后应切回支持矩阵固定的 `v0.23.0` digest，以免和当前 `vllm-ascend-hust` 的 CANN 9.1.0 基线脱节。
 
 ## 9. 故障排查
 
@@ -319,13 +319,13 @@ cat /usr/local/Ascend/ascend-toolkit/latest/runtime/version.info || true
 cat /usr/local/Ascend/ascend-toolkit/latest/compiler/version.info || true
 ```
 
-如果不是 8.5.1 对应版本，优先确认当前镜像 tag：
+如果不是 9.1.0 对应版本，优先确认当前镜像 digest：
 
 ```bash
 docker inspect vllm-ascend-dev --format '{{.Config.Image}}'
 ```
 
-当前默认应落在 `v0.17.0rc1` 家族；若看到旧 tag，说明该容器是旧时期创建的，需要重建。
+当前默认应落在支持矩阵记录的 `v0.23.0` 家族 digest；若看到旧 tag，说明该容器是旧时期创建的，需要重建。
 
 ### 9.4 HCCL / 多卡通信异常
 
@@ -376,11 +376,11 @@ bash scripts/ascend-official-container.sh start
 
 ## 12. Docker 模式常见排障
 
-### 12.1 CANN 8.5.1 与 Custom Kernels
+### 12.1 CANN 与 Custom Kernels
 
-当前所有官方镜像（v0.16.0rc1 / v0.17.0rc1）均使用 CANN 8.5.1。该版本在 ascend910b 的算子注册表中**不包含** `AddRmsNormBias`，因此 `_C_ascend` C++ 扩展的自定义算子无法使用。
+当前正式 `v0.23.0` 镜像使用 CANN 9.1.0。不要把旧 `v0.16.0rc1/v0.17.0rc1` 的 CANN 8.5.1 算子缺口判断套用到新镜像；自定义算子必须用目标镜像内的 CANN/torch-npu 重新编译和验证。
 
-**解决方案**：在启动脚本中设置 `COMPILE_CUSTOM_KERNELS=0`，自动回退到 `torch_npu` 硬件加速算子（如 `npu_add_rms_norm`），与上游 vllm-ascend 行为一致，无性能损失。
+需要禁用本地自定义算子时，可在启动脚本中设置 `COMPILE_CUSTOM_KERNELS=0`，回退到 `torch_npu` 算子。是否存在性能差异必须以对应模型和目标硬件实测为准。
 
 ```bash
 # 已在 launch_ascend_model_service.sh Docker 模板中默认设置

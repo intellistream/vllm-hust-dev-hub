@@ -85,7 +85,7 @@ bash scripts/ascend-official-container.sh shell
 - canonical 容器名变量是 `VLLM_ENGINE_CONTAINER_NAME`；旧的
   `VLLM_ENGINE_CONTAINER` 在兼容期内仍可使用
 - 未显式配置容器名时，默认名由镜像 basename/tag 与当前登录用户名生成，并规范化为 Docker 合法名称
-- 默认会按交互提示选择合适的官方镜像，当前默认是 `quay.io/ascend/vllm-ascend:v0.17.0rc1` 家族（A3 / openEuler 会自动切换对应后缀）。只有在你需要固定 openEuler、A3 或回归验证其他版本时，才需要额外设置 `export IMAGE=...`。
+- 当前交互默认是 `quay.io/ascend/vllm-ascend:v0.23.0-openeuler`；其他 NPU/OS 组合按 [Ascend 官方运行环境支持矩阵](ascend-official-runtime-support-matrix.zh-CN.md)显式设置 `IMAGE`。正式运行使用矩阵中的不可变 digest，tag 只用于阅读。
 - 宿主机工作区根目录会挂载到容器内的 `/workspace`
 - 容器内的默认工作目录是 `/workspace/vllm-hust-dev-hub`
 
