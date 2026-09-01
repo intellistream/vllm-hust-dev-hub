@@ -14,6 +14,8 @@
 
 上游 v0.23.0 tag 对应 core commit `0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665`、plugin commit `5cb98caaadeff42b5b62b996e34bb2aaa29d20fd`。但镜像没有 `org.opencontainers.image.revision` 或可验证构建证明，因此这是“官方 release 引用 commit”，不能表述为镜像字节对源码 commit 的密码学证明。
 
+**源码身份边界：**当前 `vllm-hust` 与 `vllm-ascend-hust` 均已从对应官方上游直接重建，分别以 `vllm-project/vllm` 和 `vllm-project/vllm-ascend` 为源码根。不得再用重建前的独立 fork 历史描述当前仓库，也不得把重建前的 commit 当成当前验证 commit。每次验收使用的组织仓库 commit 都必须能从重建后的上游根谱系解析和审计。
+
 ## ARM64 正式镜像
 
 状态含义：
@@ -25,7 +27,7 @@
 | NPU / OS | 官方 tag | 不可变 index digest | ARM64 manifest digest | 最低 Driver / Firmware | Triton | 上游 / HUST 状态 | core / plugin commit |
 |---|---|---|---|---|---|---|---|
 | A2 / Ubuntu 22.04 | `v0.23.0` | `sha256:471744200c5d0c768c1f6c6a6816dcae0fd551de2487d4d129b6fb750024ce6a` | `sha256:4ee78def8f33d59d48f116d1dfa793332c23c99ecab4f0d7dd5cd62d0fb4e6c1` | Driver `26.0.RC1`；同产品 26.0.RC1 HDK 配套固件 | 3.2.2 | 官方验证 / 尚未验证 | `0fc695f` / `5cb98ca` |
-| A2 / openEuler 24.03 | `v0.23.0-openeuler` | `sha256:b2d13e24b295171d8f63678506fad5542f142e81d57e407a0b8c98c16ba0c4f7` | `sha256:6c183dfa86cf13ea5fa54ac8f0bcf7316c5b91e7f9774c26dc282dfd94da8ef9` | Driver `26.0.RC1`；同产品 26.0.RC1 HDK 配套固件 | 3.2.2 | 官方验证 / **社区验证** | 官方 `0fc695f` / `5cb98ca`；HUST `1a06c55` / `ac2b94f` |
+| A2 / openEuler 24.03 | `v0.23.0-openeuler` | `sha256:b2d13e24b295171d8f63678506fad5542f142e81d57e407a0b8c98c16ba0c4f7` | `sha256:6c183dfa86cf13ea5fa54ac8f0bcf7316c5b91e7f9774c26dc282dfd94da8ef9` | Driver `26.0.RC1`；同产品 26.0.RC1 HDK 配套固件 | 3.2.2 | 官方验证 / **尚未验证（重建后）** | 官方 `0fc695f` / `5cb98ca`；当前 HUST commit 待实机验收 |
 | A3 / Ubuntu 22.04 | `v0.23.0-a3` | `sha256:8e931f2a1908f4213ec31a349d5263a19c480e2e1e2dda801fdc35dd6ab279a5` | `sha256:96e4a97fce24262aee2dbcc6e81cb2655c45784c1a28450cb7c1114b0d05989e` | Atlas A3 Driver `26.0.RC1`；同产品 HDK 配套固件 | 3.2.2 | 官方验证 / 尚未验证 | `0fc695f` / `5cb98ca` |
 | A3 / openEuler 24.03 | `v0.23.0-a3-openeuler` | `sha256:382b012420854ba2d8b3b78897d9216742f27948345e503a01644ebbdd706ce6` | `sha256:d71b467a10e2aba2462a0d0fb020cbb3de8d46fbcd2f450c44e8614eeb4e7ed0` | Atlas A3 Driver `26.0.RC1`；同产品 HDK 配套固件 | 3.2.2 | 官方验证 / 尚未验证 | `0fc695f` / `5cb98ca` |
 | Ascend 950 / Ubuntu 22.04 | `v0.23.0-a5` | `sha256:cc57064f119054904dc81360cd1105d211fa9b91bf726486926dd025c26f17b7` | `sha256:4bab0e083fa9e73058c9a5e04862a5f52c6e0820d06bc5888c9e5628bc199987` | Atlas A5 Driver `25.7.RC1`；同产品 HDK 配套固件 | 3.2.2 | 官方验证 / 尚未验证 | `0fc695f` / `5cb98ca` |
@@ -98,13 +100,13 @@ python3 scripts/verify_ascend_runtime_matrix.py --all
 | 溯源缺口 | OCI config 无源码 revision 标签、签名或可验证 provenance/SBOM | commit 只写作 release 引用；推动上游增加 OCI revision 与签名证明 |
 | 版本冲突 | 仓库历史指引仍有 `v0.17.0rc1/CANN 8.5.1`，而正式基线已是 `v0.23.0/CANN 9.1.0` | 当前/default 路径统一指向本矩阵；旧组合仅作回滚记录 |
 | 310P 冲突 | 上游有 `v0.23.0 + driver 25.5.2` 初始化失败报告 | 使用官方文档的 `26.0.RC1` 线并等待问题关闭 |
-| HUST 证据缺口 | 仅 A2/openEuler/910B2 有 HUST 真实 NPU 证据，其余 7 个变体尚未验证 | 按维护流程逐项验收，不把“可拉取”等同于“社区验证” |
+| HUST 证据缺口 | 8 个当前组合在上游重建后均未完成新 commit 的实机验收 | 2026-08-19 A2/openEuler/910B2 收据保留为重建前历史证据，但不能证明当前源码；8 项均须重验 |
 
 ## 组织管理员协调项
 
 1. 按每台机器的精确 Atlas 型号/SKU 从华为官方入口获取配套 Driver/Firmware；驱动和固件属于宿主机 HDK，不应打入派生镜像。
 2. 在受限的组织资产库保存包文件、官方 checksum（如有）、本地 SHA-256、获取日期、EULA/工单依据；公开仓库只登记不可泄密的收据，不存包和凭据。
-3. 下次 910B2 验收补采 firmware；并为 A2 Ubuntu、A3 双 OS、Ascend 950 双 OS、310P 双 OS安排真实 NPU 验收。
+3. 下次 910B2 验收补采 firmware；并对全部 8 个组合使用重建后、可从官方上游根谱系审计的 core/plugin commit 安排真实 NPU 验收。
 4. 向上游推动 OCI `revision` 标签、SBOM、签名/provenance，使镜像与 core/plugin commit 可密码学关联。
 
 维护职责与发布门禁见 [Ascend 运行矩阵维护流程](ascend-runtime-matrix-maintenance.md)。

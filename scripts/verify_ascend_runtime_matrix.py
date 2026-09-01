@@ -66,6 +66,7 @@ def validate_local(matrix: dict[str, Any]) -> list[str]:
         "last_verified_at",
         "scope",
         "stack",
+        "repository_identity",
         "licenses",
         "sources",
         "runtime_images",

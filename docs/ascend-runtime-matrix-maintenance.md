@@ -7,6 +7,8 @@
 - **组织管理员**：按精确产品从华为官方渠道取得 HDK，管理 EULA/权限和受限资产库。公开仓库不得存驱动包、固件包或访问凭据。
 - **评审者**：核对来源级别、版本一致性、digest、许可证、访问限制和验证状态，避免把“镜像存在”误写为“组织验证”。
 
+当前源码政策：`vllm-hust` 与 `vllm-ascend-hust` 是从官方上游直接重建的组织仓库。官方上游分别为 `vllm-project/vllm` 与 `vllm-project/vllm-ascend`；重建前 commit 和旧 fork-only 历史不得作为当前源码或当前验证依据。
+
 ## 新版本更新步骤
 
 1. 只从 vLLM Ascend GitHub release、版本化官方文档、release commit 的 Dockerfile、Quay Registry V2 API 和华为 Ascend 官方文档取数。
@@ -26,6 +28,7 @@
    ```
 
 9. 先合并清单与文档；只有真实 NPU 证据齐全后，才把对应 HUST 状态从 `not_verified` 改为 `community_verified`。
+10. 仓库重建、重新导入或更换源码根时，把所有依赖旧 commit 的 `community_verified` 降回 `not_verified`。旧证据只保留为历史收据，直到使用重建后可达 commit 重新运行。
 
 ## 社区验证最小证据
 
@@ -35,6 +38,7 @@
 - `npu-smi info`、`cat /usr/local/Ascend/driver/version.info`（实际路径存在时）及固件查询输出；
 - CANN version、Python `--version`、`pip freeze` 中 Torch/torch-npu/Triton/vLLM/vLLM Ascend；
 - vLLM-HUST core/plugin 的完整 commit，工作树是否干净，以及 overlay 安装命令；
+- 两个 commit 在重建后组织仓库中的可达性，以及其对应官方上游根；不得用已经因重建而不可达的旧 fork commit；
 - 单 NPU 最小模型加载、一次确定性请求、正常退出、退出后无残留 NPU 进程；
 - 原始文本证据的 `SHA256SUMS`。不得用截图替代可机器读取的关键版本输出。
 

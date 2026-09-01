@@ -29,13 +29,23 @@ def test_runtime_matrix_is_complete_and_valid():
     }
 
 
-def test_only_community_verified_record_has_hust_commits():
+def test_upstream_rebuild_invalidates_pre_rebuild_community_status():
     matrix = MODULE.load_matrix(MODULE.DEFAULT_MATRIX)
-    verified = [
+    assert (
+        matrix["repository_identity"]["core"]["rebuild_source"] == "official_upstream"
+    )
+    assert (
+        matrix["repository_identity"]["plugin"]["rebuild_source"] == "official_upstream"
+    )
+    assert all(
+        item["vllm_hust_verification"] == "not_verified"
+        for item in matrix["runtime_images"]
+    )
+    a2_openeuler = next(
         item
         for item in matrix["runtime_images"]
-        if item["vllm_hust_verification"] == "community_verified"
-    ]
-    assert [item["id"] for item in verified] == ["a2-openeuler24.03-arm64"]
-    assert verified[0]["hust_core_commit"]
-    assert verified[0]["hust_plugin_commit"]
+        if item["id"] == "a2-openeuler24.03-arm64"
+    )
+    assert a2_openeuler["hust_core_commit"] is None
+    assert a2_openeuler["hust_plugin_commit"] is None
+    assert a2_openeuler["historical_evidence"]["status"] == "pre_rebuild_not_current"

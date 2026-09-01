@@ -20,6 +20,21 @@
     "official_plugin_commit": "5cb98caaadeff42b5b62b996e34bb2aaa29d20fd",
     "commit_provenance": "The commits are the public v0.23.0 tag targets. The OCI image config has no source-revision label or signed provenance tying image bytes to those commits, so this association is official-release-reference, not a cryptographic build attestation."
   },
+  "repository_identity": {
+    "reported_at": "2026-09-01",
+    "policy": "vllm-hust and vllm-ascend-hust were rebuilt directly from their official upstream repositories. Current validation must use commits reachable from the rebuilt upstream-rooted history; pre-rebuild commits and old fork-only history must not be treated as current source identity.",
+    "core": {
+      "organization_repository": "https://github.com/vLLM-HUST/vllm-hust",
+      "official_upstream": "https://github.com/vllm-project/vllm",
+      "rebuild_source": "official_upstream"
+    },
+    "plugin": {
+      "organization_repository": "https://github.com/vLLM-HUST/vllm-ascend-hust",
+      "official_upstream": "https://github.com/vllm-project/vllm-ascend",
+      "rebuild_source": "official_upstream"
+    },
+    "evidence_rule": "A repository rebuild is a source-identity boundary. Earlier NPU evidence remains a historical receipt but cannot verify the rebuilt repositories until the workload is rerun with new reachable commits."
+  },
   "licenses": {
     "vllm": "Apache-2.0",
     "vllm_ascend": "Apache-2.0",
@@ -96,11 +111,18 @@
       "minimum_firmware": "Firmware matched to the selected product's 26.0.RC1 HDK compatibility table; HUST evidence records driver 26.0.RC1 but did not capture a firmware version",
       "triton_ascend": "3.2.2",
       "upstream_verification": "official_verified",
-      "vllm_hust_verification": "community_verified",
+      "vllm_hust_verification": "not_verified",
       "verified_core_commit": "0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665",
       "verified_plugin_commit": "5cb98caaadeff42b5b62b996e34bb2aaa29d20fd",
-      "hust_core_commit": "1a06c55468966de8ef471ecb7612c199e15a153a",
-      "hust_plugin_commit": "ac2b94f1536090e2cd0d6c2f8bc8087e336193d5",
+      "hust_core_commit": null,
+      "hust_plugin_commit": null,
+      "verification_note": "The 2026-08-19 real-NPU receipt predates the upstream rebuild. It proves the historical image/hardware run only and does not verify the current rebuilt repositories.",
+      "historical_evidence": {
+        "status": "pre_rebuild_not_current",
+        "core_commit": "1a06c55468966de8ef471ecb7612c199e15a153a",
+        "plugin_commit": "ac2b94f1536090e2cd0d6c2f8bc8087e336193d5",
+        "evidence": "docs/evidence/issue-40-20260819/environment.json"
+      },
       "dockerfile_url": "https://github.com/vllm-project/vllm-ascend/blob/5cb98caaadeff42b5b62b996e34bb2aaa29d20fd/Dockerfile.openEuler",
       "install": "docker pull --platform linux/arm64 quay.io/ascend/vllm-ascend@sha256:b2d13e24b295171d8f63678506fad5542f142e81d57e407a0b8c98c16ba0c4f7",
       "license": "Mixed: Apache-2.0/BSD-style/MIT/PSF-2.0 plus Huawei EULA",
@@ -296,8 +318,8 @@
     },
     {
       "kind": "community_evidence_gap",
-      "item": "A2 Ubuntu, A3, Ascend 950 and 310P variants",
-      "impact": "No vLLM-HUST real-NPU evidence is linked for these seven ARM64 variants"
+      "item": "All eight current variants after the upstream repository rebuild",
+      "impact": "The A2/openEuler receipt predates the rebuild; no current rebuilt-source commit pair has real-NPU evidence"
     }
   ],
   "known_conflicts": [
@@ -319,6 +341,6 @@
     "Obtain the matching driver and firmware from Huawei's official portal, accept applicable EULA, and store packages in an organization-controlled restricted artifact store.",
     "Record package filename, vendor-published checksum when present, locally computed SHA-256, acquisition date, and access ticket outside this public repository; never record credentials or signed URLs.",
     "Capture firmware output in the next 910B2 acceptance run; the existing 2026-08-19 evidence records driver but omits firmware.",
-    "Schedule real-NPU acceptance for the seven variants currently marked not_verified."
+    "Schedule real-NPU acceptance for all eight variants against commits reachable from the rebuilt upstream-rooted repositories."
   ]
 }
