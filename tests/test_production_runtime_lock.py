@@ -15,10 +15,23 @@ def test_production_runtime_lock_is_complete_and_immutable() -> None:
     assert re.fullmatch(r"[0-9a-f]{40}", lock["vllm_ascend"]["commit"])
     assert lock["vllm_core"]["repository"] == "git@github.com:vLLM-HUST/vllm-hust.git"
     assert lock["vllm_ascend"]["repository"] == "git@github.com:vLLM-HUST/vllm-ascend-hust.git"
+    assert lock["vllm_core"]["source_version"].endswith(
+        lock["vllm_core"]["commit"][:8]
+    )
+    assert lock["vllm_ascend"]["source_version"].endswith(
+        lock["vllm_ascend"]["commit"][:9]
+    )
+    assert lock["compatibility"] == {
+        "runtime_base": "vLLM-Ascend 0.23.0",
+        "vllm_api": "0.23.1rc0",
+        "cann": "9.1.0",
+        "torch_npu": "2.10.0.post4",
+    }
     assert lock["python_stack"] == {
         "torch": "2.10.0+cpu",
         "torch_npu": "2.10.0.post4",
         "triton_ascend": "3.2.2",
+        "vllm_base": "0.23.0+empty",
         "vllm_ascend": "0.23.0",
     }
     assert lock["runtime"]["cann"] == "9.1.0"
@@ -34,7 +47,11 @@ def test_locked_image_and_launcher_enforce_identity() -> None:
     assert "FROM ${BASE_IMAGE}" in dockerfile
     assert "ai.vllm-hust.vllm-core.commit" in dockerfile
     assert "ai.vllm-hust.vllm-ascend.commit" in dockerfile
+    assert "ai.vllm-hust.compatibility.base" in dockerfile
+    assert "install_runtime_metadata.py" in dockerfile
+    assert "TORCH_DEVICE_BACKEND_AUTOLOAD=0 python3" in dockerfile
     assert "git -C \"$root\" status --porcelain" in builder
+    assert "plugin verifies core=" in builder
     assert "--pull=false" in builder
     assert 'expected_image_id="${VLLM_ENGINE_EXPECTED_IMAGE_ID:-}"' in launcher
     assert "image identity mismatch" in launcher

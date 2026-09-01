@@ -7,17 +7,27 @@
   "vllm_core": {
     "repository": "git@github.com:vLLM-HUST/vllm-hust.git",
     "branch": "main",
-    "commit": "ba07e4a48fc951300d97eb506217dd530583dea3"
+    "commit": "ba07e4a48fc951300d97eb506217dd530583dea3",
+    "source_version": "0.23.1rc0.dev2625+gba07e4a4"
   },
   "vllm_ascend": {
     "repository": "git@github.com:vLLM-HUST/vllm-ascend-hust.git",
     "branch": "main",
-    "commit": "40f9834ee82aadfa4656ec65e5bd84f4d6241b5f"
+    "commit": "5d9896f6a47a5cbc54374718c39dabc966b338b6",
+    "source_version": "0.0.dev20260901+g5d9896f6a",
+    "verified_core_file": ".github/vllm-main-verified.commit"
+  },
+  "compatibility": {
+    "runtime_base": "vLLM-Ascend 0.23.0",
+    "vllm_api": "0.23.1rc0",
+    "cann": "9.1.0",
+    "torch_npu": "2.10.0.post4"
   },
   "python_stack": {
     "torch": "2.10.0+cpu",
     "torch_npu": "2.10.0.post4",
     "triton_ascend": "3.2.2",
+    "vllm_base": "0.23.0+empty",
     "vllm_ascend": "0.23.0"
   },
   "runtime": {
@@ -29,5 +39,5 @@
       "/workspace/vllm-hust"
     ]
   },
-  "image_tag": "sage-mate/vllm-ascend-hust:v0.23.0-newrepos-ba07e4a4-40f9834e"
+  "image_tag": "sage-mate/vllm-ascend-hust:ascend0.23.0-core-ba07e4a4-plugin-5d9896f6"
 }

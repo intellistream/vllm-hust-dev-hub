@@ -18,7 +18,7 @@
     "extra_env_keys": ["VLLM_ALLOW_LONG_MAX_MODEL_LEN"],
     "extra_args": [
       "--speculative-config",
-      {"method": "eagle3", "model": "${draft_model}", "num_speculative_tokens": 5, "enforce_eager": true, "draft_context_policy": "diffspec", "diffspec_verification_mode": "auto", "diffspec_chunk_size": 64, "diffspec_token_budget": 2048}
+      {"method": "eagle3", "model": "${draft_model}", "num_speculative_tokens": 5, "enforce_eager": false, "draft_context_policy": "diffspec", "diffspec_verification_mode": "auto", "diffspec_chunk_size": 64, "diffspec_token_budget": 2048}
     ]
   },
   "compatibility": {"incompatible_with": ["latchmoe"]}

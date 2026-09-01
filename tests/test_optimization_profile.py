@@ -62,7 +62,7 @@ def test_diffspec_requires_and_renders_draft_model() -> None:
     assert result.returncode == 0
     args = json.loads(environment["VLLM_ENGINE_EXTRA_ARGS_JSON"])
     assert json.loads(args[1])["model"] == "/models/eagle3"
-    assert environment["VLLM_ENGINE_ENFORCE_EAGER"] == "1"
+    assert environment["VLLM_ENGINE_ENFORCE_EAGER"] == "0"
     assert environment["VLLM_PLUGINS"] == "ascend,diffspec"
 
 
