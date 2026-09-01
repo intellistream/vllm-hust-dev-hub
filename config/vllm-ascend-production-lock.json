@@ -13,8 +13,8 @@
   "vllm_ascend": {
     "repository": "git@github.com:vLLM-HUST/vllm-ascend-hust.git",
     "branch": "main",
-    "commit": "5d9896f6a47a5cbc54374718c39dabc966b338b6",
-    "source_version": "0.0.dev20260901+g5d9896f6a",
+    "commit": "6f4c701573cc45c744aac136b524bd1742964deb",
+    "source_version": "0.0.dev20260901+g6f4c70157",
     "verified_core_file": ".github/vllm-main-verified.commit"
   },
   "compatibility": {
@@ -39,5 +39,5 @@
       "/workspace/vllm-hust"
     ]
   },
-  "image_tag": "sage-mate/vllm-ascend-hust:ascend0.23.0-core-ba07e4a4-plugin-5d9896f6"
+  "image_tag": "sage-mate/vllm-ascend-hust:ascend0.23.0-core-ba07e4a4-plugin-6f4c7015"
 }
