@@ -9,33 +9,30 @@ ROOT = Path(__file__).resolve().parents[1]
 def test_production_runtime_lock_is_complete_and_immutable() -> None:
     lock = json.loads((ROOT / "config/vllm-ascend-production-lock.json").read_text())
 
-    assert lock["schema"] == "vllm-hust.production-runtime-lock/v1"
+    assert lock["schema"] == "vllm-hust.production-runtime-lock/v2"
     assert re.fullmatch(r"sha256:[0-9a-f]{64}", lock["base_image"]["digest"])
     assert re.fullmatch(r"[0-9a-f]{40}", lock["vllm_core"]["commit"])
     assert re.fullmatch(r"[0-9a-f]{40}", lock["vllm_ascend"]["commit"])
     assert lock["vllm_core"]["repository"] == "git@github.com:vLLM-HUST/vllm-hust.git"
     assert lock["vllm_ascend"]["repository"] == "git@github.com:vLLM-HUST/vllm-ascend-hust.git"
-    assert lock["vllm_core"]["source_version"].endswith(
-        lock["vllm_core"]["commit"][:8]
-    )
-    assert lock["vllm_ascend"]["source_version"].endswith(
-        lock["vllm_ascend"]["commit"][:9]
-    )
-    assert lock["compatibility"] == {
-        "runtime_base": "vLLM-Ascend 0.23.0",
-        "vllm_api": "0.23.1rc0",
-        "cann": "9.1.0",
-        "torch_npu": "2.10.0.post4",
-    }
-    assert lock["python_stack"] == {
-        "torch": "2.10.0+cpu",
-        "torch_npu": "2.10.0.post4",
-        "triton_ascend": "3.2.2",
-        "vllm_base": "0.23.0+empty",
-        "vllm_ascend": "0.23.0",
-    }
+    assert lock["vllm_core"]["commit"][:9] in lock["vllm_core"]["source_version"]
+    assert lock["vllm_ascend"]["commit"][:9] in lock["vllm_ascend"]["source_version"]
+    assert lock["vllm_core"]["commit"][:9] in lock["vllm_core"]["package_version"]
+    assert lock["vllm_ascend"]["commit"][:9] in lock["vllm_ascend"]["package_version"]
+    assert lock["compatibility"]["cann"] == "9.1.0"
+    assert lock["compatibility"]["torch_npu"] == "2.13.0rc1"
+    for component in (lock["vllm_core"], lock["vllm_ascend"]):
+        assert re.fullmatch(r"[0-9a-f]{64}", component["artifact"]["sha256"])
+        assert component["artifact"]["filename"].endswith(".whl")
+    for component in lock["python_stack"].values():
+        assert re.fullmatch(r"[0-9a-f]{64}", component["sha256"])
+        assert component["filename"].endswith(".whl")
+    for component in lock["runtime_dependencies"].values():
+        assert re.fullmatch(r"[0-9a-f]{64}", component["sha256"])
+        assert component["filename"].endswith(".whl")
     assert lock["runtime"]["cann"] == "9.1.0"
     assert lock["runtime"]["graph_mode"] is True
+    assert lock["runtime"]["install_mode"] == "immutable-wheels"
 
 
 def test_locked_image_and_launcher_enforce_identity() -> None:
@@ -52,11 +49,16 @@ def test_locked_image_and_launcher_enforce_identity() -> None:
     assert "ai.vllm-hust.vllm-ascend.commit" in dockerfile
     assert "ai.vllm-hust.compatibility.base" in dockerfile
     assert "install_runtime_metadata.py" in dockerfile
-    assert 'assert "ascend" in platform' in dockerfile
-    assert "shutil.copytree(source, target)" in metadata_installer
+    assert 'assert "ascend" in' in dockerfile
+    assert "vllm-hust.runtime-receipt/v2" in metadata_installer
+    assert "protected runtime dependency mismatch" in metadata_installer
+    assert "sitecustomize" not in metadata_installer
+    assert "dist-info" not in metadata_installer
     assert "TORCH_DEVICE_BACKEND_AUTOLOAD=0 python3" in dockerfile
     assert "git -C \"$root\" status --porcelain" in builder
     assert "plugin verifies core=" in builder
+    assert "artifact hash mismatch" in builder
+    assert "mktemp -d" in builder
     assert "--pull=false" in builder
     assert 'expected_image_id="${VLLM_ENGINE_EXPECTED_IMAGE_ID:-}"' in launcher
     assert "image identity mismatch" in launcher

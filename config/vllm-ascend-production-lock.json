@@ -1,5 +1,5 @@
 {
-  "schema": "vllm-hust.production-runtime-lock/v1",
+  "schema": "vllm-hust.production-runtime-lock/v2",
   "base_image": {
     "reference": "quay.io/ascend/vllm-ascend:v0.23.0-openeuler",
     "digest": "sha256:6c183dfa86cf13ea5fa54ac8f0bcf7316c5b91e7f9774c26dc282dfd94da8ef9"
@@ -7,37 +7,106 @@
   "vllm_core": {
     "repository": "git@github.com:vLLM-HUST/vllm-hust.git",
     "branch": "main",
-    "commit": "ba07e4a48fc951300d97eb506217dd530583dea3",
-    "source_version": "0.23.1rc0.dev2625+gba07e4a4"
+    "commit": "70081fe3d782c494cbd602973044a1202c0d4407",
+    "upstream_base_commit": "0d4ad47981b6133c8f835d78f7a19ca4eda113d5",
+    "source_version": "0.28.1rc1.dev236+g70081fe3d",
+    "package_version": "0.28.1rc1.dev236+g70081fe3d.empty",
+    "artifact": {
+      "filename": "vllm-0.28.1rc1.dev236+g70081fe3d.empty-cp312-cp312-linux_aarch64.whl",
+      "sha256": "e7d3ce9587f3d124457904ab5c0cf0efc71ba408086004ab976cc1cdbeaa8a83"
+    }
   },
   "vllm_ascend": {
     "repository": "git@github.com:vLLM-HUST/vllm-ascend-hust.git",
     "branch": "main",
-    "commit": "6f4c701573cc45c744aac136b524bd1742964deb",
-    "source_version": "0.0.dev20260901+g6f4c70157",
-    "verified_core_file": ".github/vllm-main-verified.commit"
-  },
-  "compatibility": {
-    "runtime_base": "vLLM-Ascend 0.23.0",
-    "vllm_api": "0.23.1rc0",
-    "cann": "9.1.0",
-    "torch_npu": "2.10.0.post4"
+    "commit": "df0870b176bdcc60a0a9663e0b654f875ed38a8a",
+    "source_version": "0.19.1rc2.dev1850+gdf0870b17",
+    "package_version": "0.19.1rc2.dev1850+gdf0870b17",
+    "verified_core_file": ".github/vllm-main-verified.commit",
+    "artifact": {
+      "filename": "vllm_ascend-0.19.1rc2.dev1850+gdf0870b17-cp312-cp312-linux_aarch64.whl",
+      "sha256": "bf05c0bb48169e47fe5e202941f56922a252e35fb118c797b84c4cb24aad54aa"
+    }
   },
   "python_stack": {
-    "torch": "2.10.0+cpu",
-    "torch_npu": "2.10.0.post4",
-    "triton_ascend": "3.2.2",
-    "vllm_base": "0.23.0+empty",
-    "vllm_ascend": "0.23.0"
+    "torch": {
+      "version": "2.13.0+cpu",
+      "filename": "torch-2.13.0+cpu-cp312-cp312-manylinux_2_28_aarch64.whl",
+      "sha256": "6f307c2c32d764ffc6ff6893b801fad6d4752f3e67966cb8abf1843427c02604"
+    },
+    "torch_npu": {
+      "version": "2.13.0rc1",
+      "filename": "torch_npu-2.13.0rc1-cp312-cp312-manylinux_2_28_aarch64.whl",
+      "sha256": "6f7da48ba3db796b06ded6087e1a9a1827af4cada0fb298be76451e5947f10a8"
+    },
+    "torchvision": {
+      "version": "0.28.0+cpu",
+      "filename": "torchvision-0.28.0+cpu-cp312-cp312-manylinux_2_28_aarch64.whl",
+      "sha256": "2f768c4f6d5adf6d5535061fd69ec44827608bac0e96e12114942a6fdfce1107"
+    },
+    "torchaudio": {
+      "version": "2.11.0+cpu",
+      "filename": "torchaudio-2.11.0+cpu-cp312-cp312-manylinux_2_28_aarch64.whl",
+      "sha256": "b9dd2c6ac144001dc6dac38b564c1de73ac26ef0c195d5037c4a94990b0e2b5a"
+    },
+    "triton_ascend": {
+      "repository": "git@github.com:vLLM-HUST/triton-ascend-hust.git",
+      "branch": "main",
+      "version": "3.6.0+gitb52af7fc",
+      "source_commit": "b52af7fc9a0377c6ed527a88a30df719874eeba9",
+      "filename": "triton_ascend-3.6.0+gitb52af7fc-cp312-cp312-linux_aarch64.whl",
+      "sha256": "4dac0623cd9babe9fa5a1695a87f63bbe4516f28b37dae360cbae1f2da2b5d86"
+    }
+  },
+  "runtime_dependencies": {
+    "numpy": {
+      "version": "2.2.6",
+      "filename": "numpy-2.2.6-cp312-cp312-manylinux_2_17_aarch64.manylinux2014_aarch64.whl",
+      "sha256": "f2618db89be1b4e05f7a1a847a9c1c0abd63e63a1607d892dd54668dd92faf87"
+    },
+    "transformers": {
+      "version": "5.14.1",
+      "filename": "transformers-5.14.1-py3-none-any.whl",
+      "sha256": "9db974c4079ede2d1a3ea7ca5a240df33f2cc26fc2b36ba64c5f2a4f43b6e725"
+    },
+    "fastapi": {
+      "version": "0.136.3",
+      "filename": "fastapi-0.136.3-py3-none-any.whl",
+      "sha256": "3d2a69bdf04b7e9f3afa292c3bc7a98816bbfafa10bc9b45f3f3700d2f761620"
+    },
+    "huggingface_hub": {
+      "version": "1.29.0",
+      "filename": "huggingface_hub-1.29.0-py3-none-any.whl",
+      "sha256": "b00f7782afc14db4bc6572763810a635bdfbab8623d957bfb553bd18e03852cd"
+    },
+    "starlette": {
+      "version": "1.0.1",
+      "filename": "starlette-1.0.1-py3-none-any.whl",
+      "sha256": "7c0e69b2ee1c848bd54669d908500117a3ee13de603a21427e5c6fc1adf98dcd"
+    },
+    "triton": {
+      "version": "3.6.0",
+      "filename": "triton-3.6.0-cp312-cp312-manylinux_2_27_aarch64.manylinux_2_28_aarch64.whl",
+      "sha256": "374f52c11a711fd062b4bfbb201fd9ac0a5febd28a96fb41b4a0f51dde3157f4"
+    },
+    "pyelftools": {
+      "version": "0.33",
+      "filename": "pyelftools-0.33-py3-none-any.whl",
+      "sha256": "f215ad5f47d3f1373a21496a6c9e0707c622840d0622f23ff7ce08678b020036"
+    }
+  },
+  "compatibility": {
+    "core_line": "vLLM upstream main snapshot at 0d4ad479",
+    "plugin_line": "vLLM Ascend main snapshot",
+    "cann": "9.1.0",
+    "torch_npu": "2.13.0rc1"
   },
   "runtime": {
     "cann": "9.1.0",
     "soc": "ascend910b1",
     "graph_mode": true,
-    "source_mounts": [
-      "/workspace/vllm-ascend-hust",
-      "/workspace/vllm-hust"
-    ]
+    "install_mode": "immutable-wheels",
+    "artifact_directory": "/data/codex-build-artifacts/latest-main-20260901"
   },
-  "image_tag": "sage-mate/vllm-ascend-hust:ascend0.23.0-core-ba07e4a4-plugin-6f4c7015"
+  "image_tag": "sage-mate/vllm-ascend-hust:core-70081fe3-plugin-df0870b1-cann9.1"
 }

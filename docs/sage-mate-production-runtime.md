@@ -4,8 +4,8 @@ This profile keeps three identities separate. They must never be collapsed into
 one `v0.23.0` label:
 
 1. **Compatibility base**: the official vLLM Ascend `0.23.0` ARM64/openEuler
-   runtime (CANN 9.1.0, Torch 2.10.0, torch-npu 2.10.0.post4 and
-   triton-ascend 3.2.2).
+   filesystem and CANN 9.1.0 runtime. Its Python packages are removed during
+   the derived build and are not the active serving stack.
 2. **Active source snapshots**: the exact vLLM-HUST core and
    vllm-ascend-hust plugin commits in
    `config/vllm-ascend-production-lock.json`. The plugin's
@@ -13,11 +13,18 @@ one `v0.23.0` label:
 3. **Built artifact**: the derived image ID/digest, build timestamp and OCI
    labels produced from that exact pair.
 
-The approved 2026-09-01 profile pins core
-`ba07e4a48fc951300d97eb506217dd530583dea3` and the merged HUST plugin-main
-snapshot `6f4c701573cc45c744aac136b524bd1742964deb`. Its source versions are
-`0.23.1rc0.dev2625+gba07e4a4` and
-`0.0.dev20260901+g6f4c70157`. A later moving `main` is not silently substituted:
+The approved current-main candidate pins core
+`70081fe3d782c494cbd602973044a1202c0d4407` and plugin
+`df0870b176bdcc60a0a9663e0b654f875ed38a8a`. Its installed package versions are
+`0.28.1rc1.dev236+g70081fe3d.empty` and
+`0.19.1rc2.dev1850+gdf0870b17`, with Torch `2.13.0+cpu`, torch-npu
+`2.13.0rc1`, NumPy `2.2.6`, and source-built Triton Ascend
+`3.6.0+gitb52af7fc` from vLLM-HUST/triton-ascend-hust main commit
+`b52af7fc9a0377c6ed527a88a30df719874eeba9`. The Triton wheel keeps the
+upstream-supported NumPy interval `>=1.26.4,<2.3`, which permits the locked
+NumPy 2.2.6 required by the active OpenCV 5 dependency while rejecting the
+incompatible NumPy 2.3 line. A later moving
+`main` is not silently substituted:
 the pair changes only through a reviewed lock update and the full image/NPU
 acceptance gate.
 
@@ -27,27 +34,46 @@ acceptance gate.
 
 - repository, commit and source-version identity for core and plugin;
 - plugin verified-core relationship;
-- compatibility base and package/toolchain versions;
+- compatibility base and exact package/toolchain wheel filenames and SHA256;
+- exact runtime dependency wheels required by the synchronized core/plugin
+  pair (including Transformers, FastAPI, Starlette, Hugging Face Hub, Triton,
+  and pyelftools);
 - official base image tag and immutable digest;
 - derived image tag.
 
 The derived tag is descriptive:
 
 ```text
-sage-mate/vllm-ascend-hust:ascend0.23.0-core-<core8>-plugin-<plugin8>
+sage-mate/vllm-ascend-hust:core-<core8>-plugin-<plugin8>-cann9.1
 ```
 
 Reproducibility relies on the image ID/digest and OCI labels, not the tag. The
 build writes `org.opencontainers.image.created`,
 `org.opencontainers.image.revision`, repository/commit/source-version labels
 for both source trees, compatibility-base/package labels and the lock schema.
-The build also verifies package metadata and plugin entry points inside the
-candidate image.
+The builder verifies every wheel hash before creating a temporary Docker
+context. The image removes inherited release wheels and legacy metadata
+shadowing, installs only the locked wheels, then validates real importlib
+metadata, source versions, OpenAI server imports and plugin entry points. It
+writes and verifies the direct dependency closure of the protected serving
+packages independently from unrelated vendor packages inherited in the
+official compatibility filesystem. Any missing or incompatible protected
+dependency fails the image build; unrelated base-image `pip check` findings
+remain visible as base-image debt and are not misreported as active-stack
+failures. It
+writes `/opt/vllm-hust-runtime/runtime-stack.json` and a normalized copy of the
+v2 lock; it never manufactures `.dist-info` or injects `sitecustomize`.
 
 Build only from clean, exact checkouts:
 
 ```bash
 scripts/build_locked_vllm_ascend_image.sh
+```
+
+Override the artifact directory only when mirroring the exact same files:
+
+```bash
+VLLM_ASCEND_ARTIFACT_DIR=/secure/mirror scripts/build_locked_vllm_ascend_image.sh
 ```
 
 ## Deployment receipt
@@ -81,4 +107,3 @@ The 2026-09-01 rollback artifact is deliberately retained outside the lock:
 `sage-mate/vllm-ascend-hust:v0.23.0-newrepos-ba07e4a4-40f9834e`
 (`sha256:6119514ab4f4a90e4ab35d38c12063a14c44cffda998fde18fb8f3a8a8582478`).
 Do not delete it as part of routine cleanup.
-
