@@ -38,6 +38,7 @@ fi
 
 container="${VLLM_ENGINE_CONTAINER_NAME:-${VLLM_ENGINE_CONTAINER:-${DOCKER_CONTAINER:-vllm-ascend-dev}}}"
 container_image="${VLLM_ENGINE_IMAGE:-${IMAGE:-quay.io/ascend/vllm-ascend:v0.23.0-openeuler}}"
+expected_image_id="${VLLM_ENGINE_EXPECTED_IMAGE_ID:-}"
 auto_create_container="${VLLM_ENGINE_AUTO_CREATE_CONTAINER:-true}"
 container_non_interactive="${VLLM_ENGINE_CONTAINER_NON_INTERACTIVE:-1}"
 container_shm_size="${VLLM_ENGINE_CONTAINER_SHM_SIZE:-${SHM_SIZE:-16g}}"
@@ -218,6 +219,20 @@ if ! docker info >/dev/null 2>&1; then
   fi
 fi
 
+if [[ -n "$expected_image_id" ]]; then
+  configured_image_id="$("${docker_cmd[@]}" image inspect --format '{{.Id}}' "$container_image" 2>/dev/null || true)"
+  [[ -n "$configured_image_id" ]] || {
+    echo "ERROR: locked image is not available locally: $container_image" >&2
+    exit 1
+  }
+  [[ "$configured_image_id" == "$expected_image_id" ]] || {
+    echo "ERROR: image identity mismatch for $container_image" >&2
+    echo "expected: $expected_image_id" >&2
+    echo "actual:   $configured_image_id" >&2
+    exit 1
+  }
+fi
+
 container_is_running() {
   [[ "$("${docker_cmd[@]}" inspect -f '{{.State.Running}}' "$container" 2>/dev/null || true)" == "true" ]]
 }
@@ -266,6 +281,14 @@ ensure_container_ready() {
 }
 
 ensure_container_ready
+
+if [[ -n "$expected_image_id" ]]; then
+  running_image_id="$("${docker_cmd[@]}" inspect --format '{{.Image}}' "$container")"
+  [[ "$running_image_id" == "$expected_image_id" ]] || {
+    echo "ERROR: container $container runs $running_image_id, expected $expected_image_id" >&2
+    exit 1
+  }
+fi
 
 echo "[vllm-hust] container        = $container"
 echo "[vllm-hust] image            = ${container_image:-auto-detect official Ascend image}"
