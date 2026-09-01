@@ -20,6 +20,10 @@ baseline is maintained in the
 Use its immutable OCI digests for reproducible runs; image tags are display
 aliases only.
 
+For the exact core/plugin lock, derived-image labels, deployment receipt and
+rollback procedure used by Sage Mate, see the
+[Sage Mate production runtime profile](docs/sage-mate-production-runtime.md).
+
 Agent workflow note: on any prepared dev-hub Ascend development machine,
 use this repo's `./manage.sh` as the first-choice entrypoint for launching,
 restarting, health-checking, and testing the prepared vLLM-HUST service. Avoid
