@@ -12,6 +12,8 @@ CONTAINER_NAME_SCRIPT="$SCRIPT_DIR/container-name.sh"
 # shellcheck source=scripts/container-name.sh
 source "$CONTAINER_NAME_SCRIPT"
 
+# Human-readable interactive default. Formal/evidence runs should set IMAGE to
+# the immutable index reference recorded in the support matrix.
 DEFAULT_OFFICIAL_IMAGE="quay.io/ascend/vllm-ascend:v0.23.0-openeuler"
 IMAGE="${IMAGE:-$DEFAULT_OFFICIAL_IMAGE}"
 if ! CONTAINER_NAME="$(configured_vllm_engine_container_name)"; then

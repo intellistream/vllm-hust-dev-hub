@@ -124,7 +124,10 @@ QUICKSTART_LOG_FILE="${HUST_DEV_HUB_QUICKSTART_LOG_FILE:-}"
 QUICKSTART_LOGGING_INITIALIZED=0
 CONDA_RUN_STREAM_FLAG=""
 CONTAINER_EXTRA_AUTH_KEYS_FILE="$WORKSPACE_ROOT/.ssh/vllm-ascend-extra-authorized_keys"
-DEFAULT_ASCEND_CONTAINER_IMAGE="quay.io/ascend/vllm-ascend:v0.17.0rc1"
+# Keep this human-readable default aligned with
+# config/ascend-official-runtime-matrix.json. Formal evidence should set IMAGE
+# to the matrix's immutable digest reference.
+DEFAULT_ASCEND_CONTAINER_IMAGE="quay.io/ascend/vllm-ascend:v0.23.0-openeuler"
 PIP_DEFAULTS_INITIALIZED=0
 PIP_SELECTED_INDEX_URL=""
 PIP_SELECTED_EXTRA_INDEX_URL=""
