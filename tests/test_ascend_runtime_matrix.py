@@ -49,3 +49,39 @@ def test_upstream_rebuild_invalidates_pre_rebuild_community_status():
     assert a2_openeuler["hust_core_commit"] is None
     assert a2_openeuler["hust_plugin_commit"] is None
     assert a2_openeuler["historical_evidence"]["status"] == "pre_rebuild_not_current"
+
+
+def test_source_profiles_separate_stable_release_from_rebuilt_main():
+    matrix = MODULE.load_matrix(MODULE.DEFAULT_MATRIX)
+    profiles = {item["id"]: item for item in matrix["source_profiles"]}
+    stable = profiles["official-v0.23.0-stable"]
+    current = profiles["hust-main-20260901-snapshot"]
+    candidate = profiles["upstream-plugin-main-v0.27.1-docker-candidate"]
+
+    assert stable["classification"] == "official_verified"
+    assert stable["runtime_image_set"] == "runtime_images"
+    assert current["classification"] == "not_verified"
+    assert current["runtime_image_set"] is None
+    assert current["core_commit"] != stable["core_commit"]
+    assert current["plugin_commit"] != stable["plugin_commit"]
+    assert candidate["core_ref"] == "v0.27.1"
+    assert candidate["runtime_image_set"] is None
+
+
+def test_nightly_inventory_is_discovery_only_and_records_arm64_gap():
+    matrix = MODULE.load_matrix(MODULE.DEFAULT_MATRIX)
+    snapshots = {
+        item["tag"]: item
+        for item in matrix["discovery_only"]["nightly_snapshots"]
+    }
+    assert len(snapshots) == 8
+    assert all(
+        item["classification"].startswith("not_verified")
+        for item in snapshots.values()
+    )
+    assert snapshots["nightly-main"]["platforms"] == ["linux/arm64"]
+    assert snapshots["nightly-main"]["observed_vllm_ref"] == "v0.27.1"
+    assert snapshots["nightly-main-openeuler"]["observed_vllm_ref"] == "v0.26.0"
+    assert snapshots["nightly-main-a5"]["platforms"] == ["linux/amd64"]
+    assert snapshots["nightly-main-a5"]["arm64_manifest_digest"] is None
+    assert snapshots["nightly-main-a5"]["install"] is None

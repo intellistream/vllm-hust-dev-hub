@@ -16,6 +16,20 @@
 
 **源码身份边界：**当前 `vllm-hust` 与 `vllm-ascend-hust` 均已从对应官方上游直接重建，分别以 `vllm-project/vllm` 和 `vllm-project/vllm-ascend` 为源码根。不得再用重建前的独立 fork 历史描述当前仓库，也不得把重建前的 commit 当成当前验证 commit。每次验收使用的组织仓库 commit 都必须能从重建后的上游根谱系解析和审计。
 
+## 重建后重新盘点结论
+
+稳定镜像清单没有失效，但“镜像适配哪一组源码”的关系必须重建。2026-09-01 复查时，组织仓库与上游仍在继续同步；`main` 是移动目标，分支名不能作为可复现身份。
+
+| 源码组合 | 精确身份 | 对应官方镜像 | 状态与处置 |
+|---|---|---|---|
+| v0.23.0 稳定发布 | core `0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665`；plugin `5cb98caaadeff42b5b62b996e34bb2aaa29d20fd` | 下表 8 个 v0.23.0 digest | **官方验证**；唯一批准的稳定 source/image profile |
+| HUST main 复查快照 | core `ed9f108ad80f4d8f058cf35541c785452c1c48ef`，功能上游父提交 `754d5e1f6597f0742f8fb8f7325533e5db37ae23`；plugin `660da858686d1a09545ca70831f8f47ac6d65fe6`，功能上游父提交 `72a988f9d33f392abf85e6059e2e37dc2d48c482` | **无精确对应的稳定镜像** | **尚未验证**；需要固定 commit、重新构建 native/custom-op 扩展并做真实 NPU 验收 |
+| plugin main Docker 候选 | vLLM `v0.27.1`（`6e448d0ea9bf3d88d898b65449ca6dc2aec170ac`）+ plugin `660da858…` | 只有 nightly 候选，没有 vLLM Ascend v0.27.1 稳定 release | **官方开发候选 / 尚未验证**；不得标成稳定组合 |
+
+当前 plugin 快照固定 CANN `9.1.0`、Torch `2.10.0`、torch-npu `2.10.0.post4`、Triton Ascend `3.2.2`（310P 除外）和 Python 3.12；其 Dockerfile 默认 `VLLM_TAG=v0.27.1`。当前 core 快照的构建隔离配置请求 Torch `2.13.0`，但 Ascend overlay 以 `VLLM_TARGET_DEVICE=empty` 构建，运行时 Torch 由 plugin 环境提供。因此这是一项必须通过构建和实机测试确认的 build/runtime 分层，不能仅凭两个 Torch 数字断言运行时硬冲突。
+
+禁止把当前 HUST main 直接覆盖到 v0.23.0 稳定镜像后沿用旧验证状态。若组织需要 main 验证通道，应建立独立派生镜像、记录完整 core/plugin commit 和派生镜像 digest，并从“尚未验证”重新开始。
+
 ## ARM64 正式镜像
 
 状态含义：
@@ -63,6 +77,25 @@ docker image inspect \
   --format '{{json .RepoDigests}} {{.Architecture}} {{.Os}}'
 ```
 
+## Nightly 发现快照（不批准部署）
+
+以下记录用于发现缺失架构和构建漂移，不是推荐组合。nightly tag 可随时重指向；表中 digest 只是 2026-09-01 的不可变快照。
+
+| Tag | OS / NPU | 当时平台 | digest | 从 config/history 观察到的 vLLM | 状态 |
+|---|---|---|---|---|---|
+| `nightly-main` | Ubuntu / A2 | ARM64 | `sha256:e72301ee566d6cf941ac242bf5731314e72ecfa9270066f9de941f3aad5c737b` | v0.27.1 | 尚未验证 |
+| `nightly-main-openeuler` | openEuler / A2 | ARM64 + AMD64 | `sha256:933b77f733a69f7b4adb79c8e1d52f22549b8c3553e828ca9d790a7f62b2e2e1` | v0.26.0 | 尚未验证；旧于 Ubuntu 构建 |
+| `nightly-main-a3` | Ubuntu / A3 | ARM64 | `sha256:59de2163723ea5fc7d2a64f85f8d49c71f4aebac8a9c20f91628d455f17868e7` | v0.27.1 | 尚未验证 |
+| `nightly-main-a3-openeuler` | openEuler / A3 | ARM64 + AMD64 | `sha256:5ec3e4bd79931d8fe39ba5670cab9a9d71d41e61d2274c391bd0a6e4e653b4dc` | v0.26.0 | 尚未验证；旧于 Ubuntu 构建 |
+| `nightly-main-a5` | Ubuntu / A5 | **仅 AMD64** | `sha256:96491947bdbe6285d1f1d270721b357fc7849efa2aea590561bc54c91d308da0` | v0.27.1 | **缺 ARM64** |
+| `nightly-main-a5-openeuler` | openEuler / A5 | ARM64 + AMD64 | `sha256:8865cd8fd015f5bb94caf3c9db2f3aea932d1f89d5f8b79f8e255099e6e54699` | v0.26.0 | 尚未验证；旧于 Ubuntu 构建 |
+| `nightly-main-310p` | Ubuntu / 310P | ARM64 | `sha256:3a7d83ca7eb265e53ab781982271b46c22b3caf144c0a623ede81d490e498206` | v0.27.1 | 尚未验证 |
+| `nightly-main-310p-openeuler` | openEuler / 310P | ARM64 + AMD64 | `sha256:2b1a8113b40ce2b83c4732a1c1888d5c488ea8a7c00d7d144d5555267f376b12` | v0.26.0 | 尚未验证；旧于 Ubuntu 构建 |
+
+Ubuntu nightly 当前是单平台 Docker manifest，而 openEuler nightly 是多平台 OCI index。校验脚本同时支持这两种格式；若可变 tag 已漂移，会失败并要求人工复盘，不会自动接受新 digest。
+
+这些 nightly 的 OCI metadata 没有给出可核验的 core/plugin commit，也没有完整证明 Torch、torch-npu、Triton Ascend 与 Python 包版本；清单相应字段明确为 `null` 或“未证明”。表中的 vLLM ref 来自 config history，不等同于源码构建证明。任何试用都必须先按 digest 拉取、进入容器采集 `pip freeze` 与 git identity，再执行对应硬件的 Driver/Firmware 和真实 NPU 验收。
+
 ## 官方来源、许可证与访问限制
 
 - [v0.23.0 正式发布说明](https://github.com/vllm-project/vllm-ascend/releases/tag/v0.23.0)：版本组合、硬件范围、已知问题与依赖真源。
@@ -93,7 +126,7 @@ python3 scripts/verify_ascend_runtime_matrix.py --all
 | 类别 | 结论 | 处置 |
 |---|---|---|
 | 失效链接 | 本次批准矩阵中的 Quay、GitHub、官方文档链接均可访问；未发现失效的批准下载链接 | CI/例行维护继续执行 `--all`；首次失败先复测，连续两次失败再标记失效 |
-| 缺失架构 | 正式 image index 只有 Linux ARM64/AMD64；无 Windows、macOS、ppc64le、riscv64 | 不自行寻找非官方包；确有需求时向上游提案 |
+| 缺失架构 | 正式 image index 只有 Linux ARM64/AMD64；无 Windows、macOS、ppc64le、riscv64；当前 `nightly-main-a5` Ubuntu 还缺 ARM64 | 不自行寻找非官方包；确有需求时向上游提案；nightly 缺口向上游报告 |
 | 缺失硬件 | Ascend 910/910 Pro B、Atlas 200I A2（310B）不受支持 | 不标记为社区支持，除非上游改变范围且 HUST 完成验收 |
 | 缺失组件 | 310P 不支持 Triton Ascend | 记录为 `null`，不得误填 3.2.2 |
 | 固件缺口 | 没有跨产品通用的“最低固件版本”；现有 910B2 证据也没有采集 firmware | 管理员按 SKU 获取对应 HDK 配套表和固件，并补采证据 |
@@ -101,6 +134,8 @@ python3 scripts/verify_ascend_runtime_matrix.py --all
 | 版本冲突 | 仓库历史指引仍有 `v0.17.0rc1/CANN 8.5.1`，而正式基线已是 `v0.23.0/CANN 9.1.0` | 当前/default 路径统一指向本矩阵；旧组合仅作回滚记录 |
 | 310P 冲突 | 上游有 `v0.23.0 + driver 25.5.2` 初始化失败报告 | 使用官方文档的 `26.0.RC1` 线并等待问题关闭 |
 | HUST 证据缺口 | 8 个当前组合在上游重建后均未完成新 commit 的实机验收 | 2026-08-19 A2/openEuler/910B2 收据保留为重建前历史证据，但不能证明当前源码；8 项均须重验 |
+| source/image 冲突 | 稳定镜像是 v0.23.0；plugin main Docker 默认 v0.27.1；HUST core main 又是继续移动的上游快照 | 三者分别建 profile，禁止互相继承验证状态 |
+| nightly 漂移 | Ubuntu 候选观察到 v0.27.1，openEuler ARM64 候选仍是 v0.26.0 | nightly 只做发现清单；任何采用都需固定 digest、核对包版本并重新验收 |
 
 ## 组织管理员协调项
 

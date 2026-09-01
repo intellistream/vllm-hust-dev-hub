@@ -3,7 +3,9 @@
 
 The default mode is offline and suitable for unit tests. ``--registry`` proves
 that each tag still resolves to the recorded OCI index and ARM64 manifest.
-``--links`` checks public HTTPS sources without sending credentials.
+``--links`` checks public HTTPS sources without sending credentials. Discovery
+nightlies are validated as recorded snapshots; a moved tag is reported as drift
+and is never promoted automatically.
 """
 
 from __future__ import annotations
@@ -31,6 +33,12 @@ ALLOWED_STATUSES = {
 }
 INDEX_ACCEPT = "application/vnd.oci.image.index.v1+json"
 MANIFEST_ACCEPT = "application/vnd.oci.image.manifest.v1+json"
+DISCOVERY_ACCEPT = (
+    "application/vnd.oci.image.index.v1+json, "
+    "application/vnd.docker.distribution.manifest.list.v2+json, "
+    "application/vnd.oci.image.manifest.v1+json, "
+    "application/vnd.docker.distribution.manifest.v2+json"
+)
 USER_AGENT = "vllm-hust-ascend-matrix-verifier/1.0"
 
 
@@ -67,9 +75,11 @@ def validate_local(matrix: dict[str, Any]) -> list[str]:
         "scope",
         "stack",
         "repository_identity",
+        "source_profiles",
         "licenses",
         "sources",
         "runtime_images",
+        "discovery_only",
         "known_gaps",
         "known_conflicts",
         "administrator_actions",
@@ -151,6 +161,174 @@ def validate_local(matrix: dict[str, Any]) -> list[str]:
     for field in ("official_core_commit", "official_plugin_commit"):
         if not COMMIT_RE.fullmatch(stack.get(field, "")):
             errors.append(f"stack: invalid {field}")
+
+    identity = matrix.get("repository_identity", {})
+    for repository in ("core", "plugin"):
+        for field in (
+            "snapshot_commit",
+            "functional_upstream_commit",
+            "upstream_head_observed",
+        ):
+            value = identity.get(repository, {}).get(field, "")
+            if not COMMIT_RE.fullmatch(value):
+                errors.append(f"repository_identity.{repository}: invalid {field}")
+
+    profiles = matrix.get("source_profiles", [])
+    if {profile.get("id") for profile in profiles} != {
+        "official-v0.23.0-stable",
+        "hust-main-20260901-snapshot",
+        "upstream-plugin-main-v0.27.1-docker-candidate",
+    }:
+        errors.append(
+            "source_profiles: expected stable, HUST main, and v0.27.1 "
+            "candidate profiles"
+        )
+    for profile in profiles:
+        for field in ("core_commit", "plugin_commit"):
+            if not COMMIT_RE.fullmatch(profile.get(field, "")):
+                errors.append(f"source_profiles.{profile.get('id')}: invalid {field}")
+
+    discoveries = matrix.get("discovery_only", {}).get("nightly_snapshots", [])
+    if len(discoveries) != 8:
+        errors.append(f"expected 8 nightly discovery snapshots, found {len(discoveries)}")
+    discovery_tags: set[str] = set()
+    required_discovery = {
+        "tag",
+        "os_family",
+        "npu_family",
+        "reference_digest",
+        "media_type",
+        "platforms",
+        "arm64_manifest_digest",
+        "arm64_config_digest",
+        "image_created_at",
+        "observed_vllm_ref",
+        "observed_cann",
+        "verified_core_commit",
+        "verified_plugin_commit",
+        "package_versions",
+        "minimum_driver_firmware",
+        "classification",
+        "pull_url",
+        "license",
+        "access",
+        "install",
+    }
+    for item in discoveries:
+        tag = item.get("tag", "<missing-tag>")
+        missing = sorted(required_discovery - item.keys())
+        if missing:
+            errors.append(f"{tag}: missing discovery fields: {', '.join(missing)}")
+        if tag in discovery_tags:
+            errors.append(f"duplicate nightly tag: {tag}")
+        discovery_tags.add(tag)
+        if not DIGEST_RE.fullmatch(item.get("reference_digest", "")):
+            errors.append(f"{tag}: invalid discovery reference_digest")
+        arm64_manifest = item.get("arm64_manifest_digest")
+        arm64_config = item.get("arm64_config_digest")
+        if arm64_manifest is not None and not DIGEST_RE.fullmatch(arm64_manifest):
+            errors.append(f"{tag}: invalid discovery arm64_manifest_digest")
+        if arm64_config is not None and not DIGEST_RE.fullmatch(arm64_config):
+            errors.append(f"{tag}: invalid discovery arm64_config_digest")
+        has_arm64 = "linux/arm64" in item.get("platforms", [])
+        if has_arm64 != (arm64_manifest is not None and arm64_config is not None):
+            errors.append(f"{tag}: ARM64 platform and digest fields disagree")
+        install = item.get("install")
+        if has_arm64:
+            expected_ref = f"quay.io/ascend/vllm-ascend@{item['reference_digest']}"
+            if not install or expected_ref not in install:
+                errors.append(f"{tag}: discovery install is not digest pinned")
+        elif install is not None:
+            errors.append(f"{tag}: non-ARM64 discovery item must not have install command")
+    return errors
+
+
+def verify_discovery_registry(matrix: dict[str, Any], timeout: int) -> list[str]:
+    """Verify mutable nightly tags against the explicitly recorded snapshot."""
+    errors: list[str] = []
+    registry = matrix["scope"]["registry"]
+    base = f"https://quay.io/v2/{registry.split('/', 1)[1]}"
+    for item in matrix["discovery_only"]["nightly_snapshots"]:
+        tag = item["tag"]
+        try:
+            reference_bytes, headers = request_bytes(
+                f"{base}/manifests/{tag}", accept=DISCOVERY_ACCEPT, timeout=timeout
+            )
+            observed_reference = headers.get("Docker-Content-Digest") or sha256_bytes(
+                reference_bytes
+            )
+            if observed_reference != item["reference_digest"]:
+                errors.append(
+                    f"{tag}: mutable nightly moved: expected {item['reference_digest']}, got {observed_reference}"
+                )
+                continue
+            if sha256_bytes(reference_bytes) != item["reference_digest"]:
+                errors.append(f"{tag}: nightly reference bytes do not reproduce digest")
+                continue
+
+            reference = json.loads(reference_bytes)
+            manifests = reference.get("manifests")
+            if manifests is not None:
+                arm64 = [
+                    entry
+                    for entry in manifests
+                    if entry.get("platform", {}).get("os") == "linux"
+                    and entry.get("platform", {}).get("architecture") == "arm64"
+                ]
+                observed_platforms = {
+                    f"{entry.get('platform', {}).get('os')}/{entry.get('platform', {}).get('architecture')}"
+                    for entry in manifests
+                }
+                if observed_platforms != set(item["platforms"]):
+                    errors.append(f"{tag}: nightly platform set changed")
+                    continue
+                if not arm64:
+                    if item["arm64_manifest_digest"] is not None:
+                        errors.append(f"{tag}: recorded ARM64 manifest is now absent")
+                    print(f"DISCOVERY OK {tag}  no linux/arm64")
+                    continue
+                manifest_digest = arm64[0]["digest"]
+                manifest_bytes, _ = request_bytes(
+                    f"{base}/manifests/{manifest_digest}",
+                    accept=DISCOVERY_ACCEPT,
+                    timeout=timeout,
+                )
+                if sha256_bytes(manifest_bytes) != manifest_digest:
+                    errors.append(
+                        f"{tag}: nightly ARM64 manifest bytes do not reproduce digest"
+                    )
+                    continue
+                manifest = json.loads(manifest_bytes)
+            else:
+                manifest_digest = observed_reference
+                manifest = reference
+
+            config_digest = manifest.get("config", {}).get("digest")
+            config_bytes, _ = request_bytes(
+                f"{base}/blobs/{config_digest}", timeout=timeout
+            )
+            if sha256_bytes(config_bytes) != config_digest:
+                errors.append(f"{tag}: nightly config bytes do not reproduce digest")
+                continue
+            config = json.loads(config_bytes)
+            observed_platform = f"{config.get('os')}/{config.get('architecture')}"
+            has_arm64 = observed_platform == "linux/arm64"
+            if item["arm64_manifest_digest"] is None:
+                if observed_platform == "linux/arm64":
+                    errors.append(f"{tag}: unexpectedly gained an ARM64 single manifest")
+                else:
+                    print(f"DISCOVERY OK {tag}  {observed_platform}; no linux/arm64")
+                continue
+            if manifest_digest != item["arm64_manifest_digest"]:
+                errors.append(f"{tag}: nightly ARM64 manifest digest changed")
+            elif config_digest != item["arm64_config_digest"]:
+                errors.append(f"{tag}: nightly ARM64 config digest changed")
+            elif not has_arm64:
+                errors.append(f"{tag}: expected linux/arm64 config")
+            else:
+                print(f"DISCOVERY OK {tag}  {item['reference_digest']}")
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            errors.append(f"{tag}: nightly registry check failed: {exc}")
     return errors
 
 
@@ -274,6 +452,7 @@ def main(argv: list[str] | None = None) -> int:
     errors = validate_local(matrix)
     if args.registry or args.all:
         errors.extend(verify_registry(matrix, args.timeout))
+        errors.extend(verify_discovery_registry(matrix, args.timeout))
     if args.links or args.all:
         errors.extend(verify_links(matrix, args.timeout))
     if errors:

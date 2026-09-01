@@ -1,7 +1,7 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "1.1.0",
   "title": "vLLM-HUST Ascend official runtime support matrix",
-  "last_verified_at": "2026-09-01T16:45:11+08:00",
+  "last_verified_at": "2026-09-01T19:35:00+08:00",
   "scope": {
     "release": "v0.23.0",
     "registry": "quay.io/ascend/vllm-ascend",
@@ -26,15 +26,67 @@
     "core": {
       "organization_repository": "https://github.com/vLLM-HUST/vllm-hust",
       "official_upstream": "https://github.com/vllm-project/vllm",
-      "rebuild_source": "official_upstream"
+      "rebuild_source": "official_upstream",
+      "snapshot_commit": "ed9f108ad80f4d8f058cf35541c785452c1c48ef",
+      "functional_upstream_commit": "754d5e1f6597f0742f8fb8f7325533e5db37ae23",
+      "upstream_head_observed": "191cecd51e250de77618dda924359214b4d88119",
+      "snapshot_status": "moving_main_not_release_pinned"
     },
     "plugin": {
       "organization_repository": "https://github.com/vLLM-HUST/vllm-ascend-hust",
       "official_upstream": "https://github.com/vllm-project/vllm-ascend",
-      "rebuild_source": "official_upstream"
+      "rebuild_source": "official_upstream",
+      "snapshot_commit": "660da858686d1a09545ca70831f8f47ac6d65fe6",
+      "functional_upstream_commit": "72a988f9d33f392abf85e6059e2e37dc2d48c482",
+      "upstream_head_observed": "173665ce9ee304925c822e692ec1342f77670881",
+      "snapshot_status": "moving_main_not_release_pinned"
     },
-    "evidence_rule": "A repository rebuild is a source-identity boundary. Earlier NPU evidence remains a historical receipt but cannot verify the rebuilt repositories until the workload is rerun with new reachable commits."
+    "snapshot_observed_at": "2026-09-01T19:35:00+08:00",
+    "evidence_rule": "A repository rebuild is a source-identity boundary. Earlier NPU evidence remains a historical receipt but cannot verify the rebuilt repositories until the workload is rerun with new reachable commits. Branch names are never evidence identities; record all 40 hexadecimal commit IDs."
   },
+  "source_profiles": [
+    {
+      "id": "official-v0.23.0-stable",
+      "classification": "official_verified",
+      "core_ref": "v0.23.0",
+      "core_commit": "0fc695fc6d1d82e9a5ac6835ac8e4e1c83703665",
+      "plugin_ref": "v0.23.0",
+      "plugin_commit": "5cb98caaadeff42b5b62b996e34bb2aaa29d20fd",
+      "runtime_image_set": "runtime_images",
+      "compatibility": "This is the only stable released source/image pair in this manifest. It does not verify either rebuilt HUST main branch."
+    },
+    {
+      "id": "hust-main-20260901-snapshot",
+      "classification": "not_verified",
+      "core_ref": "vLLM-HUST/vllm-hust@ed9f108ad80f4d8f058cf35541c785452c1c48ef",
+      "core_commit": "ed9f108ad80f4d8f058cf35541c785452c1c48ef",
+      "core_functional_upstream_commit": "754d5e1f6597f0742f8fb8f7325533e5db37ae23",
+      "plugin_ref": "vLLM-HUST/vllm-ascend-hust@660da858686d1a09545ca70831f8f47ac6d65fe6",
+      "plugin_commit": "660da858686d1a09545ca70831f8f47ac6d65fe6",
+      "plugin_functional_upstream_commit": "72a988f9d33f392abf85e6059e2e37dc2d48c482",
+      "python_constraint": ">=3.10,<3.13 (plugin support window; core allows <3.15)",
+      "core_build_system_torch": "2.13.0",
+      "runtime_stack_from_plugin": {
+        "cann": "9.1.0",
+        "torch": "2.10.0",
+        "torch_npu": "2.10.0.post4",
+        "triton_ascend": "3.2.2 (absent on 310P)",
+        "python": "3.12"
+      },
+      "runtime_image_set": null,
+      "compatibility": "No immutable stable image is published for this exact commit pair. Build with VLLM_TARGET_DEVICE=empty, rebuild plugin/native extensions, and run real-NPU acceptance before promotion. The core build-isolation torch pin alone is not proof of a runtime conflict."
+    },
+    {
+      "id": "upstream-plugin-main-v0.27.1-docker-candidate",
+      "classification": "not_verified",
+      "core_ref": "v0.27.1",
+      "core_commit": "6e448d0ea9bf3d88d898b65449ca6dc2aec170ac",
+      "plugin_ref": "vLLM-HUST/vllm-ascend-hust@660da858686d1a09545ca70831f8f47ac6d65fe6",
+      "plugin_commit": "660da858686d1a09545ca70831f8f47ac6d65fe6",
+      "runtime_image_set": null,
+      "compatibility": "The plugin main Dockerfiles default VLLM_TAG to v0.27.1, but vLLM Ascend has no v0.27.1 stable release. Treat this as an upstream development/CI candidate, not an official stable runtime."
+    }
+  ],
   "licenses": {
     "vllm": "Apache-2.0",
     "vllm_ascend": "Apache-2.0",
@@ -51,6 +103,11 @@
     "quick_start": "https://docs.vllm.ai/projects/ascend/en/v0.23.0/quick_start.html",
     "official_registry": "https://quay.io/repository/ascend/vllm-ascend?tab=tags",
     "registry_api": "https://quay.io/v2/ascend/vllm-ascend/tags/list?n=1000",
+    "hust_core_snapshot": "https://github.com/vLLM-HUST/vllm-hust/commit/ed9f108ad80f4d8f058cf35541c785452c1c48ef",
+    "hust_plugin_snapshot": "https://github.com/vLLM-HUST/vllm-ascend-hust/commit/660da858686d1a09545ca70831f8f47ac6d65fe6",
+    "core_constraints_at_snapshot": "https://github.com/vLLM-HUST/vllm-hust/blob/ed9f108ad80f4d8f058cf35541c785452c1c48ef/pyproject.toml",
+    "plugin_constraints_at_snapshot": "https://github.com/vLLM-HUST/vllm-ascend-hust/blob/660da858686d1a09545ca70831f8f47ac6d65fe6/requirements.txt",
+    "plugin_main_dockerfile_at_snapshot": "https://github.com/vLLM-HUST/vllm-ascend-hust/blob/660da858686d1a09545ca70831f8f47ac6d65fe6/Dockerfile",
     "cann_release": "https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/910/index/index.html",
     "driver_apt": "https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/910/softwareinst/instg/instg_0108.html",
     "driver_yum": "https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/910/softwareinst/instg/instg_0107.html",
@@ -288,7 +345,186 @@
   "discovery_only": {
     "tag_classes": ["main*", "nightly-*", "*-dev*", "model-specialized tags", "release candidates older than v0.23.0"],
     "reason": "Tags remain publicly enumerable but are mutable, unsupported, superseded, or do not describe a general-purpose released stack. They must not be promoted without a separate pinned record and NPU evidence.",
-    "inventory_endpoint": "https://quay.io/api/v1/repository/ascend/vllm-ascend/tag/?onlyActiveTags=true&limit=100&page=1"
+    "inventory_endpoint": "https://quay.io/v2/ascend/vllm-ascend/tags/list?n=1000",
+    "nightly_snapshot_observed_at": "2026-09-01T19:35:00+08:00",
+    "nightly_snapshots": [
+      {
+        "tag": "nightly-main",
+        "os_family": "Ubuntu",
+        "npu_family": "A2/910B",
+        "reference_digest": "sha256:e72301ee566d6cf941ac242bf5731314e72ecfa9270066f9de941f3aad5c737b",
+        "media_type": "application/vnd.docker.distribution.manifest.v2+json",
+        "platforms": ["linux/arm64"],
+        "arm64_manifest_digest": "sha256:e72301ee566d6cf941ac242bf5731314e72ecfa9270066f9de941f3aad5c737b",
+        "arm64_config_digest": "sha256:84224e221b9428149a91db2bc93e4c78ffac7db291e059f741e12a83228536cf",
+        "image_created_at": "2026-09-01T04:23:44.94343638Z",
+        "observed_vllm_ref": "v0.27.1",
+        "observed_cann": "9.1.0",
+        "verified_core_commit": null,
+        "verified_plugin_commit": null,
+        "package_versions": "Torch/torch-npu/Triton Ascend/Python and plugin commit are not attested by OCI labels; inspect inside the pinned image before use",
+        "minimum_driver_firmware": "A2/910B 26.0.RC1 HDK line; product-matched firmware; requires real-NPU revalidation",
+        "classification": "not_verified",
+        "pull_url": "quay.io/ascend/vllm-ascend:nightly-main",
+        "license": "Mixed upstream licenses plus Huawei EULA; same access policy as stable images",
+        "access": "Public anonymous pull; mutable tag; host HDK obtained separately under Huawei terms",
+        "install": "docker pull --platform linux/arm64 quay.io/ascend/vllm-ascend@sha256:e72301ee566d6cf941ac242bf5731314e72ecfa9270066f9de941f3aad5c737b"
+      },
+      {
+        "tag": "nightly-main-openeuler",
+        "os_family": "openEuler",
+        "npu_family": "A2/910B",
+        "reference_digest": "sha256:933b77f733a69f7b4adb79c8e1d52f22549b8c3553e828ca9d790a7f62b2e2e1",
+        "media_type": "application/vnd.oci.image.index.v1+json",
+        "platforms": ["linux/arm64", "linux/amd64"],
+        "arm64_manifest_digest": "sha256:8f0dfb3df3bd86e51ddd2591da123b84c00078a6ed3349aab9f9f69cdf5be479",
+        "arm64_config_digest": "sha256:cead2b791beed423e743dfd48ecd68d756be869d0dfd30000c8c8158991f576a",
+        "image_created_at": "2026-08-11T17:40:24.177041579Z",
+        "observed_vllm_ref": "v0.26.0",
+        "observed_cann": "not_exposed_in_config",
+        "verified_core_commit": null,
+        "verified_plugin_commit": null,
+        "package_versions": "Torch/torch-npu/Triton Ascend/Python and plugin commit are not attested by OCI labels; inspect inside the pinned image before use",
+        "minimum_driver_firmware": "A2/910B 26.0.RC1 HDK line; product-matched firmware; requires real-NPU revalidation",
+        "classification": "not_verified_stale_candidate",
+        "pull_url": "quay.io/ascend/vllm-ascend:nightly-main-openeuler",
+        "license": "Mixed upstream licenses plus Huawei EULA; same access policy as stable images",
+        "access": "Public anonymous pull; mutable tag; host HDK obtained separately under Huawei terms",
+        "install": "docker pull --platform linux/arm64 quay.io/ascend/vllm-ascend@sha256:933b77f733a69f7b4adb79c8e1d52f22549b8c3553e828ca9d790a7f62b2e2e1"
+      },
+      {
+        "tag": "nightly-main-a3",
+        "os_family": "Ubuntu",
+        "npu_family": "A3/910C",
+        "reference_digest": "sha256:59de2163723ea5fc7d2a64f85f8d49c71f4aebac8a9c20f91628d455f17868e7",
+        "media_type": "application/vnd.docker.distribution.manifest.v2+json",
+        "platforms": ["linux/arm64"],
+        "arm64_manifest_digest": "sha256:59de2163723ea5fc7d2a64f85f8d49c71f4aebac8a9c20f91628d455f17868e7",
+        "arm64_config_digest": "sha256:3fa56985ff79f60033b95fe13ed483aa8e0c18e87b62a5ea89ac2953e28fc09a",
+        "image_created_at": "2026-09-01T04:24:37.94912567Z",
+        "observed_vllm_ref": "v0.27.1",
+        "observed_cann": "9.1.0",
+        "verified_core_commit": null,
+        "verified_plugin_commit": null,
+        "package_versions": "Torch/torch-npu/Triton Ascend/Python and plugin commit are not attested by OCI labels; inspect inside the pinned image before use",
+        "minimum_driver_firmware": "A3/910C 26.0.RC1 HDK line; product-matched firmware; requires real-NPU revalidation",
+        "classification": "not_verified",
+        "pull_url": "quay.io/ascend/vllm-ascend:nightly-main-a3",
+        "license": "Mixed upstream licenses plus Huawei EULA; same access policy as stable images",
+        "access": "Public anonymous pull; mutable tag; host HDK obtained separately under Huawei terms",
+        "install": "docker pull --platform linux/arm64 quay.io/ascend/vllm-ascend@sha256:59de2163723ea5fc7d2a64f85f8d49c71f4aebac8a9c20f91628d455f17868e7"
+      },
+      {
+        "tag": "nightly-main-a3-openeuler",
+        "os_family": "openEuler",
+        "npu_family": "A3/910C",
+        "reference_digest": "sha256:5ec3e4bd79931d8fe39ba5670cab9a9d71d41e61d2274c391bd0a6e4e653b4dc",
+        "media_type": "application/vnd.oci.image.index.v1+json",
+        "platforms": ["linux/amd64", "linux/arm64"],
+        "arm64_manifest_digest": "sha256:ec1c6dc4dbbc22dfdd13d41579f44b5b9a185d9ce08399e86d961c316cf04d61",
+        "arm64_config_digest": "sha256:7ebe3c4352612344d2c4749a5dda6410b1cb55ea680ad830dd639ce7f80b5e49",
+        "image_created_at": "2026-08-11T17:43:21.075741287Z",
+        "observed_vllm_ref": "v0.26.0",
+        "observed_cann": "not_exposed_in_config",
+        "verified_core_commit": null,
+        "verified_plugin_commit": null,
+        "package_versions": "Torch/torch-npu/Triton Ascend/Python and plugin commit are not attested by OCI labels; inspect inside the pinned image before use",
+        "minimum_driver_firmware": "A3/910C 26.0.RC1 HDK line; product-matched firmware; requires real-NPU revalidation",
+        "classification": "not_verified_stale_candidate",
+        "pull_url": "quay.io/ascend/vllm-ascend:nightly-main-a3-openeuler",
+        "license": "Mixed upstream licenses plus Huawei EULA; same access policy as stable images",
+        "access": "Public anonymous pull; mutable tag; host HDK obtained separately under Huawei terms",
+        "install": "docker pull --platform linux/arm64 quay.io/ascend/vllm-ascend@sha256:5ec3e4bd79931d8fe39ba5670cab9a9d71d41e61d2274c391bd0a6e4e653b4dc"
+      },
+      {
+        "tag": "nightly-main-a5",
+        "os_family": "Ubuntu",
+        "npu_family": "A5/Ascend 950",
+        "reference_digest": "sha256:96491947bdbe6285d1f1d270721b357fc7849efa2aea590561bc54c91d308da0",
+        "media_type": "application/vnd.docker.distribution.manifest.v2+json",
+        "platforms": ["linux/amd64"],
+        "arm64_manifest_digest": null,
+        "arm64_config_digest": null,
+        "image_created_at": "2026-09-01T17:08:05.996927836+08:00",
+        "observed_vllm_ref": "v0.27.1",
+        "observed_cann": "9.1.0",
+        "verified_core_commit": null,
+        "verified_plugin_commit": null,
+        "package_versions": "Torch/torch-npu/Triton Ascend/Python and plugin commit are not attested by OCI labels; inspect inside the pinned image before use",
+        "minimum_driver_firmware": "A5/Ascend 950 25.7.RC1 HDK line; product-matched firmware; requires real-NPU revalidation",
+        "classification": "not_verified_missing_arm64",
+        "pull_url": "quay.io/ascend/vllm-ascend:nightly-main-a5",
+        "license": "Mixed upstream licenses plus Huawei EULA; same access policy as stable images",
+        "access": "Public anonymous pull; mutable tag; current manifest is linux/amd64 only",
+        "install": null
+      },
+      {
+        "tag": "nightly-main-a5-openeuler",
+        "os_family": "openEuler",
+        "npu_family": "A5/Ascend 950",
+        "reference_digest": "sha256:8865cd8fd015f5bb94caf3c9db2f3aea932d1f89d5f8b79f8e255099e6e54699",
+        "media_type": "application/vnd.oci.image.index.v1+json",
+        "platforms": ["linux/amd64", "linux/arm64"],
+        "arm64_manifest_digest": "sha256:81a3ec24af5da89a241d735499deb7698fd27a1b37d2a557d21715d2cd1a2930",
+        "arm64_config_digest": "sha256:05dcaa710447f1d1b055e713c74c7d6418d5841c92f882d384a2899e0f9c71fa",
+        "image_created_at": "2026-08-11T17:44:42.187148822Z",
+        "observed_vllm_ref": "v0.26.0",
+        "observed_cann": "not_exposed_in_config",
+        "verified_core_commit": null,
+        "verified_plugin_commit": null,
+        "package_versions": "Torch/torch-npu/Triton Ascend/Python and plugin commit are not attested by OCI labels; inspect inside the pinned image before use",
+        "minimum_driver_firmware": "A5/Ascend 950 25.7.RC1 HDK line; product-matched firmware; requires real-NPU revalidation",
+        "classification": "not_verified_stale_candidate",
+        "pull_url": "quay.io/ascend/vllm-ascend:nightly-main-a5-openeuler",
+        "license": "Mixed upstream licenses plus Huawei EULA; same access policy as stable images",
+        "access": "Public anonymous pull; mutable tag; host HDK obtained separately under Huawei terms",
+        "install": "docker pull --platform linux/arm64 quay.io/ascend/vllm-ascend@sha256:8865cd8fd015f5bb94caf3c9db2f3aea932d1f89d5f8b79f8e255099e6e54699"
+      },
+      {
+        "tag": "nightly-main-310p",
+        "os_family": "Ubuntu",
+        "npu_family": "310P",
+        "reference_digest": "sha256:3a7d83ca7eb265e53ab781982271b46c22b3caf144c0a623ede81d490e498206",
+        "media_type": "application/vnd.docker.distribution.manifest.v2+json",
+        "platforms": ["linux/arm64"],
+        "arm64_manifest_digest": "sha256:3a7d83ca7eb265e53ab781982271b46c22b3caf144c0a623ede81d490e498206",
+        "arm64_config_digest": "sha256:08a2a8305269db35fa3c838e40e18f115550d79bf0f63d73367161e25de81418",
+        "image_created_at": "2026-08-31T14:42:26.03402782Z",
+        "observed_vllm_ref": "v0.27.1",
+        "observed_cann": "9.1.0",
+        "verified_core_commit": null,
+        "verified_plugin_commit": null,
+        "package_versions": "Torch/torch-npu/Python and plugin commit are not attested by OCI labels; Triton Ascend is not supported on 310P; inspect inside the pinned image before use",
+        "minimum_driver_firmware": "310P 26.0.RC1 HDK line; product-matched firmware; requires real-NPU revalidation",
+        "classification": "not_verified",
+        "pull_url": "quay.io/ascend/vllm-ascend:nightly-main-310p",
+        "license": "Mixed upstream licenses plus Huawei EULA; Triton Ascend absent",
+        "access": "Public anonymous pull; mutable tag; host HDK obtained separately under Huawei terms",
+        "install": "docker pull --platform linux/arm64 quay.io/ascend/vllm-ascend@sha256:3a7d83ca7eb265e53ab781982271b46c22b3caf144c0a623ede81d490e498206"
+      },
+      {
+        "tag": "nightly-main-310p-openeuler",
+        "os_family": "openEuler",
+        "npu_family": "310P",
+        "reference_digest": "sha256:2b1a8113b40ce2b83c4732a1c1888d5c488ea8a7c00d7d144d5555267f376b12",
+        "media_type": "application/vnd.oci.image.index.v1+json",
+        "platforms": ["linux/arm64", "linux/amd64"],
+        "arm64_manifest_digest": "sha256:0a2f5562ff3a6220f72e15a233b95d52ea2908296331bc4fafd42d0b3310a183",
+        "arm64_config_digest": "sha256:a44d0a6ab0e0314506f37312fda215fd9ec2c14f16af9c579fb7153ff091c2e4",
+        "image_created_at": "2026-08-11T17:25:08.361257776Z",
+        "observed_vllm_ref": "v0.26.0",
+        "observed_cann": "not_exposed_in_config",
+        "verified_core_commit": null,
+        "verified_plugin_commit": null,
+        "package_versions": "Torch/torch-npu/Python and plugin commit are not attested by OCI labels; Triton Ascend is not supported on 310P; inspect inside the pinned image before use",
+        "minimum_driver_firmware": "310P 26.0.RC1 HDK line; product-matched firmware; requires real-NPU revalidation",
+        "classification": "not_verified_stale_candidate",
+        "pull_url": "quay.io/ascend/vllm-ascend:nightly-main-310p-openeuler",
+        "license": "Mixed upstream licenses plus Huawei EULA; Triton Ascend absent",
+        "access": "Public anonymous pull; mutable tag; host HDK obtained separately under Huawei terms",
+        "install": "docker pull --platform linux/arm64 quay.io/ascend/vllm-ascend@sha256:2b1a8113b40ce2b83c4732a1c1888d5c488ea8a7c00d7d144d5555267f376b12"
+      }
+    ]
   },
   "known_gaps": [
     {
@@ -320,6 +556,16 @@
       "kind": "community_evidence_gap",
       "item": "All eight current variants after the upstream repository rebuild",
       "impact": "The A2/openEuler receipt predates the rebuild; no current rebuilt-source commit pair has real-NPU evidence"
+    },
+    {
+      "kind": "source_image_alignment_gap",
+      "item": "Rebuilt HUST main snapshot",
+      "impact": "No stable official image identifies the exact ed9f108/660da85 commit pair; stable v0.23.0 images and mutable nightly snapshots must not be presented as matching it"
+    },
+    {
+      "kind": "nightly_missing_architecture",
+      "item": "nightly-main-a5 Ubuntu",
+      "impact": "At the recorded snapshot the tag is a single linux/amd64 manifest and has no linux/arm64 image"
     }
   ],
   "known_conflicts": [
@@ -334,6 +580,18 @@
     {
       "item": "Unpinned tag pulls",
       "details": "A tag can be repointed. Production and evidence runs must pull the index digest and record the selected ARM64 manifest digest."
+    },
+    {
+      "item": "Moving main versus stable image",
+      "details": "The rebuilt core/plugin main branches move independently. The plugin main Dockerfiles target vLLM v0.27.1, current stable images target v0.23.0, and the captured HUST core main is newer than both. None of these identities is interchangeable."
+    },
+    {
+      "item": "Core build isolation versus Ascend runtime Torch",
+      "details": "The captured core pyproject build system requests Torch 2.13.0 while the plugin runtime pins Torch 2.10.0. Ascend builds use VLLM_TARGET_DEVICE=empty, so this observation is a build/runtime split requiring overlay-build tests, not by itself proof of a runtime dependency conflict."
+    },
+    {
+      "item": "Nightly OS and architecture drift",
+      "details": "Ubuntu nightly manifests observed vLLM v0.27.1 while openEuler ARM64 configs were older v0.26.0 builds; the Ubuntu A5 nightly was amd64-only. Nightly tags are mutable and fail closed as discovery-only."
     }
   ],
   "administrator_actions": [
@@ -341,6 +599,7 @@
     "Obtain the matching driver and firmware from Huawei's official portal, accept applicable EULA, and store packages in an organization-controlled restricted artifact store.",
     "Record package filename, vendor-published checksum when present, locally computed SHA-256, acquisition date, and access ticket outside this public repository; never record credentials or signed URLs.",
     "Capture firmware output in the next 910B2 acceptance run; the existing 2026-08-19 evidence records driver but omits firmware.",
-    "Schedule real-NPU acceptance for all eight variants against commits reachable from the rebuilt upstream-rooted repositories."
+    "Schedule real-NPU acceptance for all eight stable variants against commits reachable from the rebuilt upstream-rooted repositories.",
+    "Decide whether the organization wants a release-pinned v0.23.0 validation lane or a separately built current-main lane; do not overlay current main into the v0.23.0 image and reuse the old status."
   ]
 }
