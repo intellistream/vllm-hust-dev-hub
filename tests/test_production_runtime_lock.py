@@ -40,6 +40,9 @@ def test_production_runtime_lock_is_complete_and_immutable() -> None:
 
 def test_locked_image_and_launcher_enforce_identity() -> None:
     dockerfile = (ROOT / "images/vllm-ascend-production/Dockerfile").read_text()
+    metadata_installer = (
+        ROOT / "images/vllm-ascend-production/install_runtime_metadata.py"
+    ).read_text()
     builder = (ROOT / "scripts/build_locked_vllm_ascend_image.sh").read_text()
     launcher = (ROOT / "scripts/run_vllm_hust_engine.sh").read_text()
 
@@ -49,6 +52,8 @@ def test_locked_image_and_launcher_enforce_identity() -> None:
     assert "ai.vllm-hust.vllm-ascend.commit" in dockerfile
     assert "ai.vllm-hust.compatibility.base" in dockerfile
     assert "install_runtime_metadata.py" in dockerfile
+    assert 'assert "ascend" in platform' in dockerfile
+    assert "shutil.copytree(source, target)" in metadata_installer
     assert "TORCH_DEVICE_BACKEND_AUTOLOAD=0 python3" in dockerfile
     assert "git -C \"$root\" status --porcelain" in builder
     assert "plugin verifies core=" in builder
