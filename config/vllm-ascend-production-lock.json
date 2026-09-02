@@ -22,17 +22,17 @@
   "vllm_ascend": {
     "repository": "git@github.com:vLLM-HUST/vllm-ascend-hust.git",
     "branch": "main",
-    "commit": "27b97b8d0e39f39979965372013d4b10e8a1640f",
+    "commit": "1abd1c49234d20d424be500b90cc4d3cdb27ca70",
     "upstream_base_commit": "baa2ac756135d90fbe79c7af0e67c02d7df62593",
     "source_channel": "hust-main-tagged-snapshot",
-    "source_tag": "v0.25.1rc1+hust.20260902.1",
+    "source_tag": "v0.25.1rc1+hust.20260902.2",
     "upstream_release_baseline": "v0.25.1rc1",
-    "source_version": "0.25.1rc1+hust.20260902.1",
-    "package_version": "0.25.1rc1+hust.20260902.1",
+    "source_version": "0.25.1rc1+hust.20260902.2",
+    "package_version": "0.25.1rc1+hust.20260902.2",
     "verified_core_file": ".github/vllm-main-verified.commit",
     "artifact": {
-      "filename": "vllm_ascend-0.25.1rc1+hust.20260902.1-cp312-cp312-linux_aarch64.whl",
-      "sha256": "e2eb7dd2e0bafd28aa7e0d96bdd9b9a841eb2455480fd6645b1365d8120083fb"
+      "filename": "vllm_ascend-0.25.1rc1+hust.20260902.2-cp312-cp312-linux_aarch64.whl",
+      "sha256": "1710910123d2ba94acf553ef31a8f54343371b757e4f5227d5048e206dad83c0"
     }
   },
   "python_stack": {
@@ -117,5 +117,5 @@
     "install_mode": "immutable-wheels",
     "artifact_directory": "/data/codex-build-artifacts/latest-main-20260901"
   },
-  "image_tag": "sage-mate/vllm-ascend-hust:core-7c82451c-plugin-27b97b8d-cann9.1"
+  "image_tag": "sage-mate/vllm-ascend-hust:core-7c82451c-plugin-1abd1c49-cann9.1"
 }
