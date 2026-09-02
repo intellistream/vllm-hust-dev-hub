@@ -91,7 +91,12 @@ for artifact in lock["runtime_dependencies"].values():
 PY
 )
 
-build_context="$(mktemp -d /tmp/vllm-hust-image.XXXXXX)"
+build_context_parent="${VLLM_ASCEND_BUILD_CONTEXT_ROOT:-${TMPDIR:-/tmp}}"
+[[ -d "$build_context_parent" && -w "$build_context_parent" ]] || {
+  echo "ERROR: build context root must be a writable directory: $build_context_parent" >&2
+  exit 2
+}
+build_context="$(mktemp -d "$build_context_parent/vllm-hust-image.XXXXXX")"
 trap 'rm -rf "$build_context"' EXIT
 mkdir -p "$build_context/artifacts"
 for entry in "${artifacts[@]}"; do

@@ -91,6 +91,14 @@ Override the artifact directory only when mirroring the exact same files:
 VLLM_ASCEND_ARTIFACT_DIR=/secure/mirror scripts/build_locked_vllm_ascend_image.sh
 ```
 
+On hosts whose root filesystem cannot hold the multi-gigabyte immutable build
+context, place only that temporary context on a larger local filesystem. The
+builder still verifies every artifact against the lock before copying it:
+
+```bash
+VLLM_ASCEND_BUILD_CONTEXT_ROOT=/data/build-tmp scripts/build_locked_vllm_ascend_image.sh
+```
+
 ## Deployment receipt
 
 After `/health`, `/v1/models`, a real completion, physical NPU mapping and graph
