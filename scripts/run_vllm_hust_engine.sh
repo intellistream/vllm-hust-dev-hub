@@ -60,6 +60,19 @@ load_format="${VLLM_ENGINE_LOAD_FORMAT:-${LOAD_FORMAT:-auto}}"
 quantization="${VLLM_ENGINE_QUANTIZATION:-${QUANTIZATION:-}}"
 compilation_config="${VLLM_ENGINE_COMPILATION_CONFIG:-}"
 vllm_compat_version="${VLLM_ENGINE_VLLM_VERSION:-}"
+cache_namespace="${VLLM_ENGINE_CACHE_NAMESPACE:-}"
+if [[ -z "$cache_namespace" && -n "$expected_image_id" ]]; then
+  cache_namespace="image-${expected_image_id#sha256:}"
+  cache_namespace="${cache_namespace:0:22}"
+elif [[ -z "$cache_namespace" && -n "$vllm_compat_version" ]]; then
+  cache_namespace="vllm-${vllm_compat_version//[^a-zA-Z0-9_.-]/-}"
+elif [[ -z "$cache_namespace" ]]; then
+  cache_namespace="default"
+fi
+if [[ ! "$cache_namespace" =~ ^[a-zA-Z0-9_.-]+$ ]]; then
+  echo "ERROR: VLLM_ENGINE_CACHE_NAMESPACE contains unsafe characters: $cache_namespace" >&2
+  exit 1
+fi
 vllm_bin="${VLLM_ENGINE_BIN:-vllm-hust}"
 vllm_script="${VLLM_ENGINE_SCRIPT:-}"
 conda_prefix="${VLLM_ENGINE_CONDA_PREFIX:-}"
@@ -591,9 +604,10 @@ fi
 export HOME="${VLLM_ENGINE_CONTAINER_HOME:-/tmp/vllm-hust-home}"
 export XDG_CACHE_HOME="$HOME/.cache"
 export XDG_CONFIG_HOME="$HOME/.config"
-export VLLM_CACHE_ROOT="$HOME/.cache/vllm"
+export VLLM_CACHE_ROOT="$HOME/.cache/vllm/__CACHE_NAMESPACE__"
 export VLLM_CONFIG_ROOT="$HOME/.config/vllm"
 mkdir -p "$HOME" "$XDG_CACHE_HOME" "$XDG_CONFIG_HOME" "$VLLM_CACHE_ROOT" "$VLLM_CONFIG_ROOT"
+echo "[container] compile cache namespace: __CACHE_NAMESPACE__"
 
 VLLM_BIN="__VLLM_BIN__"
 VLLM_SCRIPT="__VLLM_SCRIPT__"
@@ -837,6 +851,7 @@ replace "__FUSED_MC2__" "$fused_mc2"
 replace "__PYTHONPATH__" "$pythonpath"
 replace "__CONTAINER_WORKSPACE_ROOT__" "$container_workspace_root"
 replace "__VLLM_VERSION__" "$vllm_compat_version"
+replace "__CACHE_NAMESPACE__" "$cache_namespace"
 replace "__VLLM_BIN__" "$vllm_bin"
 replace "__VLLM_SCRIPT__" "$vllm_script"
 replace "__MODEL_PATH__" "$model_path"

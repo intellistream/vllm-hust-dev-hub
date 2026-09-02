@@ -123,6 +123,17 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("--kv-cache-memory-bytes", script)
         self.assertIn("VLLM_ENGINE_CONTAINER_LOG_FILE", script)
         self.assertIn("ascend_model_loader", script)
+
+    def test_compile_cache_is_namespaced_by_runtime_identity(self) -> None:
+        script = ENGINE_SCRIPT.read_text()
+
+        self.assertIn("VLLM_ENGINE_CACHE_NAMESPACE", script)
+        self.assertIn('cache_namespace="image-${expected_image_id#sha256:}"', script)
+        self.assertIn(
+            'VLLM_CACHE_ROOT="$HOME/.cache/vllm/__CACHE_NAMESPACE__"',
+            script,
+        )
+        self.assertIn('replace "__CACHE_NAMESPACE__" "$cache_namespace"', script)
         self.assertIn("tee -a", script)
         self.assertIn("<redacted>", script)
         self.assertIn("__EXTRA_ENV_EXPORTS__", script)
