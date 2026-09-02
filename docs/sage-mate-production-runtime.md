@@ -14,10 +14,10 @@ one `v0.23.0` label:
    labels produced from that exact pair.
 
 The approved current-main candidate pins core
-`7c82451c03818d23746c962c173ffb1dbc78891b` and plugin
-`e48889df3f1eb4b78fcc17f5feacc803cf413c6b`. Its installed package versions are
-`0.28.1rc1.dev279+g7c82451c0.empty` and
-`0.25.1rc1+hust.20260902.7`, with Torch `2.13.0+cpu`, torch-npu
+`762f85b311fbab0bcf8921dd216f5093cd58b9b8` and plugin
+`124826b8c649e5680aa1c57d5504922c68c28ad3`. Its installed package versions are
+`0.28.1rc1.dev319+g762f85b31.empty` and
+`0.25.1rc1+hust.20260902.9`, with Torch `2.13.0+cpu`, torch-npu
 `2.13.0rc1`, NumPy `2.2.6`, and source-built Triton Ascend
 `3.6.0+gitb52af7fc` from vLLM-HUST/triton-ascend-hust main commit
 `b52af7fc9a0377c6ed527a88a30df719874eeba9`. The Triton wheel keeps the
@@ -29,7 +29,7 @@ the pair changes only through a reviewed lock update and the full image/NPU
 acceptance gate.
 
 The plugin version is deliberately governed by the annotated HUST tag
-`v0.25.1rc1+hust.20260902.7`. The current-core KV-cache compatibility commits
+`v0.25.1rc1+hust.20260902.9`. The current-core KV-cache compatibility commits
 are part of vLLM-HUST/vllm-ascend-hust `main`; the same generic change is also
 tracked upstream as [vllm-project/vllm-ascend#15585](https://github.com/vllm-project/vllm-ascend/pull/15585).
 Official current `main` is not descended from the
