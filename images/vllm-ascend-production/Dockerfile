@@ -10,6 +10,8 @@ ARG VLLM_ASCEND_COMMIT
 ARG VLLM_ASCEND_SOURCE_VERSION
 ARG VLLM_ASCEND_PACKAGE_VERSION
 ARG VLLM_COMPATIBILITY_BASE
+ARG VLLM_STABLE_RELEASE_BASELINE
+ARG VLLM_SOURCE_PROFILE
 ARG RUNTIME_LOCK_SCHEMA
 ARG BUILD_CREATED
 
@@ -60,6 +62,8 @@ LABEL org.opencontainers.image.title="vLLM-HUST Ascend production runtime" \
       ai.vllm-hust.vllm-ascend.source-version="${VLLM_ASCEND_SOURCE_VERSION}" \
       ai.vllm-hust.vllm-ascend.package-version="${VLLM_ASCEND_PACKAGE_VERSION}" \
       ai.vllm-hust.compatibility.base="${VLLM_COMPATIBILITY_BASE}" \
+      ai.vllm-hust.compatibility.stable-release="${VLLM_STABLE_RELEASE_BASELINE}" \
+      ai.vllm-hust.compatibility.source-profile="${VLLM_SOURCE_PROFILE}" \
       ai.vllm-hust.source-mode="immutable-wheels" \
       org.opencontainers.image.created="${BUILD_CREATED}" \
       org.opencontainers.image.revision="${VLLM_CORE_COMMIT}:${VLLM_ASCEND_COMMIT}"

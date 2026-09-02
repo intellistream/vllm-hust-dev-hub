@@ -15,10 +15,13 @@ def test_production_runtime_lock_is_complete_and_immutable() -> None:
     assert re.fullmatch(r"[0-9a-f]{40}", lock["vllm_ascend"]["commit"])
     assert lock["vllm_core"]["repository"] == "git@github.com:vLLM-HUST/vllm-hust.git"
     assert lock["vllm_ascend"]["repository"] == "git@github.com:vLLM-HUST/vllm-ascend-hust.git"
-    assert lock["vllm_core"]["commit"][:9] in lock["vllm_core"]["source_version"]
-    assert lock["vllm_ascend"]["commit"][:9] in lock["vllm_ascend"]["source_version"]
+    assert lock["vllm_core"]["source_channel"] == "upstream-main-snapshot"
+    assert lock["vllm_ascend"]["source_channel"] == "hust-main-tagged-snapshot"
+    assert lock["vllm_ascend"]["source_tag"].startswith("v0.25.1rc1+hust.")
     assert lock["vllm_core"]["commit"][:9] in lock["vllm_core"]["package_version"]
-    assert lock["vllm_ascend"]["commit"][:9] in lock["vllm_ascend"]["package_version"]
+    assert lock["vllm_ascend"]["source_tag"].removeprefix("v") == lock["vllm_ascend"]["package_version"]
+    assert lock["compatibility"]["stable_release_baseline"] == "v0.23.0"
+    assert lock["compatibility"]["source_profile"] == "latest-main-snapshot"
     assert lock["compatibility"]["cann"] == "9.1.0"
     assert lock["compatibility"]["torch_npu"] == "2.13.0rc1"
     for component in (lock["vllm_core"], lock["vllm_ascend"]):
@@ -48,6 +51,8 @@ def test_locked_image_and_launcher_enforce_identity() -> None:
     assert "ai.vllm-hust.vllm-core.commit" in dockerfile
     assert "ai.vllm-hust.vllm-ascend.commit" in dockerfile
     assert "ai.vllm-hust.compatibility.base" in dockerfile
+    assert "ai.vllm-hust.compatibility.stable-release" in dockerfile
+    assert "ai.vllm-hust.compatibility.source-profile" in dockerfile
     assert "install_runtime_metadata.py" in dockerfile
     assert 'assert "ascend" in' in dockerfile
     assert "vllm-hust.runtime-receipt/v2" in metadata_installer

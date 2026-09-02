@@ -14,10 +14,10 @@ one `v0.23.0` label:
    labels produced from that exact pair.
 
 The approved current-main candidate pins core
-`70081fe3d782c494cbd602973044a1202c0d4407` and plugin
-`a30611fcbe12ab1a249257aabd3f903649fc017f`. Its installed package versions are
-`0.28.1rc1.dev236+g70081fe3d.empty` and
-`0.1.dev4951+ga30611fcb`, with Torch `2.13.0+cpu`, torch-npu
+`7c82451c03818d23746c962c173ffb1dbc78891b` and plugin
+`c47b0f07e242f5c8e52191d531879eae340c5e64`. Its installed package versions are
+`0.28.1rc1.dev279+g7c82451c0.empty` and
+`0.25.1rc1+hust.20260902`, with Torch `2.13.0+cpu`, torch-npu
 `2.13.0rc1`, NumPy `2.2.6`, and source-built Triton Ascend
 `3.6.0+gitb52af7fc` from vLLM-HUST/triton-ascend-hust main commit
 `b52af7fc9a0377c6ed527a88a30df719874eeba9`. The Triton wheel keeps the
@@ -28,6 +28,15 @@ incompatible NumPy 2.3 line. A later moving
 the pair changes only through a reviewed lock update and the full image/NPU
 acceptance gate.
 
+The plugin version is deliberately governed by the annotated HUST tag
+`v0.25.1rc1+hust.20260902`. Official current `main` is not descended from the
+newer v0.20-v0.25 release branches, so an unconstrained `git describe` resolves
+through v0.19 even when all official tags are present. Build-time version
+resolution therefore fails closed for shallow clones, missing Git metadata,
+missing tags, or stale versions below v0.23. The lock records the exact plugin
+commit independently from the tag. `v0.23.0` remains the latest stable
+compatibility-filesystem baseline; it is not the active core package version.
+
 ## Lock and image contract
 
 `config/vllm-ascend-production-lock.json` is the source of truth for:
@@ -35,6 +44,8 @@ acceptance gate.
 - repository, commit and source-version identity for core and plugin;
 - plugin verified-core relationship;
 - compatibility base and exact package/toolchain wheel filenames and SHA256;
+- stable release baseline, active source profile, exact upstream snapshot
+  commits and the HUST plugin source tag;
 - exact runtime dependency wheels required by the synchronized core/plugin
   pair (including Transformers, FastAPI, Starlette, Hugging Face Hub, Triton,
   and pyelftools);
@@ -50,7 +61,8 @@ sage-mate/vllm-ascend-hust:core-<core8>-plugin-<plugin8>-cann9.1
 Reproducibility relies on the image ID/digest and OCI labels, not the tag. The
 build writes `org.opencontainers.image.created`,
 `org.opencontainers.image.revision`, repository/commit/source-version labels
-for both source trees, compatibility-base/package labels and the lock schema.
+for both source trees, stable-baseline/source-profile/package labels and the
+lock schema.
 The builder verifies every wheel hash before creating a temporary Docker
 context. The image removes inherited release wheels and legacy metadata
 shadowing, installs only the locked wheels, then validates real importlib

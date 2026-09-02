@@ -27,12 +27,14 @@ print(lock["vllm_ascend"]["commit"])
 print(lock["vllm_ascend"]["source_version"])
 print(lock["vllm_ascend"]["package_version"])
 print(f'{lock["compatibility"]["core_line"]}; {lock["compatibility"]["plugin_line"]}; CANN {lock["compatibility"]["cann"]}')
+print(lock["compatibility"]["stable_release_baseline"])
+print(lock["compatibility"]["source_profile"])
 print(lock["runtime"]["artifact_directory"])
 print(lock["image_tag"])
 PY
 )
 
-(( ${#lock_values[@]} == 13 )) || { echo "ERROR: incomplete v2 runtime lock" >&2; exit 2; }
+(( ${#lock_values[@]} == 15 )) || { echo "ERROR: incomplete v2 runtime lock" >&2; exit 2; }
 lock_schema="${lock_values[0]}"
 base_image="${lock_values[1]}"
 core_repo="${lock_values[2]}"
@@ -44,8 +46,10 @@ plugin_commit="${lock_values[7]}"
 plugin_source_version="${lock_values[8]}"
 plugin_package_version="${lock_values[9]}"
 compatibility_base="${lock_values[10]}"
-artifact_root="${VLLM_ASCEND_ARTIFACT_DIR:-${lock_values[11]}}"
-image_tag="${VLLM_ASCEND_PRODUCTION_IMAGE_TAG:-${lock_values[12]}}"
+stable_release_baseline="${lock_values[11]}"
+source_profile="${lock_values[12]}"
+artifact_root="${VLLM_ASCEND_ARTIFACT_DIR:-${lock_values[13]}}"
+image_tag="${VLLM_ASCEND_PRODUCTION_IMAGE_TAG:-${lock_values[14]}}"
 build_created="${VLLM_ASCEND_BUILD_CREATED:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 
 verify_checkout() {
@@ -123,6 +127,8 @@ fi
   --build-arg "VLLM_ASCEND_SOURCE_VERSION=$plugin_source_version" \
   --build-arg "VLLM_ASCEND_PACKAGE_VERSION=$plugin_package_version" \
   --build-arg "VLLM_COMPATIBILITY_BASE=$compatibility_base" \
+  --build-arg "VLLM_STABLE_RELEASE_BASELINE=$stable_release_baseline" \
+  --build-arg "VLLM_SOURCE_PROFILE=$source_profile" \
   --build-arg "BUILD_CREATED=$build_created" \
   "$build_context"
 
@@ -131,5 +137,7 @@ echo "[vllm-hust-image] tag=$image_tag"
 echo "[vllm-hust-image] id=$image_id"
 echo "[vllm-hust-image] core=$core_commit ($core_package_version)"
 echo "[vllm-hust-image] plugin=$plugin_commit ($plugin_package_version)"
+echo "[vllm-hust-image] stable_baseline=$stable_release_baseline"
+echo "[vllm-hust-image] source_profile=$source_profile"
 echo "[vllm-hust-image] install_mode=immutable-wheels"
 echo "[vllm-hust-image] created=$build_created"

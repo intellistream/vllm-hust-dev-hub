@@ -87,6 +87,12 @@ def main() -> int:
             {
                 "schema": "vllm-hust.runtime-receipt/v2",
                 "install_mode": "immutable-wheels",
+                "compatibility_base": {
+                    "image": lock["base_image"],
+                    "stable_release": lock["compatibility"]["stable_release_baseline"],
+                    "role": "filesystem-and-CANN-base-only",
+                },
+                "source_profile": lock["compatibility"]["source_profile"],
                 "core": {
                     "commit": args.core_commit,
                     "source_version": args.core_source_version,
