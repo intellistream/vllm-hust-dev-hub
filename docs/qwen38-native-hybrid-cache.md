@@ -151,15 +151,21 @@ The OpenAI proxy was not restarted. Previous Qwen image5e7f82c7 and its private
 environment backup remain available for managed rollback; no eager fallback
 or model downgrade was used.
 
-Public application normal QA also returned a real model answer and two Support
-sources (server20.84s,client26.27s). Public deep QA is **not** marked passed:
-one client stalled before delivery, a subsequent request logged200 at the app
-but timed out awaiting response headers, and another resolved Cloudflare edge
-returned502. Local engine health and real native completions remained healthy.
-These transport failures remain explicit limits of this acceptance, not reasons
-to hide failures or downgrade the model. This integration is a tested source
-and deployment snapshot, not certification of Cloudflare availability.
+Public application normal QA returned a real model answer and two Support
+sources (server 20.84s, client 26.27s). Early public deep attempts failed: one
+client stalled before delivery, a subsequent request logged 200 at the app
+but timed out awaiting response headers, and another Cloudflare edge returned
+502. Local engine health and real native completions remained healthy.
 
 Local application deep QA passed in23.28s with one native model call, no retry
 or cache hit, three Support sources and five knowledge hits. This verifies the
 application-to-engine reasoning path separately from the failed public transport.
+
+A final bounded public deep probe at 08:17 UTC succeeded: HTTP 200, client
+36.57s / application 27.36s, one native model call, no retries or cache hits,
+three Support sources and five knowledge hits. The response explicitly
+distinguished its two inferred research groupings from the three source-defined
+areas. The app, proxy and engine were not restarted between the failed and
+successful public probes. Earlier failures are retained; this proves a real
+end-to-end success, not sustained Cloudflare availability or a latency SLA.
+The source pair, production lock and image are unchanged by this evidence update.
