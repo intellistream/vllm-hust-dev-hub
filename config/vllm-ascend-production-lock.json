@@ -22,17 +22,17 @@
   "vllm_ascend": {
     "repository": "git@github.com:vLLM-HUST/vllm-ascend-hust.git",
     "branch": "main",
-    "commit": "124826b8c649e5680aa1c57d5504922c68c28ad3",
-    "upstream_base_commit": "8a4ea1478b2eefcc516ce687674c7bef3db1f0eb",
+    "commit": "4e57439e58ed3d78e675f9fd7b4614fb183c5394",
+    "upstream_base_commit": "6d02e22f078e59eb4b7947a887116151ad8eb100",
     "source_channel": "hust-main-tagged-snapshot",
-    "source_tag": "v0.25.1rc1+hust.20260902.9",
+    "source_tag": "v0.25.1rc1+hust.20260903.4",
     "upstream_release_baseline": "v0.25.1rc1",
-    "source_version": "0.25.1rc1+hust.20260902.9",
-    "package_version": "0.25.1rc1+hust.20260902.9",
+    "source_version": "0.25.1rc1+hust.20260903.4",
+    "package_version": "0.25.1rc1+hust.20260903.4",
     "verified_core_file": ".github/vllm-main-verified.commit",
     "artifact": {
-      "filename": "vllm_ascend-0.25.1rc1+hust.20260902.9-cp312-cp312-linux_aarch64.whl",
-      "sha256": "2a83aef9bf81ef659338b82ba5ffbb570886e8c8238867352b58d4a05fd01e04"
+      "filename": "vllm_ascend-0.25.1rc1+hust.20260903.4-cp312-cp312-linux_aarch64.whl",
+      "sha256": "f13964eaf1f2b2edde43365533298b9054d2ae9dd988b41eba8c5eac387e5549"
     }
   },
   "python_stack": {
@@ -106,7 +106,7 @@
     "stable_release_baseline": "v0.23.0",
     "source_profile": "latest-main-snapshot",
     "core_line": "vLLM upstream main snapshot at 2a4e3cc3d plus HUST integration commits",
-    "plugin_line": "vLLM Ascend main snapshot at 8a4ea1478 plus HUST compatibility commits",
+    "plugin_line": "vLLM Ascend main snapshot at 6d02e22f0 plus HUST native hybrid cache compatibility",
     "cann": "9.1.0",
     "torch_npu": "2.13.0rc1"
   },
@@ -117,5 +117,5 @@
     "install_mode": "immutable-wheels",
     "artifact_directory": "/data/codex-build-artifacts/latest-main-20260901"
   },
-  "image_tag": "sage-mate/vllm-ascend-hust:core-762f85b3-plugin-124826b8-native6-cann9.1"
+  "image_tag": "sage-mate/vllm-ascend-hust:core-762f85b3-plugin-4e57439e-hybrid4-cann9.1"
 }

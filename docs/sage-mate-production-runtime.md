@@ -13,11 +13,11 @@ one `v0.23.0` label:
 3. **Built artifact**: the derived image ID/digest, build timestamp and OCI
    labels produced from that exact pair.
 
-The approved current-main candidate pins core
+The verified production snapshot pins core
 `762f85b311fbab0bcf8921dd216f5093cd58b9b8` and plugin
-`124826b8c649e5680aa1c57d5504922c68c28ad3`. Its installed package versions are
+`4e57439e58ed3d78e675f9fd7b4614fb183c5394`. Its installed package versions are
 `0.28.1rc1.dev319+g762f85b31.empty` and
-`0.25.1rc1+hust.20260902.9`, with Torch `2.13.0+cpu`, torch-npu
+`0.25.1rc1+hust.20260903.4`, with Torch `2.13.0+cpu`, torch-npu
 `2.13.0rc1`, NumPy `2.2.6`, and source-built Triton Ascend
 `3.6.0+gitb52af7fc` from vLLM-HUST/triton-ascend-hust main commit
 `b52af7fc9a0377c6ed527a88a30df719874eeba9`. The Triton wheel keeps the
@@ -29,7 +29,7 @@ the pair changes only through a reviewed lock update and the full image/NPU
 acceptance gate.
 
 The plugin version is deliberately governed by the annotated HUST tag
-`v0.25.1rc1+hust.20260902.9`. The current-core KV-cache compatibility commits
+`v0.25.1rc1+hust.20260903.4`. The earlier current-core KV-cache compatibility commits
 are part of vLLM-HUST/vllm-ascend-hust `main`; the same generic change is also
 tracked upstream as [vllm-project/vllm-ascend#15585](https://github.com/vllm-project/vllm-ascend/pull/15585).
 Official current `main` is not descended from the
@@ -37,8 +37,11 @@ newer v0.20-v0.25 release branches, so an unconstrained `git describe` resolves
 through v0.19 even when all official tags are present. Build-time version
 resolution therefore fails closed for shallow clones, missing Git metadata,
 missing tags, or stale versions below v0.23. The lock records the exact plugin
-commit independently from the tag. `v0.23.0` remains the latest stable
-compatibility-filesystem baseline; it is not the active core package version.
+commit independently from the tag. `v0.23.0` is the pinned
+compatibility-filesystem baseline, not a claim about the latest official release
+or the active core package version. The subsequent native hybrid-cache fix and
+Qwen3.8 deployment are documented in [the migration record](qwen38-native-hybrid-cache.md);
+they must not be conflated with the earlier upstream PR.
 
 ## Lock and image contract
 
@@ -54,6 +57,12 @@ compatibility-filesystem baseline; it is not the active core package version.
   and pyelftools);
 - official base image tag and immutable digest;
 - derived image tag.
+
+`branch: main` records the integration branch containing a verified immutable
+snapshot, not permission to replace `commit` with a moving branch tip. Only
+publish that declaration after the selected SHA is actually reachable from
+canonical main. Before publishing parent gitlinks, verify both lock commits
+against the parent checkouts and the plugin's verified-core declaration.
 
 The derived tag is descriptive:
 
