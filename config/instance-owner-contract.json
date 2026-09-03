@@ -1,0 +1,5 @@
+{
+  "protocol": "vllm-hust.instance-owner-entry/v1",
+  "entrypoint": "scripts/instance_owner_entry.py",
+  "actions": ["serve", "start", "stop", "restart", "reconcile", "cleanup", "monitor"]
+}
