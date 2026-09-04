@@ -7,7 +7,12 @@
   "parameters": {},
   "activation": {
     "vllm_plugins": ["ascend"],
-    "environment": {"BIDKV_UTILITY_ENABLE": "1", "BIDKV_UTILITY_STRATEGY": "bidkv"},
+    "environment": {
+      "BIDKV_UTILITY_ENABLE": "1",
+      "BIDKV_UTILITY_STRATEGY": "bidkv",
+      "BIDKV_UTILITY_LIVENESS_PREEMPTIONS": "2",
+      "BIDKV_UTILITY_CASCADE_GAIN_RATIO": "1.25"
+    },
     "extra_env_prefixes": ["BIDKV_UTILITY_"],
     "extra_args": [
       "--preemption-policy",

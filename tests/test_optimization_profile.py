@@ -9,6 +9,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RESOLVER = REPO_ROOT / "scripts" / "optimization_profile.py"
+CONTAINER_EXPORTS = REPO_ROOT / "scripts" / "container_env_exports.py"
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "optimization_manifests"
 
 
@@ -54,6 +55,27 @@ def test_bidkv_profile_hides_entrypoint_and_json_plumbing() -> None:
     additional = json.loads(args[additional_index + 1])
     assert "enable_utility_victim_selection" not in additional
     assert "utility_strategy" not in additional
+
+
+def test_bidkv_profile_environment_reaches_engine_child_allowlist() -> None:
+    result, environment = resolve("bidkv")
+    assert result.returncode == 0
+    assert environment["VLLM_ENGINE_EXTRA_ENV_PREFIXES"] == "BIDKV_UTILITY_"
+
+    child_environment = {"PATH": os.environ["PATH"], **environment}
+    rendered = subprocess.run(
+        [sys.executable, str(CONTAINER_EXPORTS)],
+        text=True,
+        capture_output=True,
+        check=False,
+        env=child_environment,
+    )
+    assert rendered.returncode == 0
+    exports = set(rendered.stdout.splitlines())
+    assert "export BIDKV_UTILITY_ENABLE=1" in exports
+    assert "export BIDKV_UTILITY_STRATEGY=bidkv" in exports
+    assert "export BIDKV_UTILITY_LIVENESS_PREEMPTIONS=2" in exports
+    assert "export BIDKV_UTILITY_CASCADE_GAIN_RATIO=1.25" in exports
 
 
 def test_diffspec_requires_and_renders_draft_model() -> None:
