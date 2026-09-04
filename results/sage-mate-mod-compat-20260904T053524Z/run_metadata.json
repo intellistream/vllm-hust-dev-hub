@@ -2,7 +2,7 @@
   "schema": "sage-mate.mod-qualification-run/v1",
   "evidence_label": "real-online",
   "started_at_utc": "2026-09-04T05:35:24Z",
-  "status": "complete-with-diffspec-blocked",
+  "status": "complete-pending-human-publication-review",
   "parent": {
     "repository": "/home/shuhao/sage-mate",
     "commit": "ab5cf8ea9c7a14b1b9a12d6be3a3c5e18b7df0c2",
@@ -46,8 +46,8 @@
   },
   "mods": {
     "bidkv": "compatible-exact-qwen38-tp4-graph-lane",
-    "diffspec": "blocked-until-compatible-eagle3-draft",
+    "diffspec": "qwen38-functional-compatible-performance-degraded-with-qualified-eagle3-draft",
     "latchmoe": "qwen38-not-applicable;qwen3-30b-a3b-functional-compatible-performance-degraded"
   },
-  "production_rollback": {"restored": true, "health_status": 200, "response": "LATCHMOE_ROLLBACK_OK", "reserved_npu_4_7_untouched": true}
+  "production_rollback": {"restored": true, "health_status": 200, "image_id": "sha256:de1742dd6a1bc7ed1cbfff78d508ffa8ac769e58518d4e04d35a5d8203b88252", "response": "DIFFSPEC_ROLLBACK_OK", "reserved_npu_4_7_not_used_by_campaign": true}
 }

@@ -9,7 +9,7 @@ mode are not accepted as final qualification paths.
 | Mod | Source state | Runtime state | Compatibility verdict |
 | --- | --- | --- | --- |
 | BidKV | migrated to versioned preemption-policy API v1; no runtime monkey patch | Qwen3.8-27B TP4 graph: four long concurrent requests completed; 187 policy calls, 0 failures; output, cancellation/recovery and rollback passed | compatible for the exact tested lane |
-| DiffSpec | current Eagle3, hybrid-attention, runner and metadata source surfaces adapted | blocked: local Qwen3-1.7B draft vocab `151936` does not match target vocab `248320`; no validated Qwen3.8 Eagle3 draft is available | blocked / not qualified |
+| DiffSpec | current Eagle3, Ascend attention, model runner, sampler and speculative metadata surfaces adapted | Qwen3.8-27B plus `VirVen/Qwen3.5-27B-EAGLE3-v2` passed TP4 FULL_DECODE_ONLY graph, four-rank draft loading, output, cancellation/recovery, concurrency and long-context gates | functional-compatible, but performance degraded (acceptance 19.29%; ~14.00 vs ~47.72 tok/s target-only P50) |
 | LatchMoE | current MoE routing quantization and MLP-builder ABI adapted through seam v2 | Qwen3.8-27B is dense and Not Applicable; Qwen3-30B-A3B passed TP4 PIECEWISE graph, four-rank mapping, swap, 48/48 address checks, concurrency, cancellation and exception recovery | functional-compatible for Qwen3-30B-A3B, but performance degraded (~2.91 vs ~23.57 tok/s baseline) |
 
 The target model config identifies `Qwen3_5ForConditionalGeneration` with a
@@ -35,10 +35,10 @@ addresses on its separate MoE model.
 ## Resource gate
 
 After explicit authorization, the campaign stopped the managed Sage Mate service and
-used NPU0-3 for the TP4 runs. Native Engine reserved NPU4-7 remained excluded and its
-PIDs did not change. Every launch used the managed service path; no TP1, eager or
+used NPU0-3 for the TP4 runs. Native Engine reserved NPU4-7 remained excluded; the
+campaign did not start, stop or configure its independently managed workload. Every launch used the managed service path; no TP1, eager or
 legacy-image result was accepted. The original Qwen3.8-27B TP4 graph service was
-restored, returned HTTP 200 and produced `LATCHMOE_ROLLBACK_OK`.
+restored after each Mod, returned HTTP 200 and finally produced `DIFFSPEC_ROLLBACK_OK`.
 
 ## Measured results
 
@@ -48,8 +48,13 @@ restored, returned HTTP 200 and produced `LATCHMOE_ROLLBACK_OK`.
 - LatchMoE Qwen3-30B-A3B: 10-request TTFT p50/p95 3.678/7.730 s,
   latency p50/p95 25.941/31.808 s, output throughput p50/p95 2.907/3.010 tok/s.
   The no-plugin baseline output throughput was about 23.57 tok/s.
-- DiffSpec: 38 source tests passed, but the draft checkpoint gate stopped device
-  qualification. No acceptance-rate or latency number is reported.
+- DiffSpec: final contract suite 26/26. Four ranks loaded the qualified draft and
+  entered ACLGraph; 4/4 graph captures completed. Two 10-request suites were
+  correct, four concurrent answers were correct, cancellation drained in 0.529 s,
+  malformed-request recovery and a 5,425-token prompt passed. Draft/accepted
+  counters were 534/103 (19.29%). Warm TTFT P50/P95 was 0.459/0.469 s, latency
+  P50/P95 0.744/3.990 s, and output throughput P50/P95 14.00/14.24 tok/s versus
+  target-only 47.72/56.97 tok/s; therefore the lane is not an acceleration recommendation.
 
 ## Candidate commits and publication gate
 
