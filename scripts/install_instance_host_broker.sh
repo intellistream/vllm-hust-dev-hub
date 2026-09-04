@@ -15,7 +15,6 @@ control_group=$3
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
 
 getent passwd vllm-hust-broker >/dev/null || useradd --system --home-dir /var/lib/vllm-hust-host-broker --shell /usr/sbin/nologin vllm-hust-broker
-usermod -a -G "${control_group}" vllm-hust-broker
 install -d -o root -g vllm-hust-broker -m 0750 /usr/lib/vllm-hust-host-broker /etc/vllm-hust-host-broker
 install -d -o vllm-hust-broker -g vllm-hust-broker -m 0700 /var/lib/vllm-hust-host-broker
 install -o root -g vllm-hust-broker -m 0644 "${repo}"/scripts/instance_host_broker.py "${repo}"/scripts/instance_canary_worker.py /usr/lib/vllm-hust-host-broker/

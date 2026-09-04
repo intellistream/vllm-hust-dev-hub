@@ -53,6 +53,12 @@ action. A shared target additionally requires a complete immutable DeploymentSpe
 live writer-fencing receipt, owner adapter, compatibility evidence and rollback
 qualification; none is supplied here.
 
+The systemd service runs with the fixed control group as its primary group, so
+systemd itself creates `/run/vllm-hust-host-broker` as
+`vllm-hust-broker:CONTROL_GROUP` mode 0750. The broker's private group is retained
+only as a supplementary group for read-only installed code/config access. No
+privileged `ExecStartPre` ownership mutation or world traversal is used.
+
 For the isolated host acceptance only, root may use
 `scripts/set_inert_canary_gate.py --enabled true|false`. The tool refuses every
 policy containing anything except the bundled `inert-canary`; it cannot authorize,

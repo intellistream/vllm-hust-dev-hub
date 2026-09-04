@@ -26,15 +26,11 @@ class HostBrokerTests(unittest.TestCase):
         ).read_text()
         self.assertIn("RuntimeDirectoryMode=0750", unit)
         self.assertIn(
-            "ExecStartPre=+/usr/bin/chown "
-            "vllm-hust-broker:__CONTROL_GROUP__ /run/vllm-hust-host-broker",
-            unit,
+            "Group=__CONTROL_GROUP__", unit
         )
-        self.assertIn(
-            "ExecStartPre=+/usr/bin/chmod 0750 /run/vllm-hust-host-broker", unit
-        )
+        self.assertIn("SupplementaryGroups=vllm-hust-broker", unit)
+        self.assertNotIn("ExecStartPre=+", unit)
         self.assertNotIn("RuntimeDirectoryMode=0755", unit)
-        self.assertNotIn("chmod 0755 /run/vllm-hust-host-broker", unit)
         mode = 0o750
         self.assertTrue(mode & 0o010, "fixed control group must traverse parent")
         self.assertFalse(mode & 0o007, "other users must not traverse or read parent")
