@@ -1,0 +1,20 @@
+{
+  "schema": "sage-mate.mod-candidate-lock/v1",
+  "status": "not-runtime-qualified",
+  "target": {
+    "core": {"version": "0.28.1rc1.dev319", "base_commit": "762f85b311fbab0bcf8921dd216f5093cd58b9b8", "candidate_commit": "bbfddaa74c11622c7bb3f3e742f442faeb6f17e1"},
+    "ascend": {"version": "0.25.1rc1", "base_commit": "4e57439e58ed3d78e675f9fd7b4614fb183c5394", "moe_seam_candidate_commit": "2c8c722107a54127999a64c4eb0ec86139df8c26"},
+    "model": "Qwen3.8-27B",
+    "accelerator": "Ascend NPU",
+    "tensor_parallel_size": 4,
+    "execution_mode": "graph"
+  },
+  "manager": {"candidate_commit": "a8586ab17adab3b76e53b4abaf668564275e0fcb"},
+  "mods": {
+    "bidkv": {"candidate_commit": "9fc611b19ee7a1bb22c3304843ddc5aa0d587dc7", "status": "source-adapted-runtime-unverified"},
+    "diffspec": {"candidate_commit": "af00892c8858f28f672e5812f32ed70eaaaafe27", "status": "blocked-no-compatible-eagle3-draft"},
+    "latchmoe": {"candidate_commit": "39259709227ee962c3b838b60279dc7335224dee", "qwen38_status": "not-applicable-dense-model", "qualification_model": "Qwen3-30B-A3B", "status": "source-adapted-runtime-unverified"}
+  },
+  "resource_exclusions": ["Sage Mate production NPU0-3", "Native Engine reserved NPU4-7"],
+  "publishing": {"pushed": false, "merged_to_main": false, "upstream_prs_submitted": false}
+}

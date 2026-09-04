@@ -12,11 +12,12 @@
     "environment": {
       "VLLM_ALLOW_LONG_MAX_MODEL_LEN": "1",
       "VLLM_ENGINE_ENABLE_PREFIX_CACHING": "0",
-      "VLLM_ENGINE_ENFORCE_EAGER": "1",
-      "VLLM_ENGINE_MAX_NUM_SEQS": "1"
+      "VLLM_ENGINE_MAX_NUM_SEQS": "8"
     },
     "extra_env_keys": ["VLLM_ALLOW_LONG_MAX_MODEL_LEN"],
     "extra_args": [
+      "--tensor-parallel-size",
+      "4",
       "--speculative-config",
       {"method": "eagle3", "model": "${draft_model}", "num_speculative_tokens": 5, "enforce_eager": false, "draft_context_policy": "diffspec", "diffspec_verification_mode": "auto", "diffspec_chunk_size": 64, "diffspec_token_budget": 2048}
     ]

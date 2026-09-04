@@ -44,13 +44,13 @@ def test_bidkv_profile_hides_entrypoint_and_json_plumbing() -> None:
     result, environment = resolve("bidkv")
 
     assert result.returncode == 0
-    assert environment["VLLM_OPTIMIZATION_ENTRYPOINT_GROUP"] == "vllm.victim_selector"
-    assert environment["VLLM_OPTIMIZATION_PLUGIN"] == "bidkv"
+    assert environment["VLLM_OPTIMIZATION_ENTRYPOINT_GROUP"] == "vllm_hust.extension_bundles"
+    assert environment["VLLM_OPTIMIZATION_PLUGIN"] == "org.vllm-hust.bidkv"
     assert environment["BIDKV_UTILITY_ENABLE"] == "1"
     assert environment["VLLM_PLUGINS"] == "ascend"
     args = json.loads(environment["VLLM_ENGINE_EXTRA_ARGS_JSON"])
-    assert args[0] == "--additional-config"
-    assert json.loads(args[1])["victim_selector_plugin"] == "bidkv"
+    assert args[:2] == ["--preemption-policy", "bidkv.adapters.vllm_hust.selector:BidkvPreemptionPolicy"]
+    assert json.loads(args[3])["utility_strategy"] == "bidkv"
 
 
 def test_diffspec_requires_and_renders_draft_model() -> None:
@@ -61,9 +61,11 @@ def test_diffspec_requires_and_renders_draft_model() -> None:
     result, environment = resolve("diffspec", "draft_model=/models/eagle3")
     assert result.returncode == 0
     args = json.loads(environment["VLLM_ENGINE_EXTRA_ARGS_JSON"])
-    assert json.loads(args[1])["model"] == "/models/eagle3"
-    assert environment["VLLM_ENGINE_ENFORCE_EAGER"] == "0"
+    assert args[:2] == ["--tensor-parallel-size", "4"]
+    assert json.loads(args[3])["model"] == "/models/eagle3"
+    assert "VLLM_ENGINE_ENFORCE_EAGER" not in environment
     assert environment["VLLM_PLUGINS"] == "ascend,diffspec"
+    assert environment["VLLM_ENGINE_MAX_NUM_SEQS"] == "8"
 
 
 def test_latchmoe_uses_default_or_explicit_offload_budget() -> None:
@@ -75,6 +77,7 @@ def test_latchmoe_uses_default_or_explicit_offload_budget() -> None:
     assert result.returncode == 0
     assert environment["VLLM_ASCEND_MOE_OFFLOAD_GB"] == "28"
     assert environment["VLLM_PLUGINS"] == "ascend,moe_offload_ascend"
+    assert json.loads(environment["VLLM_ENGINE_EXTRA_ARGS_JSON"])[:2] == ["--tensor-parallel-size", "4"]
 
 
 def test_operator_environment_overrides_manifest_defaults() -> None:

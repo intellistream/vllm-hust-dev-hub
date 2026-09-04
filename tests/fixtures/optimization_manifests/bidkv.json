@@ -3,15 +3,17 @@
   "id": "bidkv",
   "repository": "vllm-hust-bidkv",
   "source_subdir": "src",
-  "entrypoint": {"group": "vllm.victim_selector", "name": "bidkv"},
+  "entrypoint": {"group": "vllm_hust.extension_bundles", "name": "org.vllm-hust.bidkv"},
   "parameters": {},
   "activation": {
     "vllm_plugins": ["ascend"],
-    "environment": {"BIDKV_UTILITY_ENABLE": "1"},
+    "environment": {"BIDKV_UTILITY_ENABLE": "1", "BIDKV_UTILITY_STRATEGY": "bidkv"},
     "extra_env_prefixes": ["BIDKV_UTILITY_"],
     "extra_args": [
+      "--preemption-policy",
+      "bidkv.adapters.vllm_hust.selector:BidkvPreemptionPolicy",
       "--additional-config",
-      {"victim_selector_plugin": "bidkv", "enable_utility_victim_selection": true}
+      {"enable_utility_victim_selection": true, "utility_strategy": "bidkv"}
     ]
   },
   "compatibility": {"incompatible_with": ["bidkv-legacy"]}
