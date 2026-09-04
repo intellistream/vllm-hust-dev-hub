@@ -1,8 +1,10 @@
 {
   "protocol": "vllm-hust.host-broker/v1",
   "policySchema": "vllm-hust.host-broker-policy/v1",
-  "actions": ["describe", "issue", "execute"],
+  "actions": ["describe", "issue", "execute", "canary_status", "canary_lifecycle"],
   "lifecycleActions": ["start", "stop", "restart"],
   "sharedTargetsQualified": false,
-  "bundledTarget": "inert-canary"
+  "bundledTarget": "inert-canary",
+  "canaryLifecycleActions": ["start", "stop"],
+  "canaryEffective": false
 }

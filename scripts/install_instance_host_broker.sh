@@ -26,6 +26,7 @@ python3 - "${repo}/config/instance-host-broker.example.json" /etc/vllm-hust-host
 import json
 import os
 from pathlib import Path
+import pwd
 import sys
 
 source, destination, uid, gid = sys.argv[1:]
@@ -33,7 +34,7 @@ value = json.loads(Path(source).read_text())
 value["enabled"] = False
 value["socket_gid"] = int(gid)
 value["controller_uids"] = [int(uid)]
-value["targets"][0]["owner_uids"] = [int(uid)]
+value["targets"][0]["owner_uids"] = [pwd.getpwnam("vllm-hust-broker").pw_uid]
 for artifact in value["targets"][0]["artifacts"]:
     path = Path(artifact["path"])
     import hashlib

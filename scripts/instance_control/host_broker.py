@@ -153,6 +153,7 @@ class FixedProcessAdapter:
         self.store = store
         self.clock = clock
         self.sleep = sleep
+        self._children: dict[int, subprocess.Popen] = {}
 
     def _read_resource(self, instance_id: str):
         try:
@@ -220,6 +221,7 @@ class FixedProcessAdapter:
             child = subprocess.Popen(target.argv, cwd=target.cwd, env=dict(target.environment),
                                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                                      stderr=subprocess.DEVNULL, close_fds=True, start_new_session=True)
+            self._children[child.pid] = child
             ticks = _process_start_ticks(child.pid)
             resource = {"instance_id": target.instance_id, "pid": child.pid,
                         "start_ticks": ticks, "started_at": self.clock(),
@@ -242,6 +244,7 @@ class FixedProcessAdapter:
                 if _pid_state(child.pid, ticks) == "live":
                     os.killpg(child.pid, signal.SIGKILL)
             child.wait(timeout=2)
+            self._children.pop(child.pid, None)
         except (OSError, subprocess.SubprocessError, ControlError):
             resource["state"] = "recovery_required"
             self._persist(target.instance_id, operation["id"], "host_start_cleanup_failed", resource)
@@ -280,6 +283,12 @@ class FixedProcessAdapter:
                 self.sleep(0.05)
         require(_pid_state(resource["pid"], resource["start_ticks"]) == "absent",
                 "host_stop_unconfirmed")
+        child = self._children.pop(resource["pid"], None)
+        if child is not None:
+            try:
+                child.wait(timeout=0)
+            except subprocess.TimeoutExpired:
+                raise ControlError("host_stop_unconfirmed")
         try:
             os.unlink(target.health_socket)
         except FileNotFoundError:
@@ -302,6 +311,19 @@ class HostBroker:
         self.authority = LaunchGrantAuthority(store, admin_uids=[os.geteuid()],
                                               enabled=policy.enabled, clock=clock)
         self.adapter = FixedProcessAdapter(store, clock=clock)
+        self._canary_coordinator = None
+
+    def _canary(self):
+        require(self.policy.enabled is True and set(self.policy.targets) == {"inert-canary"},
+                "canary_control_not_available")
+        target = self._target("inert-canary")
+        require(target.owner_uids == frozenset({os.geteuid()}),
+                "canary_owner_identity_not_fixed")
+        if self._canary_coordinator is None:
+            from .canary_coordinator import CanaryCoordinator
+            self._canary_coordinator = CanaryCoordinator(
+                self.store, target, self.adapter, self.authority, clock=self.clock)
+        return self._canary_coordinator
 
     def _target(self, instance_id: str) -> FixedTarget:
         identifier(instance_id)
@@ -323,6 +345,19 @@ class HostBroker:
             return {"protocol": PROTOCOL, "enabled": self.policy.enabled,
                     "instanceId": target.instance_id, "actions": sorted(target.actions),
                     "policySha256": target.policy_sha256, **self.adapter.inspect(target)}
+        if action == "canary_status":
+            fields(request, "schema action instance_id")
+            require(peer.uid in self.policy.controller_uids, "controller_peer_not_allowed")
+            require(request["instance_id"] == "inert-canary", "canary_only_target_required")
+            return {"protocol": PROTOCOL, "enabled": True,
+                    "instanceId": "inert-canary", **self._canary().status()}
+        if action == "canary_lifecycle":
+            fields(request, "schema action instance_id lifecycle_action")
+            require(peer.uid in self.policy.controller_uids, "controller_peer_not_allowed")
+            require(request["instance_id"] == "inert-canary", "canary_only_target_required")
+            return {"protocol": PROTOCOL, "enabled": True,
+                    "instanceId": "inert-canary",
+                    **self._canary().run(request["lifecycle_action"])}
         if action == "issue":
             fields(request, "schema action instance_id lifecycle_action operation")
             require(peer.uid in self.policy.controller_uids, "controller_peer_not_allowed")
@@ -360,6 +395,10 @@ class HostBroker:
 def serve(store, policy: BrokerPolicy):
     require(policy.enabled is True, "host_authority_disabled")
     broker = HostBroker(store, policy)
+    if set(policy.targets) == {"inert-canary"}:
+        # Enrollment happens during privileged service startup, never as a
+        # side effect of a Workstation status request.
+        broker._canary()
     path = Path(policy.socket_path)
     path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
     try:

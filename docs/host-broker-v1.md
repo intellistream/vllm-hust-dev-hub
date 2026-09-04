@@ -23,12 +23,21 @@ All requests and replies are bounded JSON objects using
 - `execute(instance_id, lifecycle_action, grant)` is accepted only from the fixed
   target owner UID. Claim atomically consumes the grant and binds it to that peer,
   action digest, operation, generation, target spec, executor and fence.
+- `canary_status(inert-canary)` and `canary_lifecycle(inert-canary, start|stop)`
+  are controller-peer-only convenience operations for the bundled CPU self-test.
+  The broker creates the immutable plan, approval and reservation, keeps forward
+  and rollback grants in broker memory, executes under its fixed owner UID, and
+  commits only after PID/start-ticks health verification. These operations cannot
+  address a shared instance or carry a command, Mod, image, owner, approval or grant.
 
 The fixed process adapter persists PID/start-ticks and the policy digest inside
 the same SQLite transaction that guards spawn. Stop signals only that exact live
 session leader while holding the same guard, then persists stopped evidence after
 absence is verified. A broker restart reads the durable identity; it does not
 create a new grant, infer ownership from PID absence, or automatically take over.
+The raw grant is never returned by the canary lifecycle operation and therefore
+never enters a Web/Workstation process. Low-level `issue`/`execute` remain the
+owner-adapter protocol and are not browser APIs.
 
 ## Consumer boundary
 

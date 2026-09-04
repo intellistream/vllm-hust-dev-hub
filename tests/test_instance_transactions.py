@@ -359,6 +359,28 @@ class Transactions(unittest.TestCase):
             self.controller.execute(token)
         self.assertEqual(effects, self.backend.effects)
 
+    def test_external_effect_uses_controller_commit_and_redacts_failure(self):
+        token = self.begin()
+        calls = []
+        self.backend.spec = DeploymentSpec.freeze(self.candidate)
+        self.backend.generation += 1
+        self.backend.operation = token["id"]
+        result = self.controller.execute_external(
+            token, lambda: calls.append("apply"), lambda: calls.append("restore"))
+        self.assertEqual(result["phase"], "committed")
+        self.assertEqual(calls, ["apply"])
+        self.assertEqual(self.store.read("instance", "fixture")["generation"], 1)
+
+    def test_external_effect_failure_without_mutation_closes_operation(self):
+        token = self.begin()
+        result = self.controller.execute_external(
+            token,
+            lambda: (_ for _ in ()).throw(RuntimeError("SECRET_EXTERNAL")),
+            lambda: self.fail("unchanged baseline must not be restored"),
+        )
+        self.assertEqual(result["phase"], "failed")
+        self.assertNotIn(b"SECRET_EXTERNAL", self.store.path.read_bytes())
+
     def test_recovery_requires_quiescence_not_time_or_pid_absence(self):
         token = self.begin()
         self.backend.quiet = False

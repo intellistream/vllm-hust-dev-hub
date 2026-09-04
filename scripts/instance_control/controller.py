@@ -289,6 +289,61 @@ class Controller:
             # Raw adapter exceptions may contain credentials. Persist only phase.
             return self._rollback(token)
 
+    def execute_external(self, token, effect, restore_effect):
+        """Commit an effect performed by a trusted, fenced execution plane.
+
+        ``effect`` and ``restore_effect`` are installed callables, never selected
+        or populated by a wire request.  This path exists for brokers whose
+        one-use grant must be claimed under a distinct OS owner identity before
+        the Controller can verify and commit the resulting runtime observation.
+        """
+        self._admin()
+        require(callable(effect) and callable(restore_effect), "trusted_effect_required")
+        self._phase(token, "applying")
+        try:
+            effect()
+            self.checkpoint("deploy_effect")
+            self._phase(token, "verifying")
+            observation = self._verify(token, restore=False)
+            return self._commit(token, observation, restore=False)
+        except Exception:
+            # Execution-plane errors may include credentials or host details.
+            return self._rollback_external(token, restore_effect)
+
+    def _rollback_external(self, token, restore_effect):
+        try:
+            with self.store.transaction() as db:
+                operation, current = self._owned(db, token)
+                registration = self.store.get(db, "registration", operation["instance_id"])
+                plan = self.store.get(db, "plan", operation["plan_id"])
+                backend = self._backend(registration)
+                observed = backend.inspect(registration)
+                if (observed["spec_hash"] == operation["baseline"]
+                        and observed["identity"] == plan["expected_identity"]
+                        and backend.owns(registration, token, plan["expected_identity"], restore=True) is True):
+                    self._observation(observed, operation["instance_id"], operation["baseline"])
+                    operation["phase"] = "failed"
+                    current.update(operation=None, status="ready", observation=observed)
+                    self.store.put(db, "instance", operation["instance_id"], current)
+                    self.store.put(db, "operation", token["id"], operation)
+                    self.store.event(db, token["id"], "failed", {"reason": "baseline_unchanged"})
+                    return operation
+            self._phase(token, "rolling_back")
+            restore_effect()
+            self.checkpoint("restore_effect")
+            observation = self._verify(token, restore=True)
+            return self._commit(token, observation, restore=True)
+        except Exception:
+            with self.store.transaction() as db:
+                operation, current = self._owned(db, token)
+                operation["phase"] = "rollback_failed"
+                current["status"] = "recovery_required"
+                self.store.put(db, "instance", operation["instance_id"], current)
+                self.store.put(db, "operation", token["id"], operation)
+                self.store.event(db, token["id"], "rollback_failed",
+                                 {"reason": "verification_or_ownership_failed"})
+            return operation
+
     def _rollback(self, token):
         try:
             # No mutation occurred: closing the new-operation gate or failing
