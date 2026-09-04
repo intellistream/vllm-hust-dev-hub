@@ -19,6 +19,7 @@ usermod -a -G "${control_group}" vllm-hust-broker
 install -d -o root -g vllm-hust-broker -m 0750 /usr/lib/vllm-hust-host-broker /etc/vllm-hust-host-broker
 install -d -o vllm-hust-broker -g vllm-hust-broker -m 0700 /var/lib/vllm-hust-host-broker
 install -o root -g vllm-hust-broker -m 0644 "${repo}"/scripts/instance_host_broker.py "${repo}"/scripts/instance_canary_worker.py /usr/lib/vllm-hust-host-broker/
+install -o root -g root -m 0750 "${repo}"/scripts/set_inert_canary_gate.py /usr/lib/vllm-hust-host-broker/
 install -d -o root -g vllm-hust-broker -m 0755 /usr/lib/vllm-hust-host-broker/instance_control
 install -o root -g vllm-hust-broker -m 0644 "${repo}"/scripts/instance_control/*.py /usr/lib/vllm-hust-host-broker/instance_control/
 

@@ -39,6 +39,16 @@ class HostBrokerTests(unittest.TestCase):
         self.assertTrue(mode & 0o010, "fixed control group must traverse parent")
         self.assertFalse(mode & 0o007, "other users must not traverse or read parent")
 
+    def test_canary_gate_refuses_a_shared_target_by_construction(self):
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "scripts"
+            / "set_inert_canary_gate.py"
+        ).read_text()
+        self.assertIn('!= ["inert-canary"]', source)
+        self.assertNotIn("docker", source.lower())
+        self.assertNotIn("systemctl", source.lower())
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="host-broker-")
         self.addCleanup(self.temp.cleanup)

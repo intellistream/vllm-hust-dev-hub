@@ -52,3 +52,8 @@ enrolls a shared service. Enabling even the canary is a separate recorded operat
 action. A shared target additionally requires a complete immutable DeploymentSpec,
 live writer-fencing receipt, owner adapter, compatibility evidence and rollback
 qualification; none is supplied here.
+
+For the isolated host acceptance only, root may use
+`scripts/set_inert_canary_gate.py --enabled true|false`. The tool refuses every
+policy containing anything except the bundled `inert-canary`; it cannot authorize,
+register or operate a shared service.
