@@ -1,6 +1,6 @@
 {
   "schema": "sage-mate.mod-candidate-lock/v1",
-  "status": "current-main-requalification-in-progress",
+  "status": "current-main-requalification-complete",
   "target": {
     "core": {"version": "0.28.1rc1.dev391+ga4d6aa022", "main_commit": "a4d6aa022fb1885a25a802a6e29372c81eac6c9f"},
     "ascend": {"version": "0.25.1rc1+hust.20260903.4", "main_commit": "2c8c722107a54127999a64c4eb0ec86139df8c26"},
