@@ -49,7 +49,7 @@ def test_bidkv_profile_hides_entrypoint_and_json_plumbing() -> None:
     assert environment["BIDKV_UTILITY_ENABLE"] == "1"
     assert environment["VLLM_PLUGINS"] == "ascend"
     args = json.loads(environment["VLLM_ENGINE_EXTRA_ARGS_JSON"])
-    assert args[:2] == ["--preemption-policy", "bidkv.adapters.vllm_hust.selector:BidkvPreemptionPolicy"]
+    assert args[:2] == ["--preemption-policy", "bidkv.adapters.vllm_hust.selector.BidkvPreemptionPolicy"]
     assert json.loads(args[3])["utility_strategy"] == "bidkv"
 
 
