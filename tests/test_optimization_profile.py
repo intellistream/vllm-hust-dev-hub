@@ -50,7 +50,10 @@ def test_bidkv_profile_hides_entrypoint_and_json_plumbing() -> None:
     assert environment["VLLM_PLUGINS"] == "ascend"
     args = json.loads(environment["VLLM_ENGINE_EXTRA_ARGS_JSON"])
     assert args[:2] == ["--preemption-policy", "bidkv.adapters.vllm_hust.selector.BidkvPreemptionPolicy"]
-    assert json.loads(args[3])["utility_strategy"] == "bidkv"
+    additional_index = args.index("--additional-config")
+    additional = json.loads(args[additional_index + 1])
+    assert "enable_utility_victim_selection" not in additional
+    assert "utility_strategy" not in additional
 
 
 def test_diffspec_requires_and_renders_draft_model() -> None:
