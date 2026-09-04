@@ -66,3 +66,9 @@ tested baseline artifact remains `7362232895` and is retained separately in the
 lock. No submission to `vllm-project` or `vllm-project/vllm-ascend` was requested
 or made; their RFCs and PRs are duplicate-work context, not publication gates for
 the organization repositories.
+
+On 2026-09-05 the accidentally transferred BidKV repository was transferred
+back intact from `Qixin-Gaoke` to `vLLM-HUST`. Its canonical repository is now
+`https://github.com/vLLM-HUST/vllm-hust-bidkv`, and organization `main` resolves
+to documentation head `5fb109be683f486dfdf45d50f88c6138e003637e` with the
+qualified runtime commit `463f798b209a33ff2d2f4e277b9aedb26d75fa29` in history.
