@@ -19,6 +19,7 @@ StateDirectoryMode=0700
 # same group before the unprivileged broker binds it. `+` is intentionally
 # limited to this ownership-only preparation command.
 ExecStartPre=+/usr/bin/chown vllm-hust-broker:__CONTROL_GROUP__ /run/vllm-hust-host-broker
+ExecStartPre=+/usr/bin/chmod 0750 /run/vllm-hust-host-broker
 UMask=0077
 NoNewPrivileges=yes
 PrivateDevices=yes

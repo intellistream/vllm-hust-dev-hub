@@ -30,6 +30,14 @@ class HostBrokerTests(unittest.TestCase):
             "vllm-hust-broker:__CONTROL_GROUP__ /run/vllm-hust-host-broker",
             unit,
         )
+        self.assertIn(
+            "ExecStartPre=+/usr/bin/chmod 0750 /run/vllm-hust-host-broker", unit
+        )
+        self.assertNotIn("RuntimeDirectoryMode=0755", unit)
+        self.assertNotIn("chmod 0755 /run/vllm-hust-host-broker", unit)
+        mode = 0o750
+        self.assertTrue(mode & 0o010, "fixed control group must traverse parent")
+        self.assertFalse(mode & 0o007, "other users must not traverse or read parent")
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="host-broker-")
