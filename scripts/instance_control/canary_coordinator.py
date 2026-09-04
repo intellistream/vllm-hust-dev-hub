@@ -241,5 +241,5 @@ class CanaryCoordinator:
         except ControlError as exc:
             replay_rejected = str(exc) == "launch_grant_expired_or_replayed"
         require(replay_rejected, "canary_grant_replay_not_rejected")
-        return {"operationId": result["id"], "phase": result["phase"],
-                "replayRejected": True, **self.status()}
+        return {**self.status(), "operationId": result["id"],
+                "phase": result["phase"], "replayRejected": True}

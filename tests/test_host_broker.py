@@ -368,6 +368,7 @@ class HostBrokerTests(unittest.TestCase):
         self.assertTrue(started["ok"])
         self.assertTrue(started["healthy"])
         self.assertTrue(started["replayRejected"])
+        self.assertRegex(started["operationId"], r"^[a-f0-9]{32}$")
         self.assertNotIn("grant", json.dumps(started).lower())
         identity = started["identity"]
         stopped = broker_request(self.policy.socket_path, {
@@ -393,6 +394,7 @@ class HostBrokerTests(unittest.TestCase):
         self.assertTrue(started["healthy"])
         self.assertFalse(started["effective"])
         self.assertTrue(started["replayRejected"])
+        self.assertRegex(started["operationId"], r"^[a-f0-9]{32}$")
         self.assertNotIn("grant", json.dumps(started).lower())
         identity = started["identity"]
         self.assertEqual(_pid_state(identity["pid"], identity["startTicks"]), "live")
