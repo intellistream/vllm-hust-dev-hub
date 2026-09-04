@@ -18,6 +18,19 @@ from instance_control.host_client import request as broker_request
 
 
 class HostBrokerTests(unittest.TestCase):
+    def test_systemd_runtime_directory_uses_the_fixed_control_group(self):
+        unit = (
+            Path(__file__).resolve().parents[1]
+            / "systemd"
+            / "vllm-hust-host-broker.service"
+        ).read_text()
+        self.assertIn("RuntimeDirectoryMode=0750", unit)
+        self.assertIn(
+            "ExecStartPre=+/usr/bin/chown "
+            "vllm-hust-broker:__CONTROL_GROUP__ /run/vllm-hust-host-broker",
+            unit,
+        )
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="host-broker-")
         self.addCleanup(self.temp.cleanup)
