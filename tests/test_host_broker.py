@@ -3,6 +3,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import socket
 import subprocess
 import sys
@@ -23,6 +24,10 @@ class HostBrokerTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.health = self.root / "run" / "canary.sock"
         self.config = self.root / "policy.json"
+        source_worker = Path(__file__).resolve().parents[1] / "scripts" / "instance_canary_worker.py"
+        self.worker = self.root / "installed-canary.py"
+        shutil.copyfile(source_worker, self.worker)
+        self.worker.chmod(0o700)
         policy = {
             "schema": "vllm-hust.host-broker-policy/v1",
             "enabled": True,
@@ -32,8 +37,7 @@ class HostBrokerTests(unittest.TestCase):
             "targets": [{
                 "instance_id": "inert-canary", "owner_uids": [os.geteuid()],
                 "actions": ["start", "stop"],
-                "argv": [str(Path(sys.executable).resolve()), str(Path(__file__).resolve().parents[1] /
-                                             "scripts" / "instance_canary_worker.py"),
+                "argv": [str(Path(sys.executable).resolve()), str(self.worker),
                          "--socket", str(self.health)],
                 "cwd": str(self.root),
                 "environment": {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"},
@@ -43,13 +47,9 @@ class HostBrokerTests(unittest.TestCase):
                      "sha256": __import__("hashlib").sha256(Path(sys.executable).resolve().read_bytes()).hexdigest(),
                      "owner_uid": Path(sys.executable).resolve().stat().st_uid,
                      "mode": Path(sys.executable).resolve().stat().st_mode & 0o777},
-                    {"path": str(Path(__file__).resolve().parents[1] / "scripts" /
-                                 "instance_canary_worker.py"),
-                     "sha256": __import__("hashlib").sha256((Path(__file__).resolve().parents[1] /
-                                 "scripts" / "instance_canary_worker.py").read_bytes()).hexdigest(),
-                     "owner_uid": os.geteuid(),
-                     "mode": (Path(__file__).resolve().parents[1] / "scripts" /
-                              "instance_canary_worker.py").stat().st_mode & 0o777},
+                    {"path": str(self.worker),
+                     "sha256": __import__("hashlib").sha256(self.worker.read_bytes()).hexdigest(),
+                     "owner_uid": os.geteuid(), "mode": 0o700},
                 ],
             }],
         }
@@ -176,6 +176,11 @@ class HostBrokerTests(unittest.TestCase):
                 "schema": "vllm-hust.host-broker/v1", "action": "issue",
                 "instance_id": "inert-canary", "lifecycle_action": "start",
                 "operation": self.operation}).encode())
+
+    def test_group_writable_installed_artifact_is_rejected(self):
+        self.worker.chmod(0o720)
+        with self.assertRaisesRegex(ControlError, "untrusted_broker_configuration"):
+            BrokerPolicy.load(str(self.config))
 
     def test_real_daemon_socket_round_trip(self):
         process = subprocess.Popen([
