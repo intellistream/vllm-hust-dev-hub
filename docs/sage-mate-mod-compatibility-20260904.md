@@ -8,7 +8,7 @@ mode are not accepted as final qualification paths.
 
 | Mod | Source state | Runtime state | Compatibility verdict |
 | --- | --- | --- | --- |
-| BidKV | migrated to versioned preemption-policy API v1; no runtime monkey patch | Qwen3.8-27B TP4 graph: four long concurrent requests completed; 187 policy calls, 0 failures; output, cancellation/recovery and rollback passed | compatible for the exact tested lane |
+| BidKV | migrated to versioned preemption-policy API v1; no runtime monkey patch | Historical 762f/4e lane passed. Fresh current-main a4d6/2c8c TP4 graph A/B proved the policy ran (6 utility, 158 liveness decisions) and cancellation/recovery passed, but it produced 164 vs 161 preemptions, -2.35% throughput, +2.15% P95 TTFT, and unmatched long-output hashes | incompatible on current main; do not publish Qwen3.8-27B as compatible |
 | DiffSpec | current Eagle3, Ascend attention, model runner, sampler and speculative metadata surfaces adapted | Qwen3.8-27B plus `VirVen/Qwen3.5-27B-EAGLE3-v2` passed TP4 FULL_DECODE_ONLY graph, four-rank draft loading, output, cancellation/recovery, concurrency and long-context gates | functional-compatible, but performance degraded (acceptance 19.29%; ~14.00 vs ~47.72 tok/s target-only P50) |
 | LatchMoE | current MoE routing quantization and MLP-builder ABI adapted through seam v2 | Qwen3.8-27B is dense and Not Applicable; Qwen3-30B-A3B passed TP4 PIECEWISE graph, four-rank mapping, swap, 48/48 address checks, concurrency, cancellation and exception recovery | functional-compatible for Qwen3-30B-A3B, but performance degraded (~2.91 vs ~23.57 tok/s baseline) |
 
