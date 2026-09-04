@@ -2,7 +2,7 @@
   "schema": "sage-mate.mod-qualification-run/v1",
   "evidence_label": "real-online",
   "started_at_utc": "2026-09-04T05:35:24Z",
-  "status": "complete-pending-human-publication-review",
+  "status": "complete-published-to-vllm-hust-main",
   "parent": {
     "repository": "/home/shuhao/sage-mate",
     "commit": "ab5cf8ea9c7a14b1b9a12d6be3a3c5e18b7df0c2",

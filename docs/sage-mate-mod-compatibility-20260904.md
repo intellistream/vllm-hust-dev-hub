@@ -60,10 +60,9 @@ restored after each Mod, returned HTTP 200 and finally produced `DIFFSPEC_ROLLBA
 
 Machine-readable candidates are in
 [`config/sage-mate-mod-candidate-lock.json`](../config/sage-mate-mod-candidate-lock.json).
-They are tested local feature-branch commits, not yet public installable locks. Core contribution
-instructions require a human to review every proposed line, run the required tests and
-make the required AI-use disclosure before an upstream PR is opened. The proposed
-preemption-policy API must also be coordinated with upstream RFC #51608 and draft PRs
-#51601/#53723 instead of opening a duplicate. Ascend changes now have real NPU
-evidence but still require signed-off commits from a fork and human review.
-Consequently no official upstream PR URL or main-branch publication is claimed yet.
+The qualified commits have been pushed to the `vLLM-HUST` organization `main`
+branches. The rebased Core organization-main commit is `a4d6aa022f`; the exact
+tested baseline artifact remains `7362232895` and is retained separately in the
+lock. No submission to `vllm-project` or `vllm-project/vllm-ascend` was requested
+or made; their RFCs and PRs are duplicate-work context, not publication gates for
+the organization repositories.
