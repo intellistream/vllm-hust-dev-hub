@@ -171,6 +171,16 @@ class LaunchGrantAuthority:
     @contextmanager
     def guard(self, lease_id, peer):
         """Hold the same DB transaction through one spawn/signal critical section."""
+        with self.guard_store(lease_id, peer) as (lease, _db):
+            yield lease
+
+    @contextmanager
+    def guard_store(self, lease_id, peer):
+        """Trusted adapter variant exposing the already-held authority transaction.
+
+        This exists so a host adapter can atomically persist the exact resource
+        identity created by a spawn.  It is never reachable from wire data.
+        """
         self._gate()
         require(isinstance(peer, PeerIdentity) and peer._seal is _PEER_SEAL,
                 "authenticated_unix_transport_required")
@@ -190,7 +200,7 @@ class LaunchGrantAuthority:
                          and instance["spec"] == lease["target_spec"]
                          and operation["phase"] == "committed")
             require(changing or committed, "fence_lost")
-            yield lease.copy()
+            yield lease.copy(), db
 
     def retire(self, lease_id, peer):
         """Retire only the exact peer lease; never infer quiescence or kill resources."""

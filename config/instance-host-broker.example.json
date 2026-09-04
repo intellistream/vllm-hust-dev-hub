@@ -1,0 +1,40 @@
+{
+  "schema": "vllm-hust.host-broker-policy/v1",
+  "enabled": false,
+  "socket_path": "/run/vllm-hust-host-broker/control.sock",
+  "socket_gid": 1002,
+  "controller_uids": [1002],
+  "targets": [
+    {
+      "instance_id": "inert-canary",
+      "owner_uids": [1002],
+      "actions": ["start", "stop"],
+      "argv": [
+        "/usr/bin/python3.10",
+        "/usr/lib/vllm-hust-host-broker/instance_canary_worker.py",
+        "--socket",
+        "/run/vllm-hust-host-broker/canary.sock"
+      ],
+      "cwd": "/var/lib/vllm-hust-host-broker",
+      "environment": {
+        "LANG": "C.UTF-8",
+        "PATH": "/usr/bin:/bin"
+      },
+      "health_socket": "/run/vllm-hust-host-broker/canary.sock",
+      "artifacts": [
+        {
+          "path": "/usr/bin/python3.10",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "owner_uid": 0,
+          "mode": 493
+        },
+        {
+          "path": "/usr/lib/vllm-hust-host-broker/instance_canary_worker.py",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "owner_uid": 0,
+          "mode": 420
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "protocol": "vllm-hust.host-broker/v1",
+  "policySchema": "vllm-hust.host-broker-policy/v1",
+  "actions": ["describe", "issue", "execute"],
+  "lifecycleActions": ["start", "stop", "restart"],
+  "sharedTargetsQualified": false,
+  "bundledTarget": "inert-canary"
+}

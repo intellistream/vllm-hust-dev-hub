@@ -1,0 +1,35 @@
+[Unit]
+Description=vLLM-HUST fixed-policy host lifecycle broker
+After=local-fs.target
+
+[Service]
+Type=simple
+User=vllm-hust-broker
+Group=vllm-hust-broker
+SupplementaryGroups=__CONTROL_GROUP__
+ExecStart=/usr/bin/python3 -I /usr/lib/vllm-hust-host-broker/instance_host_broker.py --config /etc/vllm-hust-host-broker/policy.json --state /var/lib/vllm-hust-host-broker
+Restart=on-failure
+RestartSec=2
+RuntimeDirectory=vllm-hust-host-broker
+RuntimeDirectoryMode=0750
+StateDirectory=vllm-hust-host-broker
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+ReadWritePaths=/run/vllm-hust-host-broker /var/lib/vllm-hust-host-broker
+RestrictAddressFamilies=AF_UNIX
+RestrictRealtime=yes
+SystemCallArchitectures=native
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target
