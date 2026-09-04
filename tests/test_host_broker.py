@@ -24,34 +24,55 @@ class HostBrokerTests(unittest.TestCase):
         self.root = Path(self.temp.name)
         self.health = self.root / "run" / "canary.sock"
         self.config = self.root / "policy.json"
-        source_worker = Path(__file__).resolve().parents[1] / "scripts" / "instance_canary_worker.py"
-        self.worker = self.root / "installed-canary.py"
-        shutil.copyfile(source_worker, self.worker)
-        self.worker.chmod(0o700)
+        self.worker = self.root / "instance_canary_worker.py"
+        shutil.copyfile(
+            Path(__file__).resolve().parents[1]
+            / "scripts"
+            / "instance_canary_worker.py",
+            self.worker,
+        )
+        self.worker.chmod(0o500)
         policy = {
             "schema": "vllm-hust.host-broker-policy/v1",
             "enabled": True,
             "socket_path": str(self.root / "run" / "broker.sock"),
             "socket_gid": os.getgid(),
             "controller_uids": [os.geteuid()],
-            "targets": [{
-                "instance_id": "inert-canary", "owner_uids": [os.geteuid()],
-                "actions": ["start", "stop"],
-                "argv": [str(Path(sys.executable).resolve()), str(self.worker),
-                         "--socket", str(self.health)],
-                "cwd": str(self.root),
-                "environment": {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"},
-                "health_socket": str(self.health),
-                "artifacts": [
-                    {"path": str(Path(sys.executable).resolve()),
-                     "sha256": __import__("hashlib").sha256(Path(sys.executable).resolve().read_bytes()).hexdigest(),
-                     "owner_uid": Path(sys.executable).resolve().stat().st_uid,
-                     "mode": Path(sys.executable).resolve().stat().st_mode & 0o777},
-                    {"path": str(self.worker),
-                     "sha256": __import__("hashlib").sha256(self.worker.read_bytes()).hexdigest(),
-                     "owner_uid": os.geteuid(), "mode": 0o700},
-                ],
-            }],
+            "targets": [
+                {
+                    "instance_id": "inert-canary",
+                    "owner_uids": [os.geteuid()],
+                    "actions": ["start", "stop"],
+                    "argv": [
+                        str(Path(sys.executable).resolve()),
+                        str(self.worker),
+                        "--socket",
+                        str(self.health),
+                    ],
+                    "cwd": str(self.root),
+                    "environment": {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"},
+                    "health_socket": str(self.health),
+                    "artifacts": [
+                        {
+                            "path": str(Path(sys.executable).resolve()),
+                            "sha256": __import__("hashlib")
+                            .sha256(Path(sys.executable).resolve().read_bytes())
+                            .hexdigest(),
+                            "owner_uid": Path(sys.executable).resolve().stat().st_uid,
+                            "mode": Path(sys.executable).resolve().stat().st_mode
+                            & 0o777,
+                        },
+                        {
+                            "path": str(self.worker),
+                            "sha256": __import__("hashlib")
+                            .sha256(self.worker.read_bytes())
+                            .hexdigest(),
+                            "owner_uid": os.geteuid(),
+                            "mode": self.worker.stat().st_mode & 0o777,
+                        },
+                    ],
+                }
+            ],
         }
         self.config.write_text(json.dumps(policy))
         self.config.chmod(0o600)
@@ -67,17 +88,36 @@ class HostBrokerTests(unittest.TestCase):
         operation_id = ("1" if action == "start" else "2") * 32
         baseline = "a" * 64
         candidate = "b" * 64 if action == "start" else "c" * 64
-        registration = {"instance_id": "inert-canary", "owner_id": "host-broker",
-                        "profile_id": "inert", "backend_id": "fixed-process",
-                        "actions": ["apply", "disable", "rollback"],
-                        "owner_uids": [os.geteuid()], "fencing_receipt_sha256": "d" * 64}
-        operation = {"id": operation_id, "plan_id": "e" * 64,
-                     "instance_id": "inert-canary", "fence": fence, "phase": "reserved",
-                     "administrator_uid": os.geteuid(), "baseline": baseline,
-                     "candidate": candidate, "deadline": time.time() + 60,
-                     "recovery_deadline": time.time() + 120, "executor": action + "-executor"}
-        instance = {"generation": generation, "fence": fence, "spec": baseline,
-                    "observation": {}, "operation": operation_id, "status": "changing"}
+        registration = {
+            "instance_id": "inert-canary",
+            "owner_id": "host-broker",
+            "profile_id": "inert",
+            "backend_id": "fixed-process",
+            "actions": ["apply", "disable", "rollback"],
+            "owner_uids": [os.geteuid()],
+            "fencing_receipt_sha256": "d" * 64,
+        }
+        operation = {
+            "id": operation_id,
+            "plan_id": "e" * 64,
+            "instance_id": "inert-canary",
+            "fence": fence,
+            "phase": "reserved",
+            "administrator_uid": os.geteuid(),
+            "baseline": baseline,
+            "candidate": candidate,
+            "deadline": time.time() + 60,
+            "recovery_deadline": time.time() + 120,
+            "executor": action + "-executor",
+        }
+        instance = {
+            "generation": generation,
+            "fence": fence,
+            "spec": baseline,
+            "observation": {},
+            "operation": operation_id,
+            "status": "changing",
+        }
         with self.store.transaction() as db:
             self.store.put(db, "registration", "inert-canary", registration)
             self.store.put(db, "operation", operation_id, operation)
@@ -88,14 +128,26 @@ class HostBrokerTests(unittest.TestCase):
         return self.broker.handle(self.left, json.dumps(value).encode())
 
     def grant(self, operation, action):
-        return self.call({"schema": "vllm-hust.host-broker/v1", "action": "issue",
-                          "instance_id": "inert-canary", "lifecycle_action": action,
-                          "operation": operation})["grant"]
+        return self.call(
+            {
+                "schema": "vllm-hust.host-broker/v1",
+                "action": "issue",
+                "instance_id": "inert-canary",
+                "lifecycle_action": action,
+                "operation": operation,
+            }
+        )["grant"]
 
     def execute(self, grant, action):
-        return self.call({"schema": "vllm-hust.host-broker/v1", "action": "execute",
-                          "instance_id": "inert-canary", "lifecycle_action": action,
-                          "grant": grant})
+        return self.call(
+            {
+                "schema": "vllm-hust.host-broker/v1",
+                "action": "execute",
+                "instance_id": "inert-canary",
+                "lifecycle_action": action,
+                "grant": grant,
+            }
+        )
 
     def test_real_start_health_stop_and_no_residual(self):
         started = self.execute(self.grant(self.operation, "start"), "start")
@@ -104,7 +156,12 @@ class HostBrokerTests(unittest.TestCase):
         self.assertEqual(_pid_state(identity["pid"], identity["startTicks"]), "live")
         with self.store.transaction() as db:
             current = self.store.get(db, "instance", "inert-canary")
-            current.update(generation=1, operation=None, spec=self.operation["candidate"], status="ready")
+            current.update(
+                generation=1,
+                operation=None,
+                spec=self.operation["candidate"],
+                status="ready",
+            )
             operation = self.store.get(db, "operation", self.operation["id"])
             operation["phase"] = "committed"
             self.store.put(db, "instance", "inert-canary", current)
@@ -126,7 +183,12 @@ class HostBrokerTests(unittest.TestCase):
         # Clean up using the original committed lease path followed by a fenced stop.
         with self.store.transaction() as db:
             current = self.store.get(db, "instance", "inert-canary")
-            current.update(generation=1, operation=None, spec=self.operation["candidate"], status="ready")
+            current.update(
+                generation=1,
+                operation=None,
+                spec=self.operation["candidate"],
+                status="ready",
+            )
             operation = self.store.get(db, "operation", self.operation["id"])
             operation["phase"] = "committed"
             self.store.put(db, "instance", "inert-canary", current)
@@ -137,27 +199,56 @@ class HostBrokerTests(unittest.TestCase):
 
     def test_request_cannot_supply_command_owner_or_pid(self):
         for extra in ("argv", "owner_id", "pid", "uid", "image"):
-            request = {"schema": "vllm-hust.host-broker/v1", "action": "describe",
-                       "instance_id": "inert-canary", extra: "attacker"}
-            with self.subTest(extra=extra), self.assertRaisesRegex(ControlError, "invalid_fields"):
+            request = {
+                "schema": "vllm-hust.host-broker/v1",
+                "action": "describe",
+                "instance_id": "inert-canary",
+                extra: "attacker",
+            }
+            with (
+                self.subTest(extra=extra),
+                self.assertRaisesRegex(ControlError, "invalid_fields"),
+            ):
                 self.call(request)
 
     def test_reopen_preserves_policy_resource_and_consumed_grant(self):
         grant = self.grant(self.operation, "start")
         started = self.execute(grant, "start")
-        restarted = HostBroker(Store(self.root / "state"), BrokerPolicy.load(str(self.config)))
-        description = restarted.handle(self.left, json.dumps({
-            "schema": "vllm-hust.host-broker/v1", "action": "describe",
-            "instance_id": "inert-canary"}).encode())
+        restarted = HostBroker(
+            Store(self.root / "state"), BrokerPolicy.load(str(self.config))
+        )
+        description = restarted.handle(
+            self.left,
+            json.dumps(
+                {
+                    "schema": "vllm-hust.host-broker/v1",
+                    "action": "describe",
+                    "instance_id": "inert-canary",
+                }
+            ).encode(),
+        )
         self.assertTrue(description["healthy"])
         with self.assertRaisesRegex(ControlError, "replayed"):
-            restarted.handle(self.left, json.dumps({
-                "schema": "vllm-hust.host-broker/v1", "action": "execute",
-                "instance_id": "inert-canary", "lifecycle_action": "start",
-                "grant": grant}).encode())
+            restarted.handle(
+                self.left,
+                json.dumps(
+                    {
+                        "schema": "vllm-hust.host-broker/v1",
+                        "action": "execute",
+                        "instance_id": "inert-canary",
+                        "lifecycle_action": "start",
+                        "grant": grant,
+                    }
+                ).encode(),
+            )
         with self.store.transaction() as db:
             current = self.store.get(db, "instance", "inert-canary")
-            current.update(generation=1, operation=None, spec=self.operation["candidate"], status="ready")
+            current.update(
+                generation=1,
+                operation=None,
+                spec=self.operation["candidate"],
+                status="ready",
+            )
             operation = self.store.get(db, "operation", self.operation["id"])
             operation["phase"] = "committed"
             self.store.put(db, "instance", "inert-canary", current)
@@ -172,10 +263,18 @@ class HostBrokerTests(unittest.TestCase):
         self.config.write_text(json.dumps(value))
         disabled = HostBroker(self.store, BrokerPolicy.load(str(self.config)))
         with self.assertRaisesRegex(ControlError, "disabled"):
-            disabled.handle(self.left, json.dumps({
-                "schema": "vllm-hust.host-broker/v1", "action": "issue",
-                "instance_id": "inert-canary", "lifecycle_action": "start",
-                "operation": self.operation}).encode())
+            disabled.handle(
+                self.left,
+                json.dumps(
+                    {
+                        "schema": "vllm-hust.host-broker/v1",
+                        "action": "issue",
+                        "instance_id": "inert-canary",
+                        "lifecycle_action": "start",
+                        "operation": self.operation,
+                    }
+                ).encode(),
+            )
 
     def test_group_writable_installed_artifact_is_rejected(self):
         self.worker.chmod(0o720)
@@ -183,19 +282,39 @@ class HostBrokerTests(unittest.TestCase):
             BrokerPolicy.load(str(self.config))
 
     def test_real_daemon_socket_round_trip(self):
-        process = subprocess.Popen([
-            sys.executable, "-I",
-            str(Path(__file__).resolve().parents[1] / "scripts" / "instance_host_broker.py"),
-            "--config", str(self.config), "--state", str(self.root / "state")],
-            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        process = subprocess.Popen(
+            [
+                sys.executable,
+                "-I",
+                str(
+                    Path(__file__).resolve().parents[1]
+                    / "scripts"
+                    / "instance_host_broker.py"
+                ),
+                "--config",
+                str(self.config),
+                "--state",
+                str(self.root / "state"),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         self.addCleanup(lambda: process.poll() is None and process.kill())
         deadline = time.monotonic() + 3
-        while time.monotonic() < deadline and not Path(self.policy.socket_path).exists():
+        while (
+            time.monotonic() < deadline and not Path(self.policy.socket_path).exists()
+        ):
             time.sleep(0.02)
         self.assertIsNone(process.poll())
-        described = broker_request(self.policy.socket_path, {
-            "schema": "vllm-hust.host-broker/v1", "action": "describe",
-            "instance_id": "inert-canary"})
+        described = broker_request(
+            self.policy.socket_path,
+            {
+                "schema": "vllm-hust.host-broker/v1",
+                "action": "describe",
+                "instance_id": "inert-canary",
+            },
+        )
         self.assertTrue(described["ok"])
         process.terminate()
         process.wait(timeout=3)
