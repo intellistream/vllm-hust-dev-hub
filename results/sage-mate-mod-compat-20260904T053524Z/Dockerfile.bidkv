@@ -2,8 +2,8 @@ FROM sage-mate/vllm-ascend-hust:core-762f85b3-plugin-4e57439e-hybrid4-cann9.1
 
 COPY artifacts/vllm-0.28.1rc1.dev319+g762f85b31.empty-cp312-cp312-linux_aarch64.whl /tmp/candidate/
 COPY artifacts/vllm_ascend-0.25.1rc1+hust.20260903.4-cp312-cp312-linux_aarch64.whl /tmp/candidate/
-COPY artifacts/vllm_hust_ext-0.2.0.dev0-py3-none-any.whl /tmp/candidate/
-COPY artifacts-r002/bidkv-0.2.0-py3-none-any.whl /tmp/candidate/
+COPY artifacts-r003/vllm_hust_ext-0.2.0.dev0-py3-none-any.whl /tmp/candidate/
+COPY artifacts-r004/bidkv-0.2.0-py3-none-any.whl /tmp/candidate/
 
 RUN python3 -m pip install --no-deps --force-reinstall \
       /tmp/candidate/vllm-*.whl \
@@ -14,9 +14,9 @@ RUN python3 -m pip install --no-deps --force-reinstall \
     && rm -rf /tmp/candidate
 
 LABEL org.opencontainers.image.title="Sage Mate BidKV qualification candidate" \
-      org.opencontainers.image.revision="bbfddaa74c11622c7bb3f3e742f442faeb6f17e1:2c8c722107a54127999a64c4eb0ec86139df8c26:f297a8d9817e66360737749af89e996e3d35b637" \
+      org.opencontainers.image.revision="bbfddaa74c11622c7bb3f3e742f442faeb6f17e1:2c8c722107a54127999a64c4eb0ec86139df8c26:463f798b209a33ff2d2f4e277b9aedb26d75fa29" \
       ai.vllm-hust.evidence="unqualified-candidate" \
       ai.vllm-hust.vllm-core.commit="bbfddaa74c11622c7bb3f3e742f442faeb6f17e1" \
       ai.vllm-hust.vllm-ascend.commit="2c8c722107a54127999a64c4eb0ec86139df8c26" \
-      ai.vllm-hust.extension-manager.commit="a8586ab17adab3b76e53b4abaf668564275e0fcb" \
-      ai.vllm-hust.bidkv.commit="f297a8d9817e66360737749af89e996e3d35b637"
+      ai.vllm-hust.extension-manager.commit="24036c11c894c3fe0736e59efd17159c5e307783" \
+      ai.vllm-hust.bidkv.commit="463f798b209a33ff2d2f4e277b9aedb26d75fa29"

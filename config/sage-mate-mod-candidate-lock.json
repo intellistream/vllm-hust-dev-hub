@@ -1,20 +1,20 @@
 {
   "schema": "sage-mate.mod-candidate-lock/v1",
-  "status": "not-runtime-qualified",
+  "status": "qualification-complete-with-diffspec-blocked",
   "target": {
-    "core": {"version": "0.28.1rc1.dev319", "base_commit": "762f85b311fbab0bcf8921dd216f5093cd58b9b8", "candidate_commit": "bbfddaa74c11622c7bb3f3e742f442faeb6f17e1"},
+    "core": {"version": "0.28.1rc1.dev319", "base_commit": "762f85b311fbab0bcf8921dd216f5093cd58b9b8", "candidate_commit": "7362232895e0a38bb5ef4ac11fc4b2e2aa3026dd", "implementation_commit": "bbfddaa74c11622c7bb3f3e742f442faeb6f17e1"},
     "ascend": {"version": "0.25.1rc1", "base_commit": "4e57439e58ed3d78e675f9fd7b4614fb183c5394", "moe_seam_candidate_commit": "2c8c722107a54127999a64c4eb0ec86139df8c26"},
     "model": "Qwen3.8-27B",
     "accelerator": "Ascend NPU",
     "tensor_parallel_size": 4,
     "execution_mode": "graph"
   },
-  "manager": {"candidate_commit": "a8586ab17adab3b76e53b4abaf668564275e0fcb"},
+  "manager": {"candidate_commit": "24036c11c894c3fe0736e59efd17159c5e307783"},
   "mods": {
-    "bidkv": {"candidate_commit": "9fc611b19ee7a1bb22c3304843ddc5aa0d587dc7", "status": "source-adapted-runtime-unverified"},
-    "diffspec": {"candidate_commit": "af00892c8858f28f672e5812f32ed70eaaaafe27", "status": "blocked-no-compatible-eagle3-draft"},
-    "latchmoe": {"candidate_commit": "39259709227ee962c3b838b60279dc7335224dee", "qwen38_status": "not-applicable-dense-model", "qualification_model": "Qwen3-30B-A3B", "status": "source-adapted-runtime-unverified"}
+    "bidkv": {"candidate_commit": "463f798b209a33ff2d2f4e277b9aedb26d75fa29", "qualified_models": ["Qwen3.8-27B"], "status": "compatible-exact-tp4-graph-lane", "image_id": "sha256:2d427264d22cfeb5fcf211e322dea23daa704175d17bbf4f4749763c86a535a8"},
+    "diffspec": {"candidate_commit": "96188b9923928b3d51bbf7f81d38fcd1144e3fb9", "qualified_models": [], "blocked_models": ["Qwen3.8-27B"], "status": "blocked-no-compatible-eagle3-draft"},
+    "latchmoe": {"candidate_commit": "63781f3dd0235f933735bfd8ce614d388093c0b5", "qwen38_status": "not-applicable-dense-model", "qualification_model": "Qwen3-30B-A3B", "status": "compatible-functional-performance-degraded-exact-tp4-graph-lane", "image_id": "sha256:7f3d5a5ed9c30070dfcbf6d55c5e6a0672110b701a2d9fa17fbe79b4499776ac"}
   },
-  "resource_exclusions": ["Sage Mate production NPU0-3", "Native Engine reserved NPU4-7"],
+  "resource_use": {"authorized_test_devices": [0, 1, 2, 3], "excluded_devices": [4, 5, 6, 7], "production_restored": true},
   "publishing": {"pushed": false, "merged_to_main": false, "upstream_prs_submitted": false}
 }
