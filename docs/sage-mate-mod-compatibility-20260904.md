@@ -8,7 +8,7 @@ mode are not accepted as final qualification paths.
 
 | Mod | Source state | Runtime state | Compatibility verdict |
 | --- | --- | --- | --- |
-| BidKV | migrated to versioned preemption-policy API v1; no runtime monkey patch | Historical 762f/4e lane passed. Fresh current-main a4d6/2c8c TP4 graph A/B proved the policy ran (6 utility, 158 liveness decisions) and cancellation/recovery passed, but it produced 164 vs 161 preemptions, -2.35% throughput, +2.15% P95 TTFT, and unmatched long-output hashes | incompatible on current main; do not publish Qwen3.8-27B as compatible |
+| BidKV | migrated to versioned preemption-policy API v1; no runtime monkey patch | Current-main a4d6/2c8c TP4 graph: 3× matched A/B, 483 valid selections, 161 vs 161 preemptions per run, no extra prompt recomputation, short outputs exact, cancel/drain/recovery passed | compatible for Qwen3.8-27B; runtime effective / performance neutral (mean throughput +1.23%, overlapping 95% intervals, so no speedup claim) |
 | DiffSpec | current Eagle3, Ascend attention, model runner, sampler and speculative metadata surfaces adapted | Qwen3.8-27B plus `VirVen/Qwen3.5-27B-EAGLE3-v2` passed TP4 FULL_DECODE_ONLY graph, four-rank draft loading, output, cancellation/recovery, concurrency and long-context gates | functional-compatible, but performance degraded (acceptance 19.29%; ~14.00 vs ~47.72 tok/s target-only P50) |
 | LatchMoE | current MoE routing quantization and MLP-builder ABI adapted through seam v2 | Qwen3.8-27B is dense and Not Applicable; Qwen3-30B-A3B passed TP4 PIECEWISE graph, four-rank mapping, swap, 48/48 address checks, concurrency, cancellation and exception recovery | functional-compatible for Qwen3-30B-A3B, but performance degraded (~2.91 vs ~23.57 tok/s baseline) |
 
@@ -42,9 +42,12 @@ restored after each Mod, returned HTTP 200 and finally produced `DIFFSPEC_ROLLBA
 
 ## Measured results
 
-- BidKV pressure run: 4 × (12,517 input + 2,048 requested output tokens), all HTTP
-  200, wall time 336.584 s, policy calls 187, failures 0, utility selections 6,
-  liveness fallbacks 181.
+- BidKV repeated pressure A/B: each run used 4 × (12,425 input + 2,048
+  output tokens). Both arms completed 3/3 runs with 161 preemptions per run.
+  BidKV made 483 valid selections with zero failures; mean throughput was
+  27.954 versus 27.613 tok/s (+1.23%) and mean P95 latency was 288.348 versus
+  292.388 s (-1.38%), with overlapping 95% intervals. The result is compatible
+  and runtime effective, but performance neutral rather than a speedup claim.
 - LatchMoE Qwen3-30B-A3B: 10-request TTFT p50/p95 3.678/7.730 s,
   latency p50/p95 25.941/31.808 s, output throughput p50/p95 2.907/3.010 tok/s.
   The no-plugin baseline output throughput was about 23.57 tok/s.
@@ -70,5 +73,5 @@ the organization repositories.
 On 2026-09-05 the accidentally transferred BidKV repository was transferred
 back intact from `Qixin-Gaoke` to `vLLM-HUST`. Its canonical repository is now
 `https://github.com/vLLM-HUST/vllm-hust-bidkv`, and organization `main` resolves
-to documentation head `5fb109be683f486dfdf45d50f88c6138e003637e` with the
-qualified runtime commit `463f798b209a33ff2d2f4e277b9aedb26d75fa29` in history.
+to qualification head `024194b3ed4ffcedcc8ecc21a8fe0573924e7494`; the exact
+hardware-tested runtime tree is `1462a17b3b5e59865957d7a2226fb2f0578eecb1`.
