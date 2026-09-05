@@ -4,6 +4,7 @@ import stat
 import subprocess
 import sys
 import unittest
+import tempfile
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +22,72 @@ NPU_FAILURE_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "npu_allocating_failure
 
 
 class ManageEngineGuardTests(unittest.TestCase):
+    def test_managed_bidkv_apply_disable_restore_rewrites_complete_environment(
+        self,
+    ) -> None:
+        """Exercise the actual manage.sh -> unit env -> container allowlist chain."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            systemctl = bin_dir / "systemctl"
+            systemctl.write_text("#!/usr/bin/env bash\nexit 0\n")
+            systemctl.chmod(0o755)
+            env = os.environ.copy()
+            env.update(
+                {
+                    "PATH": f"{bin_dir}:{env['PATH']}",
+                    "XDG_CONFIG_HOME": str(root / "xdg"),
+                    "VLLM_ENGINE_SYSTEMD_UNIT": "bidkv-managed-test.service",
+                }
+            )
+
+            applied = subprocess.run(
+                [str(MANAGE_SCRIPT), "start", "--optimization", "bidkv"],
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(applied.returncode, 0, applied.stderr)
+            unit_env = root / "xdg/systemd/user/bidkv-managed-test.service.env"
+            applied_environment = unit_env.read_text()
+            self.assertIn("BIDKV_UTILITY_ENABLE=1", applied_environment)
+            self.assertIn("BIDKV_UTILITY_STRATEGY=bidkv", applied_environment)
+            self.assertIn(
+                "VLLM_ENGINE_EXTRA_ENV_PREFIXES=BIDKV_UTILITY_", applied_environment
+            )
+            self.assertIn("VLLM_ENGINE_EXTRA_ARGS_JSON=", applied_environment)
+
+            exported = subprocess.run(
+                [
+                    "bash",
+                    "-c",
+                    f"set -a; source {unit_env}; set +a; exec {sys.executable} {ENV_EXPORT_SCRIPT}",
+                ],
+                cwd=REPO_ROOT,
+                env={"PATH": env["PATH"]},
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(exported.returncode, 0, exported.stderr)
+            self.assertIn("export BIDKV_UTILITY_ENABLE=1", exported.stdout)
+
+            restored = subprocess.run(
+                [str(MANAGE_SCRIPT), "restart"],
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(restored.returncode, 0, restored.stderr)
+            restored_environment = unit_env.read_text()
+            self.assertNotIn("BIDKV_UTILITY_", restored_environment)
+            self.assertNotIn("--preemption-policy", restored_environment)
+
     def test_management_scripts_are_executable_and_syntax_valid(self) -> None:
         for script in (MANAGE_SCRIPT, ENGINE_SCRIPT, CLEANUP_SCRIPT):
             mode = script.stat().st_mode
@@ -31,7 +98,9 @@ class ManageEngineGuardTests(unittest.TestCase):
         script = CLEANUP_SCRIPT.read_text()
 
         self.assertIn("VLLM_ENGINE_CONTAINER_NAME", script)
-        self.assertIn("legacy fallbacks: VLLM_ENGINE_CONTAINER or DOCKER_CONTAINER", script)
+        self.assertIn(
+            "legacy fallbacks: VLLM_ENGINE_CONTAINER or DOCKER_CONTAINER", script
+        )
         self.assertIn("VLLM_ENGINE_PORT or PORT", script)
 
     def test_empty_api_key_fails_before_docker_access(self) -> None:
@@ -62,7 +131,7 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertNotIn('--api-key "__API_KEY__"', launcher)
         self.assertNotIn('replace "__API_KEY__"', launcher)
         self.assertIn('export VLLM_API_KEY="$api_key"', launcher)
-        self.assertIn('--env VLLM_API_KEY', launcher)
+        self.assertIn("--env VLLM_API_KEY", launcher)
 
         build_args = manager.split("build_vllm_args()", 1)[1].split(
             "export_engine_env()", 1
@@ -75,10 +144,16 @@ class ManageEngineGuardTests(unittest.TestCase):
 
         self.assertIn("VLLM_ENGINE_CONTAINER_NAME=vllm-ascend-dev", template)
         self.assertIn("VLLM_ENGINE_AUTO_CREATE_CONTAINER=true", template)
-        self.assertIn("VLLM_ENGINE_ENV_FILE=profiles/smoke-qwen2.5-7b-npu1.env", template)
-        self.assertIn("VLLM_ENGINE_IMAGE=quay.io/ascend/vllm-ascend:v0.23.0-openeuler", template)
+        self.assertIn(
+            "VLLM_ENGINE_ENV_FILE=profiles/smoke-qwen2.5-7b-npu1.env", template
+        )
+        self.assertIn(
+            "VLLM_ENGINE_IMAGE=quay.io/ascend/vllm-ascend:v0.23.0-openeuler", template
+        )
         self.assertIn("VLLM_ENGINE_NPU_DEVICES=0,1,2,3", template)
-        self.assertIn("VLLM_ENGINE_PYTHON=/usr/local/python3.12.13/bin/python", template)
+        self.assertIn(
+            "VLLM_ENGINE_PYTHON=/usr/local/python3.12.13/bin/python", template
+        )
         self.assertIn("Leave VLLM_ENGINE_CONDA_ENV unset", template)
         self.assertIn("COMPILE_CUSTOM_KERNELS=0", template)
         self.assertIn("VLLM_ENGINE_COMPILATION_CONFIG", template)
@@ -139,7 +214,9 @@ class ManageEngineGuardTests(unittest.TestCase):
         self.assertIn("__EXTRA_ENV_EXPORTS__", script)
         self.assertIn("TORCH_DEVICE_BACKEND_AUTOLOAD", script)
         self.assertIn("torch_npu_preflight", script)
-        self.assertNotIn('HCCL_OP_EXPANSION_MODE="${HCCL_OP_EXPANSION_MODE:-AIV}"', script)
+        self.assertNotIn(
+            'HCCL_OP_EXPANSION_MODE="${HCCL_OP_EXPANSION_MODE:-AIV}"', script
+        )
         manage = MANAGE_SCRIPT.read_text()
         self.assertIn("VLLM_ENGINE_EXTRA_ENV_KEYS", manage)
         self.assertIn("VLLM_ENGINE_EXTRA_ENV_PREFIXES", manage)
@@ -197,7 +274,7 @@ class ManageEngineGuardTests(unittest.TestCase):
 
         self.assertIn("VLLM_ENGINE_MODEL_PATH or MODEL_ID must be set", script)
         self.assertNotIn(
-            "model_path=\"${VLLM_ENGINE_MODEL_PATH:-${MODEL_ID:-/data/shared_models",
+            'model_path="${VLLM_ENGINE_MODEL_PATH:-${MODEL_ID:-/data/shared_models',
             script,
         )
 
