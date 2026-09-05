@@ -9,7 +9,7 @@
     "tensor_parallel_size": 4,
     "execution_mode": "graph"
   },
-  "manager": {"qualification_artifact_commit": "24036c11c894c3fe0736e59efd17159c5e307783", "published_main_commit": "6e9a477f30b3399dda06733de03a78814dc28ca6"},
+  "manager": {"qualification_artifact_commit": "24036c11c894c3fe0736e59efd17159c5e307783", "published_main_commit": "6e9a477f30b3399dda06733de03a78814dc28ca6", "batch_admission_candidate_commit": "3b0a55abf2fcc3726a786abe5b85b1ddee0227d0", "batch_admission_pull_request": "https://github.com/vLLM-HUST/extension-manager/pull/4"},
   "mods": {
     "bidkv": {
       "repository": "https://github.com/vLLM-HUST/vllm-hust-bidkv",
@@ -68,7 +68,11 @@
       "https://github.com/vLLM-HUST/vllm-ascend-hust-LatchMoE/pull/51",
       "https://github.com/vLLM-HUST/vllm-hust/pull/12",
       "https://github.com/vLLM-HUST/vllm-ascend-hust/pull/10",
-      "https://github.com/vLLM-HUST/vllm-hust-pipeline-microbatch/pull/4"
+      "https://github.com/vLLM-HUST/vllm-hust-pipeline-microbatch/pull/4",
+      "https://github.com/vLLM-HUST/extension-manager/pull/4"
+    ],
+    "workstation_pull_requests": [
+      "https://github.com/RIDE-Lab/sage-mate/pull/29"
     ]
   }
 }

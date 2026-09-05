@@ -93,7 +93,11 @@ or made; their work is context, not a publication gate for organization repos.
 Pipeline Microbatch remains on organization draft PRs pending human review:
 [Core #12](https://github.com/vLLM-HUST/vllm-hust/pull/12),
 [Ascend #10](https://github.com/vLLM-HUST/vllm-ascend-hust/pull/10), and
-[Mod #4](https://github.com/vLLM-HUST/vllm-hust-pipeline-microbatch/pull/4).
+[Mod #4](https://github.com/vLLM-HUST/vllm-hust-pipeline-microbatch/pull/4),
+with Mod Center activation in
+[Extension Manager #4](https://github.com/vLLM-HUST/extension-manager/pull/4).
+The Sage Mate `TP × PP = device count` launcher correction is
+[RIDE-Lab/sage-mate#29](https://github.com/RIDE-Lab/sage-mate/pull/29).
 Its runtime code is `7115254bca0a`, qualification metadata is `63bcab8f02d2`,
 and candidate image ID is `sha256:934701650b9d...`. It must not be merged or
 published as compatible until fresh rank-local calibration passes the matched
