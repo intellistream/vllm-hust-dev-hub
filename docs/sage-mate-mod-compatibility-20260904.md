@@ -11,6 +11,7 @@ mode are not accepted as final qualification paths.
 | BidKV | migrated to versioned preemption-policy API v1; bounded safe abstention replaces requester self-preemption; no runtime monkey patch | Current-main a4d6/2c8c TP4 graph: five functional cells plus two alternating 3× A/B cells; graph/rank/output/cancel/recovery gates passed, zero policy failures/invalid selections | functional-compatible for Qwen3.8-27B; ascending mixed is `inconclusive`; interactive c=8 is `not-beneficial-in-tested-cell`; no whole-Mod effectiveness claim |
 | DiffSpec | current Eagle3, Ascend attention, model runner, sampler and speculative metadata surfaces adapted | Qwen3.8-27B plus `VirVen/Qwen3.5-27B-EAGLE3-v2` passed TP4 FULL_DECODE_ONLY graph, four-rank draft loading, output, cancellation/recovery, concurrency and long-context gates | functional-compatible, but performance degraded (acceptance 19.29%; ~14.00 vs ~47.72 tok/s target-only P50) |
 | LatchMoE | current MoE routing quantization and MLP-builder ABI adapted through seam v2 | Qwen3.8-27B is dense and Not Applicable; Qwen3-30B-A3B passed TP4 PIECEWISE graph, four-rank mapping, swap, 48/48 address checks, concurrency, cancellation and exception recovery | functional-compatible for Qwen3-30B-A3B, but performance degraded (~2.91 vs ~23.57 tok/s baseline) |
+| Pipeline Microbatch | migrated from scheduler monkey patches to batch-admission policy API v1.1; current Scheduler/Request/queue/KV snapshots and Ascend Mamba KV group ABI adapted | Qwen3.8-27B passed PP2 × TP2 FULL_DECODE_ONLY graph, exact-output, cancellation/recovery and runtime-effective receipt gates on NPU0-3 | **not compatible** on the tested four-card configuration: uniform c=8 throughput -4.37%; fixed-work mixed c=8 throughput -26.33% and P95 latency +80.16% |
 
 The target model config identifies `Qwen3_5ForConditionalGeneration` with a
 hybrid GDN/full-attention text stack. Marketing/model-path naming must not override
@@ -32,6 +33,9 @@ failure counters. DiffSpec needs per-rank draft and accept/reject/KV metadata wi
 concurrent cancellation/recovery, acceptance rate, P50/P95 latency and throughput.
 LatchMoE needs per-rank expert mapping, host/device swap witnesses and stable graph
 addresses on its separate MoE model.
+Pipeline Microbatch needs nonzero admission/completion receipts and must pass a
+matched topology-specific performance gate; installation or functional execution
+alone is insufficient.
 
 ## Resource gate
 
@@ -64,6 +68,14 @@ restored after each Mod, returned HTTP 200 and finally produced `DIFFSPEC_ROLLBA
   counters were 534/103 (19.29%). Warm TTFT P50/P95 was 0.459/0.469 s, latency
   P50/P95 0.744/3.990 s, and output throughput P50/P95 14.00/14.24 tok/s versus
   target-only 47.72/56.97 tok/s; therefore the lane is not an acceleration recommendation.
+- Pipeline Microbatch: the final candidate made 908 policy calls and recorded
+  757 admissions plus 757 completions, with zero failures, invalid results or
+  fallbacks. Five exact-output hashes matched baseline and cancellation recovery
+  returned the expected marker. Uniform c=8 candidate throughput was 117.81 vs
+  123.20 tok/s (-4.37%), with P50/P95 latency +1.92%/+0.89%. A fixed-work mixed
+  c=8 test exposed the calibration failure: throughput 97.30 vs 132.07 tok/s
+  (-26.33%), P50 -11.29%, but P95 +80.16%. The old PP4 × TP2 coefficients from
+  Qwen3-32B/Qwen3-235B are therefore not valid evidence for Qwen3.8 PP2 × TP2.
 
 ## Candidate commits and publication gate
 
@@ -77,6 +89,15 @@ main is `9b2d4acdbf`. The generic contracts were merged through
 The exact hardware-tested bases and artifacts remain separately pinned in the
 lock. No submission to `vllm-project` or `vllm-project/vllm-ascend` was requested
 or made; their work is context, not a publication gate for organization repos.
+
+Pipeline Microbatch remains on organization draft PRs pending human review:
+[Core #12](https://github.com/vLLM-HUST/vllm-hust/pull/12),
+[Ascend #10](https://github.com/vLLM-HUST/vllm-ascend-hust/pull/10), and
+[Mod #4](https://github.com/vLLM-HUST/vllm-hust-pipeline-microbatch/pull/4).
+Its runtime code is `7115254bca0a`, qualification metadata is `63bcab8f02d2`,
+and candidate image ID is `sha256:934701650b9d...`. It must not be merged or
+published as compatible until fresh rank-local calibration passes the matched
+performance gate.
 
 On 2026-09-05 the accidentally transferred BidKV repository was transferred
 back intact from `Qixin-Gaoke` to `vLLM-HUST`. Its canonical repository is now
