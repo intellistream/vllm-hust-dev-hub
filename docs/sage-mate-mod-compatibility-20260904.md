@@ -8,7 +8,7 @@ mode are not accepted as final qualification paths.
 
 | Mod | Source state | Runtime state | Compatibility verdict |
 | --- | --- | --- | --- |
-| BidKV | migrated to versioned preemption-policy API v1; no runtime monkey patch | Current-main a4d6/2c8c TP4 graph: 3× matched A/B, 483 valid selections, 161 vs 161 preemptions per run, no extra prompt recomputation, short outputs exact, cancel/drain/recovery passed | compatible for Qwen3.8-27B; runtime effective / performance neutral (mean throughput +1.23%, overlapping 95% intervals, so no speedup claim) |
+| BidKV | migrated to versioned preemption-policy API v1; bounded safe abstention replaces requester self-preemption; no runtime monkey patch | Current-main a4d6/2c8c TP4 graph: five functional cells plus two alternating 3× A/B cells; graph/rank/output/cancel/recovery gates passed, zero policy failures/invalid selections | functional-compatible for Qwen3.8-27B; ascending mixed is `inconclusive`; interactive c=8 is `not-beneficial-in-tested-cell`; no whole-Mod effectiveness claim |
 | DiffSpec | current Eagle3, Ascend attention, model runner, sampler and speculative metadata surfaces adapted | Qwen3.8-27B plus `VirVen/Qwen3.5-27B-EAGLE3-v2` passed TP4 FULL_DECODE_ONLY graph, four-rank draft loading, output, cancellation/recovery, concurrency and long-context gates | functional-compatible, but performance degraded (acceptance 19.29%; ~14.00 vs ~47.72 tok/s target-only P50) |
 | LatchMoE | current MoE routing quantization and MLP-builder ABI adapted through seam v2 | Qwen3.8-27B is dense and Not Applicable; Qwen3-30B-A3B passed TP4 PIECEWISE graph, four-rank mapping, swap, 48/48 address checks, concurrency, cancellation and exception recovery | functional-compatible for Qwen3-30B-A3B, but performance degraded (~2.91 vs ~23.57 tok/s baseline) |
 
@@ -20,9 +20,10 @@ the architecture and vocabulary recorded by the actual config.
 
 `installed`, `configured`, `enabled`, and `runtimeEffective` are separate states.
 Only the last state means the live worker and bounded inference request observed the
-candidate. Exact version or source matching, successful installation, Manager
-admission, unit tests and graph configuration are necessary but cannot set
-`compatible` without real execution evidence.
+candidate. These runtime states are independent of artifact functional compatibility.
+An uninstalled, disabled, or unobserved candidate is not thereby incompatible. Effectiveness
+is classified per test cell only as `not-beneficial-in-tested-cell`, `inconclusive`,
+or `beneficial`, with its configuration, workload, repetitions and intervals attached.
 
 A qualifying run must retain exact source/image/model provenance, all four rank logs,
 graph capture/replay evidence, bounded output comparisons, failure injection and
@@ -42,12 +43,17 @@ restored after each Mod, returned HTTP 200 and finally produced `DIFFSPEC_ROLLBA
 
 ## Measured results
 
-- BidKV repeated pressure A/B: each run used 4 × (12,425 input + 2,048
-  output tokens). Both arms completed 3/3 runs with 161 preemptions per run.
-  BidKV made 483 valid selections with zero failures; mean throughput was
-  27.954 versus 27.613 tok/s (+1.23%) and mean P95 latency was 288.348 versus
-  292.388 s (-1.38%), with overlapping 95% intervals. The result is compatible
-  and runtime effective, but performance neutral rather than a speedup claim.
+- BidKV bounded-preemption matrix: all five stage-one pairs were functionally
+  clean. The cancellation cell completed four streams, cancelled four, then
+  returned the exact recovery marker; the candidate made 218 policy calls with
+  zero failures/invalid selections. In two ascending-mixed repeats that invoked
+  the selector, both arms made 63 preemptions and candidate throughput deltas
+  were +0.33% and +0.12%; the pre-fix -57.79% collapse did not recur. Because a
+  third repeat did not invoke the policy, that cell is `inconclusive`. The
+  interactive c=8 cell invoked the policy 24 times in every repeat and is
+  `not-beneficial-in-tested-cell`: throughput delta mean -25.31% (95% CI
+  -26.66% to -23.96%) and P95 latency delta mean +34.57% (95% CI +31.96% to
+  +37.17%). These are cell-scoped results, not a compatibility verdict.
 - LatchMoE Qwen3-30B-A3B: 10-request TTFT p50/p95 3.678/7.730 s,
   latency p50/p95 25.941/31.808 s, output throughput p50/p95 2.907/3.010 tok/s.
   The no-plugin baseline output throughput was about 23.57 tok/s.
@@ -64,14 +70,17 @@ restored after each Mod, returned HTTP 200 and finally produced `DIFFSPEC_ROLLBA
 Machine-readable candidates are in
 [`config/sage-mate-mod-candidate-lock.json`](../config/sage-mate-mod-candidate-lock.json).
 The qualified commits have been pushed to the `vLLM-HUST` organization `main`
-branches. The rebased Core organization-main commit is `a4d6aa022f`; the exact
-tested baseline artifact remains `7362232895` and is retained separately in the
+branches. BidKV main is `ba700cb69e`; DiffSpec main is `42e5909fc6`; LatchMoE
+main is `9b2d4acdbf`. The generic contracts were merged through
+[vLLM-HUST/vllm-hust#11](https://github.com/vLLM-HUST/vllm-hust/pull/11) and
+[vLLM-HUST/vllm-ascend-hust#9](https://github.com/vLLM-HUST/vllm-ascend-hust/pull/9).
+The exact hardware-tested bases and artifacts remain separately pinned in the
 lock. No submission to `vllm-project` or `vllm-project/vllm-ascend` was requested
-or made; their RFCs and PRs are duplicate-work context, not publication gates for
-the organization repositories.
+or made; their work is context, not a publication gate for organization repos.
 
 On 2026-09-05 the accidentally transferred BidKV repository was transferred
 back intact from `Qixin-Gaoke` to `vLLM-HUST`. Its canonical repository is now
 `https://github.com/vLLM-HUST/vllm-hust-bidkv`, and organization `main` resolves
-to qualification head `024194b3ed4ffcedcc8ecc21a8fe0573924e7494`; the exact
-hardware-tested runtime tree is `1462a17b3b5e59865957d7a2226fb2f0578eecb1`.
+to bounded-preemption qualification head
+`ba700cb69ed5c84f012e5103eb115aa22cdbc1f5`; the exact hardware-tested runtime
+tree is `199e0bdc6fc38fc9b14b626515efdcbf81de0b62`.

@@ -1,0 +1,39 @@
+{
+  "schema": "sage-mate.bidkv-effectiveness-matrix/v1",
+  "lane": {
+    "model": "Qwen3.8-27B",
+    "accelerator": "Ascend NPU",
+    "devices": [0, 1, 2, 3],
+    "excluded_devices": [4, 5, 6, 7],
+    "tensor_parallel_size": 4,
+    "execution_mode": "FULL_DECODE_ONLY graph"
+  },
+  "method": {
+    "stage_1_repetitions": 1,
+    "stage_2_repetitions": 3,
+    "order": "alternate baseline/candidate by cell and reverse on repeats",
+    "warmup": "one bounded request after graph-ready health",
+    "qualification_values": ["not-beneficial-in-tested-cell", "inconclusive", "beneficial"],
+    "rule": "Every verdict is cell-scoped; stage 1 selects Pareto candidates, stage 2 supplies intervals."
+  },
+  "cells": [
+    {"id": "h-default-c4-p1g", "workload": "homogeneous-long", "concurrency": 4, "kv_cache_bytes": 1073741824, "max_tokens": 2048, "config": {"liveness_preemptions": 2, "completion_weight": 0.5, "preempt_weight": 0.3, "kv_gate": 0.0, "cooldown_s": 0.0, "min_running": 1}},
+    {"id": "h-live0-c4-p1g", "workload": "homogeneous-long", "concurrency": 4, "kv_cache_bytes": 1073741824, "max_tokens": 2048, "config": {"liveness_preemptions": 0, "completion_weight": 0.5, "preempt_weight": 0.3, "kv_gate": 0.0, "cooldown_s": 0.0, "min_running": 1}},
+    {"id": "h-live8-c4-p1g", "workload": "homogeneous-long", "concurrency": 4, "kv_cache_bytes": 1073741824, "max_tokens": 2048, "config": {"liveness_preemptions": 8, "completion_weight": 0.5, "preempt_weight": 0.3, "kv_gate": 0.0, "cooldown_s": 0.0, "min_running": 1}},
+    {"id": "m-default-c4-p1g", "workload": "mixed-length", "concurrency": 4, "kv_cache_bytes": 1073741824, "max_tokens": 2048, "config": {"liveness_preemptions": 2, "completion_weight": 0.5, "preempt_weight": 0.3, "kv_gate": 0.0, "cooldown_s": 0.0, "min_running": 1}},
+    {"id": "m-trigger-c4-p1g", "workload": "mixed-length-ascending-trigger", "concurrency": 4, "kv_cache_bytes": 1073741824, "max_tokens": 2048, "config": {"liveness_preemptions": 2, "completion_weight": 0.5, "preempt_weight": 0.3, "kv_gate": 0.0, "cooldown_s": 0.0, "min_running": 1}},
+    {"id": "m-live8-w06-c4-p1g", "workload": "mixed-length", "concurrency": 4, "kv_cache_bytes": 1073741824, "max_tokens": 2048, "config": {"liveness_preemptions": 8, "completion_weight": 0.5, "preempt_weight": 0.6, "kv_gate": 0.0, "cooldown_s": 0.0, "min_running": 1}},
+    {"id": "h-default-c2-p1g", "workload": "homogeneous-ultralong", "concurrency": 2, "kv_cache_bytes": 1073741824, "max_tokens": 2048, "config": {"liveness_preemptions": 2, "completion_weight": 0.5, "preempt_weight": 0.3, "kv_gate": 0.0, "cooldown_s": 0.0, "min_running": 1}},
+    {"id": "h-default-c8-p2g", "workload": "homogeneous-long", "concurrency": 8, "kv_cache_bytes": 2147483648, "max_tokens": 1024, "config": {"liveness_preemptions": 2, "completion_weight": 0.5, "preempt_weight": 0.3, "kv_gate": 0.0, "cooldown_s": 0.0, "min_running": 1}},
+    {"id": "i-default-c8-p1g", "workload": "interactive-batch", "concurrency": 8, "kv_cache_bytes": 1073741824, "max_tokens": 1024, "config": {"liveness_preemptions": 2, "completion_weight": 0.5, "preempt_weight": 0.3, "kv_gate": 0.0, "cooldown_s": 0.0, "min_running": 1}},
+    {"id": "m-gate85-c4-p1g", "workload": "mixed-length", "concurrency": 4, "kv_cache_bytes": 1073741824, "max_tokens": 2048, "config": {"liveness_preemptions": 8, "completion_weight": 0.5, "preempt_weight": 0.6, "kv_gate": 0.85, "cooldown_s": 0.05, "min_running": 4}},
+    {"id": "b-cancel-recovery-c8-p1g", "workload": "burst-cancel-recovery", "concurrency": 8, "kv_cache_bytes": 1073741824, "max_tokens": 1024, "cancel_after_s": 12, "config": {"liveness_preemptions": 8, "completion_weight": 0.5, "preempt_weight": 0.6, "kv_gate": 0.0, "cooldown_s": 0.0, "min_running": 1}},
+    {"id": "h-cascade100-c4-p1g", "workload": "homogeneous-long", "concurrency": 4, "kv_cache_bytes": 1073741824, "max_tokens": 2048, "config": {"liveness_preemptions": 2, "completion_weight": 0.5, "preempt_weight": 0.3, "kv_gate": 0.0, "cooldown_s": 0.0, "min_running": 1, "cascade_gain_ratio": 1.0}},
+    {"id": "m-cascade100-c4-p1g", "workload": "mixed-length", "concurrency": 4, "kv_cache_bytes": 1073741824, "max_tokens": 2048, "config": {"liveness_preemptions": 8, "completion_weight": 0.5, "preempt_weight": 0.6, "kv_gate": 0.0, "cooldown_s": 0.0, "min_running": 1, "cascade_gain_ratio": 1.0}}
+  ],
+  "required_metrics": [
+    "throughput", "goodput", "TTFT P50/P95/P99", "TPOT P50/P95/P99",
+    "end-to-end P50/P95/P99", "SLO goodput", "preemptions",
+    "recomputed/freed tokens", "utility/fallback hits", "starvation", "Jain fairness"
+  ]
+}
