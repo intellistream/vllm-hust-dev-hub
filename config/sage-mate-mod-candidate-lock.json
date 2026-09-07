@@ -48,6 +48,8 @@
       "qualification_metadata_commit": "a15a22961a0e4858da74a0ab806575c82cb254e6",
       "core_candidate_commit": "3e57b2f75cffffd26dda0df4d9bcac890cfe99fc",
       "ascend_candidate_commit": "1cf88e9e6e513282cf02dfc9b3e806967387125c",
+      "core_merged_main_commit": "88e606d0f0cde63c412db456f3e92da2609e0438",
+      "ascend_merged_main_commit": "d92617b002409cf9bbedd7a2af8b889696653230",
       "tested_models": ["Qwen3.8-27B"],
       "tested_topology": {"pipeline_parallel_size": 2, "tensor_parallel_size": 2, "device_ids": [0, 1, 2, 3], "execution_mode": "FULL_DECODE_ONLY graph"},
       "functional_compatibility": {"status": "passed", "scope": "Qwen3.8-27B / Ascend PP2 x TP2 / FULL_DECODE_ONLY graph"},
@@ -68,7 +70,7 @@
   },
   "resource_use": {"authorized_test_devices": [0, 1, 2, 3], "excluded_devices": [4, 5, 6, 7], "production_restored": true},
   "runtime_state_note": "This artifact lock is not a source of installed/configured/enabled/runtimeEffective state for a live instance.",
-  "extension_catalog": {"path": "config/extension-catalog-v1.json", "entries": 19, "sha256": "49b73ad8369fb43566caf84b85a586cff5af154f8558cccfbd5987f561e8a004", "schema_validator_main_commit": "cf1ea71e3e2cb81ab06267ef05eddb3e580ea20b"},
+  "extension_catalog": {"path": "config/extension-catalog-v1.json", "entries": 19, "sha256": "16378bca427501bce0e861dedc3a83abb4f4f9cf3e3a5e4718103efc6ef9179f", "schema_validator_main_commit": "cf1ea71e3e2cb81ab06267ef05eddb3e580ea20b"},
   "publishing": {
     "organization": "vLLM-HUST",
     "all_mod_repositories_main_updated": false,

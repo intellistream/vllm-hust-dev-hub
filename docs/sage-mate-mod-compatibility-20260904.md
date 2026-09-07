@@ -100,9 +100,13 @@ Pipeline Microbatch and its Manager execution path are now merged through
 [Mod #4](https://github.com/vLLM-HUST/vllm-hust-pipeline-microbatch/pull/4)
 and [Extension Manager #4](https://github.com/vLLM-HUST/extension-manager/pull/4).
 The organization main commits are respectively `a15a22961a0e4858...` and
-`cf1ea71e3e2cb81a...`. The generic Core and Ascend integration commits remain
-recorded through [Core #12](https://github.com/vLLM-HUST/vllm-hust/pull/12)
-and [Ascend #10](https://github.com/vLLM-HUST/vllm-ascend-hust/pull/10).
+`cf1ea71e3e2cb81a...`. The generic Core and Ascend integrations are merged
+through [Core #12](https://github.com/vLLM-HUST/vllm-hust/pull/12) at
+`88e606d0f0cde63c...` and
+[Ascend #10](https://github.com/vLLM-HUST/vllm-ascend-hust/pull/10) at
+`d92617b002409cf9...`. Compatibility evidence remains bound to the exact tested
+PR heads `3e57b2f75cffffd2...` and `1cf88e9e6e513282...`; the merge artifacts do
+not inherit a runtime-effective claim without a new live witness.
 The Sage Mate `TP × PP = device count` launcher correction is
 [RIDE-Lab/sage-mate#29](https://github.com/RIDE-Lab/sage-mate/pull/29).
 Its tested runtime code is `7115254bca0a`, corrected qualification/main commit

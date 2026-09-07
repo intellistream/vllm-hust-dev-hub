@@ -25,13 +25,15 @@ def requirements(
     storage: str = "No additional persistent storage is required.",
     hbm: str = "No incremental HBM benefit is claimed.",
     environment: dict[str, str] | None = None,
+    core: str = CORE,
+    ascend: str = ASCEND,
 ) -> dict[str, object]:
     return {
         "models": models,
         "hardware": ["Ascend NPU"],
         "topologies": topologies,
-        "core": CORE,
-        "ascend": ASCEND,
+        "core": core,
+        "ascend": ascend,
         "additional_models": additional_models or [],
         "storage": storage,
         "hbm": hbm,
@@ -363,7 +365,10 @@ def qualified_entries() -> list[dict[str, object]]:
             ),
             "enablement": {"allowed": True, "blocker": None},
             "runtime_requirements": requirements(
-                models=["Qwen3.8-27B"], topologies=["PP2 x TP2 FULL_DECODE_ONLY graph"]
+                models=["Qwen3.8-27B"],
+                topologies=["PP2 x TP2 FULL_DECODE_ONLY graph"],
+                core="0.28.1rc1.dev319@3e57b2f75cffffd26dda0df4d9bcac890cfe99fc",
+                ascend="0.25.1rc1@1cf88e9e6e513282cf02dfc9b3e806967387125c",
             ),
             "functional_qualification": {
                 "status": "passed",

@@ -840,8 +840,8 @@
         "topologies": [
           "PP2 x TP2 FULL_DECODE_ONLY graph"
         ],
-        "core": "0.28.1rc1.dev319@762f85b311fbab0bcf8921dd216f5093cd58b9b8",
-        "ascend": "0.25.1rc1@4e57439e58ed3d78e675f9fd7b4614fb183c5394",
+        "core": "0.28.1rc1.dev319@3e57b2f75cffffd26dda0df4d9bcac890cfe99fc",
+        "ascend": "0.25.1rc1@1cf88e9e6e513282cf02dfc9b3e806967387125c",
         "additional_models": [],
         "storage": "No additional persistent storage is required.",
         "hbm": "No incremental HBM benefit is claimed.",

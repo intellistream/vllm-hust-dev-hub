@@ -31,9 +31,12 @@ functionally qualified entry.
 
 ## Pipeline evidence boundary
 
-The merged Pipeline implementation is available because its integration path
-and manifest now exist on organization default branches and GitHub Actions is
-enabled. Its evidence remains scoped to Qwen3.8-27B, PP2 x TP2,
+The Pipeline artifact is available because its integration path and manifest
+now exist on organization default branches and GitHub Actions is enabled. Core
+#12 merged as `88e606d0f0cd...` and Ascend #10 as `d92617b00240...`; those new
+main merge artifacts still require their own live runtime witness. Existing
+compatibility evidence remains scoped to exact tested heads `3e57b2f75cff...`
+and `1cf88e9e6e51...`, Qwen3.8-27B, PP2 x TP2,
 FULL_DECODE_ONLY graph on NPU0-3. It recorded 908 policy calls, 757 admissions,
 757 completions, and zero failures, invalid results, or fallbacks; five exact
 outputs and cancellation recovery passed. Performance is explicitly not a
