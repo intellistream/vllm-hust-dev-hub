@@ -1,6 +1,14 @@
 {
   "schema": "sage-mate.mod-candidate-lock/v2",
   "status": "qualification-complete",
+  "requested_baseline": {
+    "core": {"version": "0.28.1rc1.dev319", "commit": "762f85b311fbab0bcf8921dd216f5093cd58b9b8"},
+    "ascend": {"version": "0.25.1rc1", "commit": "4e57439e58ed3d78e675f9fd7b4614fb183c5394"},
+    "model": "Qwen3.8-27B",
+    "accelerator": "Ascend NPU",
+    "tensor_parallel_size": 4,
+    "execution_mode": "graph"
+  },
   "target": {
     "core": {"version": "0.28.1rc1.dev391+ga4d6aa022", "main_commit": "a4d6aa022fb1885a25a802a6e29372c81eac6c9f"},
     "ascend": {"version": "0.25.1rc1+hust.20260903.4", "main_commit": "2c8c722107a54127999a64c4eb0ec86139df8c26"},
@@ -9,7 +17,7 @@
     "tensor_parallel_size": 4,
     "execution_mode": "graph"
   },
-  "manager": {"qualification_artifact_commit": "24036c11c894c3fe0736e59efd17159c5e307783", "published_main_commit": "6e9a477f30b3399dda06733de03a78814dc28ca6"},
+  "manager": {"qualification_artifact_commit": "24036c11c894c3fe0736e59efd17159c5e307783", "published_main_commit": "cf1ea71e3e2cb81ab06267ef05eddb3e580ea20b", "batch_admission_commit": "c7cce406b701d7b1bf2516d200584468c251e6cc", "batch_admission_pull_request": "https://github.com/vLLM-HUST/extension-manager/pull/4"},
   "mods": {
     "bidkv": {
       "repository": "https://github.com/vLLM-HUST/vllm-hust-bidkv",
@@ -32,20 +40,54 @@
       "baseline_image_id": "sha256:80f05c0d0c49c139f94922ae6057e3edb21251b8e8a332c1df35fb3d555d60d8"
     },
     "diffspec": {"runtime_commit": "c78f55c7e4923da342f2fc52c2cb509c150e5363", "qualification_metadata_commit": "998697897c0f854dc0fda8f0f28f07670196c411", "qualified_models": ["Qwen3.8-27B"], "required_draft_model": "VirVen/Qwen3.5-27B-EAGLE3-v2", "draft_checkpoint_sha256": "a57cefc45874197a24dd2a092cfd0d0f7d6a2f2cca156d09f2d2f4a56dc4e5be", "functional_compatibility": {"status": "passed", "scope": "exact Qwen3.8-27B / Eagle3 draft / Ascend TP4 graph lane"}, "effectiveness_qualifications": [{"status": "not-beneficial-in-tested-cell", "scope": "qualified Eagle3 configuration; 19.29% acceptance and lower throughput than target-only"}], "runtime_state_source": "live_instance_observation_only", "image_id": "sha256:6dec9e68eaa61d5a3297abc5006d939d5644aa203c16ef1f9af65fb54d60722b", "wheel_sha256": "2028172d18ac978fcfdb78e7192ec794641a517222a95a3eba888175b3d6aeba"},
-    "latchmoe": {"candidate_commit": "63781f3dd0235f933735bfd8ce614d388093c0b5", "qwen38_status": "not-applicable-dense-model", "qualification_model": "Qwen3-30B-A3B", "functional_compatibility": {"status": "passed", "scope": "Qwen3-30B-A3B / Ascend TP4 PIECEWISE graph; Qwen3.8-27B is not applicable"}, "effectiveness_qualifications": [{"status": "not-beneficial-in-tested-cell", "scope": "qualified Qwen3-30B-A3B configuration; lower throughput than baseline"}], "runtime_state_source": "live_instance_observation_only", "image_id": "sha256:7f3d5a5ed9c30070dfcbf6d55c5e6a0672110b701a2d9fa17fbe79b4499776ac"}
+    "latchmoe": {"candidate_commit": "63781f3dd0235f933735bfd8ce614d388093c0b5", "qwen38_status": "not-applicable-dense-model", "qualification_model": "Qwen3-30B-A3B", "functional_compatibility": {"status": "passed", "scope": "Qwen3-30B-A3B / Ascend TP4 PIECEWISE graph; Qwen3.8-27B is not applicable"}, "effectiveness_qualifications": [{"status": "not-beneficial-in-tested-cell", "scope": "qualified Qwen3-30B-A3B configuration; lower throughput than baseline"}], "runtime_state_source": "live_instance_observation_only", "image_id": "sha256:7f3d5a5ed9c30070dfcbf6d55c5e6a0672110b701a2d9fa17fbe79b4499776ac"},
+    "pipeline_microbatch": {
+      "repository": "https://github.com/vLLM-HUST/vllm-hust-pipeline-microbatch",
+      "repository_main_commit": "a15a22961a0e4858da74a0ab806575c82cb254e6",
+      "tested_runtime_commit": "7115254bca0a3ee2655d0ede3e7d5dbf603c6eb0",
+      "qualification_metadata_commit": "a15a22961a0e4858da74a0ab806575c82cb254e6",
+      "core_candidate_commit": "3e57b2f75cffffd26dda0df4d9bcac890cfe99fc",
+      "ascend_candidate_commit": "1cf88e9e6e513282cf02dfc9b3e806967387125c",
+      "core_merged_main_commit": "88e606d0f0cde63c412db456f3e92da2609e0438",
+      "ascend_merged_main_commit": "d92617b002409cf9bbedd7a2af8b889696653230",
+      "tested_models": ["Qwen3.8-27B"],
+      "tested_topology": {"pipeline_parallel_size": 2, "tensor_parallel_size": 2, "device_ids": [0, 1, 2, 3], "execution_mode": "FULL_DECODE_ONLY graph"},
+      "functional_compatibility": {"status": "passed", "scope": "Qwen3.8-27B / Ascend PP2 x TP2 / FULL_DECODE_ONLY graph"},
+      "compatibility": {"status": "compatible", "availability": "available", "reason": "function, recovery, integration publication, and immutable manifest gates passed"},
+      "recommendation": {"status": "not-recommended-for-tested-cell", "reason": "matched C8 performance regressed; fresh rank-local calibration is required before recommending this cell"},
+      "effectiveness_qualifications": [
+        {"status": "not-beneficial-in-tested-cell", "scope": "uniform / concurrency=8", "reason": "throughput -4.37%; request rate -4.18%; P50 latency +1.92%; P95 latency +0.89%"},
+        {"status": "not-beneficial-in-tested-cell", "scope": "fixed-work mixed / concurrency=8", "reason": "throughput -26.33%; P50 latency -11.29%; P95 latency +80.16%"}
+      ],
+      "runtime_effective_receipt": {"policy_calls": 908, "admissions": 757, "completions": 757, "failures": 0, "invalid_results": 0, "fallbacks": 0},
+      "runtime_state_source": "live_instance_observation_only",
+      "image_id": "sha256:934701650b9d1a4b66c95bb92b2b4a9011df40924b96877764392a41ba52b807",
+      "core_wheel_sha256": "6f4b6b01f9c4698d1a34b23f21d5cf6ff44ad54c45a64f387a67a7b4a6570d31",
+      "ascend_wheel_sha256": "7050c3bf69a2d17d6347951ac71f1e7d545ba0439253f3b6c4a59670827abbcb",
+      "mod_wheel_sha256": "3c715539f5ebcac8767752129e7835684feabd576ad5c6376da8a0b91ef833e2",
+      "evidence": "/data/codex-build-artifacts/hkustgz-pipeline-microbatch-20260905T071500Z"
+    }
   },
   "resource_use": {"authorized_test_devices": [0, 1, 2, 3], "excluded_devices": [4, 5, 6, 7], "production_restored": true},
   "runtime_state_note": "This artifact lock is not a source of installed/configured/enabled/runtimeEffective state for a live instance.",
+  "extension_catalog": {"path": "config/extension-catalog-v1.json", "entries": 19, "sha256": "16378bca427501bce0e861dedc3a83abb4f4f9cf3e3a5e4718103efc6ef9179f", "schema_validator_main_commit": "cf1ea71e3e2cb81ab06267ef05eddb3e580ea20b"},
   "publishing": {
     "organization": "vLLM-HUST",
-    "all_mod_repositories_main_updated": true,
+    "all_mod_repositories_main_updated": false,
     "higher_upstream_submission_scope": "not-requested",
     "organization_pull_requests": [
       "https://github.com/vLLM-HUST/vllm-hust/pull/11",
       "https://github.com/vLLM-HUST/vllm-ascend-hust/pull/9",
       "https://github.com/vLLM-HUST/vllm-hust-bidkv/pull/9",
       "https://github.com/vLLM-HUST/vllm-ascend-hust-diffspec/pull/5",
-      "https://github.com/vLLM-HUST/vllm-ascend-hust-LatchMoE/pull/51"
+      "https://github.com/vLLM-HUST/vllm-ascend-hust-LatchMoE/pull/51",
+      "https://github.com/vLLM-HUST/vllm-hust/pull/12",
+      "https://github.com/vLLM-HUST/vllm-ascend-hust/pull/10",
+      "https://github.com/vLLM-HUST/vllm-hust-pipeline-microbatch/pull/4",
+      "https://github.com/vLLM-HUST/extension-manager/pull/4"
+    ],
+    "workstation_pull_requests": [
+      "https://github.com/RIDE-Lab/sage-mate/pull/29"
     ]
   }
 }

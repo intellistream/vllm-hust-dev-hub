@@ -24,6 +24,13 @@ For the exact core/plugin lock, derived-image labels, deployment receipt and
 rollback procedure used by Sage Mate, see the
 [Sage Mate production runtime profile](docs/sage-mate-production-runtime.md).
 
+The reviewed Workstation Mod inventory is generated from
+[`config/extension-catalog-v1.json`](config/extension-catalog-v1.json). It keeps
+functional qualification, measured effect, expected scenarios, recommendation,
+resource tradeoffs, conflicts, and rollback separate. Regenerate it with
+`python3 scripts/generate_extension_catalog.py`; unverified entries remain
+visible previews and cannot be enabled.
+
 Agent workflow note: on any prepared dev-hub Ascend development machine,
 use this repo's `./manage.sh` as the first-choice entrypoint for launching,
 restarting, health-checking, and testing the prepared vLLM-HUST service. Avoid
