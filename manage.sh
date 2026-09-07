@@ -133,10 +133,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -n "$optimization_profile" ]]; then
+  optimization_workspace_root="${VLLM_OPTIMIZATION_WORKSPACE_ROOT:-$repo_root/..}"
   profile_command=(
     python3 "$repo_root/scripts/optimization_profile.py"
     --profile "$optimization_profile"
-    --workspace-root "$repo_root/.."
+    --workspace-root "$optimization_workspace_root"
   )
   for parameter in "${optimization_params[@]}"; do
     profile_command+=(--param "$parameter")

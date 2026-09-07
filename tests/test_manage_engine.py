@@ -19,6 +19,9 @@ ENTRYPOINT_PROBE = REPO_ROOT / "scripts" / "check_optimization_entrypoint.py"
 OPTIMIZATION_INSTALLER = REPO_ROOT / "scripts" / "prepare_optimization_plugin.py"
 OPTIMIZATION_PLUGIN_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "optimization_plugins"
 NPU_FAILURE_FIXTURE = REPO_ROOT / "tests" / "fixtures" / "npu_allocating_failure.py"
+OPTIMIZATION_MANIFEST_FIXTURE = (
+    REPO_ROOT / "tests" / "fixtures" / "optimization_manifests" / "bidkv.json"
+)
 
 
 class ManageEngineGuardTests(unittest.TestCase):
@@ -33,12 +36,16 @@ class ManageEngineGuardTests(unittest.TestCase):
             systemctl = bin_dir / "systemctl"
             systemctl.write_text("#!/usr/bin/env bash\nexit 0\n")
             systemctl.chmod(0o755)
+            manifest = root / "workspace" / "vllm-hust-bidkv" / ".vllm-hust" / "optimization.json"
+            manifest.parent.mkdir(parents=True)
+            manifest.write_text(OPTIMIZATION_MANIFEST_FIXTURE.read_text())
             env = os.environ.copy()
             env.update(
                 {
                     "PATH": f"{bin_dir}:{env['PATH']}",
                     "XDG_CONFIG_HOME": str(root / "xdg"),
                     "VLLM_ENGINE_SYSTEMD_UNIT": "bidkv-managed-test.service",
+                    "VLLM_OPTIMIZATION_WORKSPACE_ROOT": str(root / "workspace"),
                 }
             )
 
