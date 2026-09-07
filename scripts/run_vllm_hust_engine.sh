@@ -36,6 +36,11 @@ if [[ -n "${VLLM_ENGINE_ENV_FILE:-}" ]]; then
   load_dotenv "$VLLM_ENGINE_ENV_FILE" true
 fi
 
+# Validate the source/package identity before inspecting or recreating a
+# container. This keeps a stale nested package receipt from turning a harmless
+# configuration typo into a systemd restart loop and an avoidable outage.
+python3 "$repo_root/scripts/validate_runtime_identity_contract.py"
+
 container="${VLLM_ENGINE_CONTAINER_NAME:-${VLLM_ENGINE_CONTAINER:-${DOCKER_CONTAINER:-vllm-ascend-dev}}}"
 container_image="${VLLM_ENGINE_IMAGE:-${IMAGE:-quay.io/ascend/vllm-ascend:v0.23.0-openeuler}}"
 expected_image_id="${VLLM_ENGINE_EXPECTED_IMAGE_ID:-}"
