@@ -14,10 +14,10 @@ one `v0.23.0` label:
    labels produced from that exact pair.
 
 The verified production snapshot pins core
-`762f85b311fbab0bcf8921dd216f5093cd58b9b8` and plugin
-`4e57439e58ed3d78e675f9fd7b4614fb183c5394`. Its installed package versions are
-`0.28.1rc1.dev319+g762f85b31.empty` and
-`0.25.1rc1+hust.20260903.4`, with Torch `2.13.0+cpu`, torch-npu
+`88e606d0f0cde63c412db456f3e92da2609e0438` and merged plugin main
+`c0d6294bc30f775151dba256d49a37a29ba939d7`. Its installed package versions are
+`0.28.1.post1.dev31+g88e606d0f.empty` and
+`0.25.1rc2.dev92+hust.20260903.4.gc0d6294bc`, with Torch `2.13.0+cpu`, torch-npu
 `2.13.0rc1`, NumPy `2.2.6`, and source-built Triton Ascend
 `3.6.0+gitb52af7fc` from vLLM-HUST/triton-ascend-hust main commit
 `b52af7fc9a0377c6ed527a88a30df719874eeba9`. The Triton wheel keeps the
@@ -28,8 +28,9 @@ incompatible NumPy 2.3 line. A later moving
 the pair changes only through a reviewed lock update and the full image/NPU
 acceptance gate.
 
-The plugin version is deliberately governed by the annotated HUST tag
-`v0.25.1rc1+hust.20260903.4`. The earlier current-core KV-cache compatibility commits
+The plugin version is derived from complete tagged history rooted at the annotated
+HUST tag `v0.25.1rc1+hust.20260903.4`; the exact merged-main commit remains the
+authoritative identity. The earlier current-core KV-cache compatibility commits
 are part of vLLM-HUST/vllm-ascend-hust `main`; the same generic change is also
 tracked upstream as [vllm-project/vllm-ascend#15585](https://github.com/vllm-project/vllm-ascend/pull/15585).
 Official current `main` is not descended from the
@@ -37,7 +38,8 @@ newer v0.20-v0.25 release branches, so an unconstrained `git describe` resolves
 through v0.19 even when all official tags are present. Build-time version
 resolution therefore fails closed for shallow clones, missing Git metadata,
 missing tags, or stale versions below v0.23. The lock records the exact plugin
-commit independently from the tag. `v0.23.0` is the pinned
+commit independently from the tag, and the plugin's
+`.github/vllm-main-verified.commit` records the exact core pair. `v0.23.0` is the pinned
 compatibility-filesystem baseline, not a claim about the latest official release
 or the active core package version. The subsequent native hybrid-cache fix and
 Qwen3.8 deployment are documented in [the migration record](qwen38-native-hybrid-cache.md);
@@ -134,6 +136,12 @@ Mate stack endpoint); they are not inferred from the v1 receipt.
    unmanaged duplicate process.
 7. If a production gate fails, restore the recorded previous image ID, lock
    values and gitlinks, then restart through the same managed entrypoint.
+
+The latest-main pair passed Qwen3.8-27B TP4 graph-mode cold start twice on physical
+NPU0-3, non-streaming and streaming completion, native thinking, two-request
+concurrency, cancellation recovery, Sage workflow and public Support rendering.
+The pre-promotion canary remains available as
+`sage-mate/vllm-ascend-hust:core-88e606d0-plugin-d92617b0-canary1-cann9.1`.
 
 The 2026-09-01 rollback artifact is deliberately retained outside the lock:
 `sage-mate/vllm-ascend-hust:v0.23.0-newrepos-ba07e4a4-40f9834e`
