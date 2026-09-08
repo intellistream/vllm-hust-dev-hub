@@ -13,11 +13,11 @@ one `v0.23.0` label:
 3. **Built artifact**: the derived image ID/digest, build timestamp and OCI
    labels produced from that exact pair.
 
-The verified production snapshot pins core
-`c66f260283d8d212cdc15e0e905fd0e7502861ae` and merged plugin main
-`0a350d3e7a8326718f90b914f59eb69c0c2e918e`. Its installed package versions are
-`0.28.1.post1.dev70+gc66f26028.empty` and
-`0.25.1rc2.dev123+hust.20260903.4.g0a350d3e7`, with Torch `2.13.0+cpu`, torch-npu
+The locked candidate snapshot pins core
+`a67f6a5dda6e6b81eb42d0ef82c7fca864ca969f` and merged plugin main
+`74f0c0a272376412b51e1c1864803d5f3a0f1b5f`. Its installed package versions are
+`0.28.1.post1.dev73+ga67f6a5dd.empty` and
+`0.25.1rc2.dev125+hust.20260903.4.g74f0c0a27`, with Torch `2.13.0+cpu`, torch-npu
 `2.13.0rc1`, NumPy `2.2.6`, and source-built Triton Ascend
 `3.6.0+gitb52af7fc` from vLLM-HUST/triton-ascend-hust main commit
 `b52af7fc9a0377c6ed527a88a30df719874eeba9`. The Triton wheel keeps the
@@ -168,7 +168,10 @@ tools emitted function-call event names. Core `744fa437` fixes that generic
 stream-context loss, and plugin main `435dd412` records it as the exact verified
 core. Core `c66f2602` then preserves the declared custom-tool format and grammar
 in the model-visible lowering schema, while plugin main `0a350d3e` records that
-new exact core. The preceding replacement image
+new exact core. Core `a67f6a5d` additionally embeds the declared Lark grammar
+inside Qwen's raw `<parameter=input>` structural tag, so guided decoding—not
+prompt text—enforces required delimiters. Plugin main `74f0c0a2` records that
+exact core. The preceding replacement image
 `sha256:529f0f32be69669b5b0b6197c0053160640946027d08324e0b16299a33f69034`
 passed Qwen3.8-27B TP4 graph-mode startup and a second cold restart on
 physical NPU0-3. Acceptance covered health/model metadata, ordinary and
@@ -176,6 +179,11 @@ streaming chat, bounded `previous_response_id` continuation, standard and
 custom tools, exact custom-tool SSE event names, two-request concurrency,
 client-disconnect recovery, Sage workflow, public Support and explicit deep
 thinking. NPU4-7 were not touched.
+
+Operational ownership, promotion evidence and recovery steps are summarized in
+`docs/sage-mate-runtime-handoff.md`. That handoff covers only the inference
+runtime; product instance management remains in its dedicated integration work.
+
 The pre-promotion canary remains available as
 `sage-mate/vllm-ascend-hust:core-88e606d0-plugin-d92617b0-canary1-cann9.1`.
 
