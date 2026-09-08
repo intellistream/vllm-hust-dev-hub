@@ -90,6 +90,27 @@ failures. It
 writes `/opt/vllm-hust-runtime/runtime-stack.json` and a normalized copy of the
 v2 lock; it never manufactures `.dist-info` or injects `sitecustomize`.
 
+## Responses API runtime controls
+
+The launcher forwards the upstream-compatible Responses API controls directly
+to the managed engine. Applications do not need to reimplement response state,
+custom/freeform tool envelopes, or model-catalog augmentation in a product
+proxy:
+
+```text
+VLLM_ENABLE_RESPONSES_API_STORE
+VLLM_RESPONSES_API_STORE_MAX_ENTRIES
+VLLM_RESPONSES_API_STORE_TTL_SECONDS
+VLLM_OPENAI_MODELS_CATALOG_JSON
+```
+
+The store remains process-local and bounded. The catalog path must name a file
+already present in an explicitly mounted runtime directory; the launcher does
+not copy arbitrary host files or infer model capabilities. A reusable Qwen3.8
+operator catalog is provided at
+`config/model-catalogs/qwen3.8-27b.json`; the live server clamps its context and
+auto-compaction fields to the served model configuration.
+
 Build only from clean, exact checkouts:
 
 ```bash
