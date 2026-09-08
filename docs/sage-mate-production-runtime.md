@@ -13,7 +13,7 @@ one `v0.23.0` label:
 3. **Built artifact**: the derived image ID/digest, build timestamp and OCI
    labels produced from that exact pair.
 
-The selected production candidate pins core
+The verified production snapshot pins core
 `744fa4376897868a86d5505a5180547400646c0a` and merged plugin main
 `435dd412ffbce557a5226a9092256be87f29aad5`. Its installed package versions are
 `0.28.1.post1.dev68+g744fa4376.empty` and
@@ -166,8 +166,14 @@ cold start on physical NPU0-3, health, chat, stateful Responses and
 non-streaming tool calls. It was deliberately rejected when streaming custom
 tools emitted function-call event names. Core `744fa437` fixes that generic
 stream-context loss, and plugin main `435dd412` records it as the exact verified
-core. This lock remains a candidate until the replacement image repeats the
-complete NPU gate, including custom-tool SSE, cancellation and cold restart.
+core. The replacement image
+`sha256:529f0f32be69669b5b0b6197c0053160640946027d08324e0b16299a33f69034`
+then passed Qwen3.8-27B TP4 graph-mode startup and a second cold restart on
+physical NPU0-3. Acceptance covered health/model metadata, ordinary and
+streaming chat, bounded `previous_response_id` continuation, standard and
+custom tools, exact custom-tool SSE event names, two-request concurrency,
+client-disconnect recovery, Sage workflow, public Support and explicit deep
+thinking. NPU4-7 were not touched.
 The pre-promotion canary remains available as
 `sage-mate/vllm-ascend-hust:core-88e606d0-plugin-d92617b0-canary1-cann9.1`.
 
