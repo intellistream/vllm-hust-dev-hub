@@ -142,6 +142,13 @@ class Transactions(unittest.TestCase):
         approval = controller.approve_recovery(operation_id)
         return controller.recover(operation_id, approval)
 
+    def test_registration_cannot_bypass_lifecycle_authority(self):
+        registration = {**self.registration, "instance_id": "lifecycle-owned"}
+        with self.store.transaction() as db:
+            self.store.put(db, "lifecycle_instance", "lifecycle-owned", {"state": "stopped"})
+        with self.assertRaisesRegex(ControlError, "lifecycle_authority_conflict"):
+            self.controller.register(registration, self.baseline)
+
     def test_immutable_complete_spec_and_roundtrip(self):
         frozen = DeploymentSpec.freeze(self.candidate)
         self.candidate["launch"]["environment"]["DRIFT"] = "changed"

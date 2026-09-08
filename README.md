@@ -37,6 +37,11 @@ restarting, health-checking, and testing the prepared vLLM-HUST service. Avoid
 ad-hoc host accelerator environments: NPU execution belongs in the official
 container, while the host supplies Docker, NPU devices, and driver interfaces.
 
+For product-facing lifecycle integration, use the [unified lifecycle API](docs/instance-lifecycle-v1.md).
+It provides allocation/approval, start/stop, ownership transfer, audit and recovery
+through an authenticated local socket. The supplied policy is disabled and the
+only bundled backend is explicit simulation; no existing service is enrolled.
+
 ## Quick Start
 
 Open the multi-root workspace:

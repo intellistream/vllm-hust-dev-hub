@@ -166,3 +166,10 @@ Initial focused validation covers instance transactions, transport, existing
 deployment receipts, optimization profiles and foreground ownership, plus Ruff
 and diff checks. Test counts are reported by the validating commit rather than
 hard-coded here as the fault matrix grows.
+
+## Generic lifecycle integration
+
+Allocation and start/stop now have a separate [product-neutral lifecycle API](instance-lifecycle-v1.md).
+It reuses the private Store while keeping stopped/allocation state distinct from
+verified Mod deployment state. Same-store dual registration is rejected; no
+production backend or live-instance migration is enabled by this addition.

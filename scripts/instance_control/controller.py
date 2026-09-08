@@ -65,6 +65,9 @@ class Controller:
             rows = db.execute("SELECT 1 FROM documents WHERE kind='instance' AND id=?",
                               (registration["instance_id"],)).fetchone()
             require(rows is None, "instance_already_registered")
+            lifecycle = db.execute("SELECT value FROM documents WHERE kind='lifecycle_instance' AND id=?",
+                                   (registration["instance_id"],)).fetchone()
+            require(lifecycle is None, "lifecycle_authority_conflict")
             self.store.put(db, "spec", spec.sha256, spec.value(), immutable=True)
             self.store.put(db, "registration", registration["instance_id"], registration, immutable=True)
             self.store.put(db, "instance", registration["instance_id"], {
