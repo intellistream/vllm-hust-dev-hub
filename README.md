@@ -315,7 +315,7 @@ fail the stop instead of being hidden. Because container workers are not owned
 by the user unit's cgroup, generated units use `KillMode=process` only after
 that explicit cleanup contract.
 
-Current vLLM-Ascend releases no longer accept the legacy
+Current vLLM-Ascend releases deprecate the legacy
 `VLLM_ASCEND_ENABLE_FLASHCOMM1` and `VLLM_ASCEND_ENABLE_FUSED_MC2` environment
 switches, so the launcher removes them by default. An older, separately verified
 plugin profile may set `VLLM_ENGINE_ENABLE_LEGACY_ASCEND_ENV=1` to forward
