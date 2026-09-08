@@ -14,10 +14,10 @@ one `v0.23.0` label:
    labels produced from that exact pair.
 
 The verified production snapshot pins core
-`744fa4376897868a86d5505a5180547400646c0a` and merged plugin main
-`435dd412ffbce557a5226a9092256be87f29aad5`. Its installed package versions are
-`0.28.1.post1.dev68+g744fa4376.empty` and
-`0.25.1rc2.dev121+hust.20260903.4.g435dd412f`, with Torch `2.13.0+cpu`, torch-npu
+`c66f260283d8d212cdc15e0e905fd0e7502861ae` and merged plugin main
+`0a350d3e7a8326718f90b914f59eb69c0c2e918e`. Its installed package versions are
+`0.28.1.post1.dev70+gc66f26028.empty` and
+`0.25.1rc2.dev123+hust.20260903.4.g0a350d3e7`, with Torch `2.13.0+cpu`, torch-npu
 `2.13.0rc1`, NumPy `2.2.6`, and source-built Triton Ascend
 `3.6.0+gitb52af7fc` from vLLM-HUST/triton-ascend-hust main commit
 `b52af7fc9a0377c6ed527a88a30df719874eeba9`. The Triton wheel keeps the
@@ -166,9 +166,11 @@ cold start on physical NPU0-3, health, chat, stateful Responses and
 non-streaming tool calls. It was deliberately rejected when streaming custom
 tools emitted function-call event names. Core `744fa437` fixes that generic
 stream-context loss, and plugin main `435dd412` records it as the exact verified
-core. The replacement image
+core. Core `c66f2602` then preserves the declared custom-tool format and grammar
+in the model-visible lowering schema, while plugin main `0a350d3e` records that
+new exact core. The preceding replacement image
 `sha256:529f0f32be69669b5b0b6197c0053160640946027d08324e0b16299a33f69034`
-then passed Qwen3.8-27B TP4 graph-mode startup and a second cold restart on
+passed Qwen3.8-27B TP4 graph-mode startup and a second cold restart on
 physical NPU0-3. Acceptance covered health/model metadata, ordinary and
 streaming chat, bounded `previous_response_id` continuation, standard and
 custom tools, exact custom-tool SSE event names, two-request concurrency,
