@@ -14,10 +14,10 @@ one `v0.23.0` label:
    labels produced from that exact pair.
 
 The verified production snapshot pins core
-`88e606d0f0cde63c412db456f3e92da2609e0438` and merged plugin main
-`c0d6294bc30f775151dba256d49a37a29ba939d7`. Its installed package versions are
-`0.28.1.post1.dev31+g88e606d0f.empty` and
-`0.25.1rc2.dev92+hust.20260903.4.gc0d6294bc`, with Torch `2.13.0+cpu`, torch-npu
+`d07d4c45e553c3d84ffdd7968aafb4906cdb5035` and merged plugin main
+`a8d2294a4784218daaabb480aa84f10616f41f20`. Its installed package versions are
+`0.28.1.post1.dev66+gd07d4c45e.empty` and
+`0.25.1rc2.dev119+hust.20260903.4.ga8d2294a4`, with Torch `2.13.0+cpu`, torch-npu
 `2.13.0rc1`, NumPy `2.2.6`, and source-built Triton Ascend
 `3.6.0+gitb52af7fc` from vLLM-HUST/triton-ascend-hust main commit
 `b52af7fc9a0377c6ed527a88a30df719874eeba9`. The Triton wheel keeps the
@@ -28,7 +28,10 @@ incompatible NumPy 2.3 line. A later moving
 the pair changes only through a reviewed lock update and the full image/NPU
 acceptance gate.
 
-The plugin version is derived from complete tagged history rooted at the annotated
+The 2026-09-08 source freeze includes official vLLM `main`
+`6c73b08dec2af5052288169663549687ba61f330` and official vLLM Ascend `main`
+`b0c49dc7a884d3d343f6a556380f11b74191c3e8`; later upstream commits require a
+new lock review and full acceptance gate. The plugin version is derived from complete tagged history rooted at the annotated
 HUST tag `v0.25.1rc1+hust.20260903.4`; the exact merged-main commit remains the
 authoritative identity. The earlier current-core KV-cache compatibility commits
 are part of vLLM-HUST/vllm-ascend-hust `main`; the same generic change is also
@@ -89,6 +92,27 @@ remain visible as base-image debt and are not misreported as active-stack
 failures. It
 writes `/opt/vllm-hust-runtime/runtime-stack.json` and a normalized copy of the
 v2 lock; it never manufactures `.dist-info` or injects `sitecustomize`.
+
+## Responses API runtime controls
+
+The launcher forwards the upstream-compatible Responses API controls directly
+to the managed engine. Applications do not need to reimplement response state,
+custom/freeform tool envelopes, or model-catalog augmentation in a product
+proxy:
+
+```text
+VLLM_ENABLE_RESPONSES_API_STORE
+VLLM_RESPONSES_API_STORE_MAX_ENTRIES
+VLLM_RESPONSES_API_STORE_TTL_SECONDS
+VLLM_OPENAI_MODELS_CATALOG_JSON
+```
+
+The store remains process-local and bounded. The catalog path must name a file
+already present in an explicitly mounted runtime directory; the launcher does
+not copy arbitrary host files or infer model capabilities. A reusable Qwen3.8
+operator catalog is provided at
+`config/model-catalogs/qwen3.8-27b.json`; the live server clamps its context and
+auto-compaction fields to the served model configuration.
 
 Build only from clean, exact checkouts:
 
