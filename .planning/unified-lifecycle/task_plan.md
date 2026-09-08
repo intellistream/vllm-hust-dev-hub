@@ -4,7 +4,7 @@
 2. Generic lifecycle API, durable concurrency/recovery: complete for injected qualified backends; shipped backend is explicit simulation only.
 3. Fake integration and regressions: complete: 253 pytest tests and 56 subtests passed, including 20 new lifecycle tests and legacy-enrollment regression.
 4. API/runbook/product examples and review: complete: documentation, examples, default-off template, independent CPU CI; local review and lint passed.
-5. Commit, reconcile remote main, push and verify: in progress.
+5. Commit, reconcile remote main, push and verify: complete. Implementation 35508ad and CI fix eff7787 pushed to main; lifecycle CI 34183534957 passed. Documentation-only completion record follows, with unchanged tested code.
 
 Constraints: no production lifecycle changes, no automatic enrollment, preserve dirty work, exclude Sage Mate Responses and state-centric engine.
 
