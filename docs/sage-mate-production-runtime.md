@@ -13,11 +13,11 @@ one `v0.23.0` label:
 3. **Built artifact**: the derived image ID/digest, build timestamp and OCI
    labels produced from that exact pair.
 
-The verified production snapshot pins core
-`d07d4c45e553c3d84ffdd7968aafb4906cdb5035` and merged plugin main
-`a8d2294a4784218daaabb480aa84f10616f41f20`. Its installed package versions are
-`0.28.1.post1.dev66+gd07d4c45e.empty` and
-`0.25.1rc2.dev119+hust.20260903.4.ga8d2294a4`, with Torch `2.13.0+cpu`, torch-npu
+The selected production candidate pins core
+`744fa4376897868a86d5505a5180547400646c0a` and merged plugin main
+`435dd412ffbce557a5226a9092256be87f29aad5`. Its installed package versions are
+`0.28.1.post1.dev68+g744fa4376.empty` and
+`0.25.1rc2.dev121+hust.20260903.4.g435dd412f`, with Torch `2.13.0+cpu`, torch-npu
 `2.13.0rc1`, NumPy `2.2.6`, and source-built Triton Ascend
 `3.6.0+gitb52af7fc` from vLLM-HUST/triton-ascend-hust main commit
 `b52af7fc9a0377c6ed527a88a30df719874eeba9`. The Triton wheel keeps the
@@ -161,9 +161,13 @@ Mate stack endpoint); they are not inferred from the v1 receipt.
 7. If a production gate fails, restore the recorded previous image ID, lock
    values and gitlinks, then restart through the same managed entrypoint.
 
-The latest-main pair passed Qwen3.8-27B TP4 graph-mode cold start twice on physical
-NPU0-3, non-streaming and streaming completion, native thinking, two-request
-concurrency, cancellation recovery, Sage workflow and public Support rendering.
+The preceding `d07d4c45`/`a8d2294a` candidate passed Qwen3.8-27B TP4 graph-mode
+cold start on physical NPU0-3, health, chat, stateful Responses and
+non-streaming tool calls. It was deliberately rejected when streaming custom
+tools emitted function-call event names. Core `744fa437` fixes that generic
+stream-context loss, and plugin main `435dd412` records it as the exact verified
+core. This lock remains a candidate until the replacement image repeats the
+complete NPU gate, including custom-tool SSE, cancellation and cold restart.
 The pre-promotion canary remains available as
 `sage-mate/vllm-ascend-hust:core-88e606d0-plugin-d92617b0-canary1-cann9.1`.
 
