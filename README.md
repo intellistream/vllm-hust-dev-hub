@@ -308,6 +308,19 @@ Start and inspect the service:
 ./manage.sh stop
 ```
 
+Managed units run a bounded, port-scoped container cleanup through `ExecStop`
+before systemd terminates the host launcher. Missing or already-stopped
+containers are idempotent success; Docker errors or verified surviving workers
+fail the stop instead of being hidden. Because container workers are not owned
+by the user unit's cgroup, generated units use `KillMode=process` only after
+that explicit cleanup contract.
+
+Current vLLM-Ascend releases no longer accept the legacy
+`VLLM_ASCEND_ENABLE_FLASHCOMM1` and `VLLM_ASCEND_ENABLE_FUSED_MC2` environment
+switches, so the launcher removes them by default. An older, separately verified
+plugin profile may set `VLLM_ENGINE_ENABLE_LEGACY_ASCEND_ENV=1` to forward
+explicit legacy values during a bounded migration.
+
 Common `.env` knobs:
 
 ```bash
