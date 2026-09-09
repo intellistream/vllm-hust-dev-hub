@@ -101,6 +101,60 @@ class ManageEngineGuardTests(unittest.TestCase):
             self.assertTrue(mode & stat.S_IXUSR, f"{script} should be executable")
             subprocess.run(["bash", "-n", str(script)], check=True)
 
+    def test_generated_unit_cleans_container_before_process_only_kill(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            bin_dir = root / "bin"
+            bin_dir.mkdir()
+            systemctl = bin_dir / "systemctl"
+            systemctl.write_text("#!/usr/bin/env bash\nexit 0\n")
+            systemctl.chmod(0o755)
+            env = os.environ.copy()
+            env.update(
+                {
+                    "PATH": f"{bin_dir}:{env['PATH']}",
+                    "XDG_CONFIG_HOME": str(root / "xdg"),
+                    "VLLM_ENGINE_SYSTEMD_UNIT": "shutdown-contract.service",
+                }
+            )
+
+            installed = subprocess.run(
+                [str(MANAGE_SCRIPT), "install"],
+                cwd=REPO_ROOT,
+                env=env,
+                text=True,
+                capture_output=True,
+                check=False,
+            )
+            self.assertEqual(installed.returncode, 0, installed.stderr)
+            unit_text = (
+                root / "xdg/systemd/user/shutdown-contract.service"
+            ).read_text()
+
+            self.assertIn(f"ExecStop={CLEANUP_SCRIPT}", unit_text)
+            self.assertIn("KillMode=process", unit_text)
+            self.assertNotIn("KillMode=control-group", unit_text)
+            self.assertLess(unit_text.index("ExecStop="), unit_text.index("KillMode="))
+
+    def test_legacy_ascend_environment_is_default_off_and_explicit(self) -> None:
+        script = ENGINE_SCRIPT.read_text()
+
+        self.assertIn(
+            'legacy_ascend_env="${VLLM_ENGINE_ENABLE_LEGACY_ASCEND_ENV:-0}"',
+            script,
+        )
+        self.assertIn(
+            "unset VLLM_ASCEND_ENABLE_FLASHCOMM1 VLLM_ASCEND_ENABLE_FUSED_MC2",
+            script,
+        )
+        self.assertIn('if [[ "__ENABLE_LEGACY_ASCEND_ENV__" == "1" ]]', script)
+        self.assertNotIn(
+            'flashcomm1="${VLLM_ASCEND_ENABLE_FLASHCOMM1:-0}"', script
+        )
+        self.assertNotIn(
+            'fused_mc2="${VLLM_ASCEND_ENABLE_FUSED_MC2:-1}"', script
+        )
+
     def test_cleanup_error_documents_canonical_and_legacy_variables(self) -> None:
         script = CLEANUP_SCRIPT.read_text()
 

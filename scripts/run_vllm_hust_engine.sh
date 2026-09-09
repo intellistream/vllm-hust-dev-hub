@@ -89,8 +89,13 @@ enable_prefix_caching="${VLLM_ENGINE_ENABLE_PREFIX_CACHING:-1}"
 enable_chunked_prefill="${VLLM_ENGINE_ENABLE_CHUNKED_PREFILL:-1}"
 enforce_eager="${VLLM_ENGINE_ENFORCE_EAGER:-0}"
 expert_parallel="${VLLM_ENGINE_ENABLE_EXPERT_PARALLEL:-0}"
-flashcomm1="${VLLM_ASCEND_ENABLE_FLASHCOMM1:-0}"
-fused_mc2="${VLLM_ASCEND_ENABLE_FUSED_MC2:-1}"
+legacy_ascend_env="${VLLM_ENGINE_ENABLE_LEGACY_ASCEND_ENV:-0}"
+flashcomm1="${VLLM_ASCEND_ENABLE_FLASHCOMM1:-}"
+fused_mc2="${VLLM_ASCEND_ENABLE_FUSED_MC2:-}"
+if [[ "$legacy_ascend_env" != "0" && "$legacy_ascend_env" != "1" ]]; then
+  echo "ERROR: VLLM_ENGINE_ENABLE_LEGACY_ASCEND_ENV must be 0 or 1." >&2
+  exit 1
+fi
 optimization_repo_container="${VLLM_OPTIMIZATION_REPO_CONTAINER:-}"
 optimization_src_subdir="${VLLM_OPTIMIZATION_SRC_SUBDIR:-src}"
 optimization_plugin="${VLLM_OPTIMIZATION_PLUGIN:-}"
@@ -496,8 +501,11 @@ if [[ -n "${HCCL_OP_EXPANSION_MODE:-}" ]]; then
 fi
 export PYTORCH_NPU_ALLOC_CONF="${PYTORCH_NPU_ALLOC_CONF:-expandable_segments:True}"
 export VLLM_PLUGINS="${VLLM_PLUGINS:-__PLUGINS__}"
-export VLLM_ASCEND_ENABLE_FLASHCOMM1="${VLLM_ASCEND_ENABLE_FLASHCOMM1:-__FLASHCOMM1__}"
-export VLLM_ASCEND_ENABLE_FUSED_MC2="${VLLM_ASCEND_ENABLE_FUSED_MC2:-__FUSED_MC2__}"
+unset VLLM_ASCEND_ENABLE_FLASHCOMM1 VLLM_ASCEND_ENABLE_FUSED_MC2
+if [[ "__ENABLE_LEGACY_ASCEND_ENV__" == "1" ]]; then
+  [[ -n "__FLASHCOMM1__" ]] && export VLLM_ASCEND_ENABLE_FLASHCOMM1="__FLASHCOMM1__"
+  [[ -n "__FUSED_MC2__" ]] && export VLLM_ASCEND_ENABLE_FUSED_MC2="__FUSED_MC2__"
+fi
 export VLLM_ASCEND_TORCH_PREFLIGHT="${VLLM_ASCEND_TORCH_PREFLIGHT:-0}"
 export COMPILE_CUSTOM_KERNELS="${COMPILE_CUSTOM_KERNELS:-1}"
 export HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}"
@@ -851,6 +859,7 @@ replace "__CONTAINER_LD_PRELOAD__" "$container_ld_preload"
 replace "__TARGET_DEVICE__" "$target_device"
 replace "__NPU_DEVICES__" "$runtime_visible_devices"
 replace "__PLUGINS__" "$plugins"
+replace "__ENABLE_LEGACY_ASCEND_ENV__" "$legacy_ascend_env"
 replace "__FLASHCOMM1__" "$flashcomm1"
 replace "__FUSED_MC2__" "$fused_mc2"
 replace "__PYTHONPATH__" "$pythonpath"
