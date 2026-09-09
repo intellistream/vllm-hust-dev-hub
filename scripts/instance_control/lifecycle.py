@@ -12,6 +12,7 @@ import time
 import uuid
 
 from .schema import ControlError, canonical, decode, digest, fields, identifier, require
+from .lifecycle_backend import EffectInProgress
 
 PROTOCOL = "vllm-hust.lifecycle/v1"
 PARAMETERS = {
@@ -343,6 +344,10 @@ class Lifecycle:
                         "operation_conflict",
                     )
                     backend = self._backend(instance)
+                    require(
+                        getattr(backend, "new_operations_enabled", True) is True,
+                        "backend_operations_disabled",
+                    )
                     observation = self._inspect(backend, instance_id)
                     require(
                         observation == instance["observation"], "runtime_identity_drift"
@@ -410,13 +415,13 @@ class Lifecycle:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as exc:
                 raise ControlError("worker_busy") from exc
-            yield
+            yield fd
         finally:
             os.close(fd)
 
     def tick(self):
         """Run one durable operation. On restart, uncertain effects roll back."""
-        with self.worker_guard():
+        with self.worker_guard() as worker_fd:
             with self.store.transaction() as db:
                 rows = db.execute(
                     "SELECT value FROM documents WHERE kind='lifecycle_operation' ORDER BY id"
@@ -459,9 +464,13 @@ class Lifecycle:
                     "policy_changed",
                 )
                 if restore:
-                    observed = backend.restore(instance["id"], operation)
+                    observed = backend.restore(
+                        instance["id"], operation, worker_fd=worker_fd
+                    )
                 else:
-                    observed = backend.apply(instance["id"], operation)
+                    observed = backend.apply(
+                        instance["id"], operation, worker_fd=worker_fd
+                    )
                 self.checkpoint("effect")
                 require(
                     observed == backend.inspect(instance["id"]), "verification_failed"
@@ -481,6 +490,8 @@ class Lifecycle:
                     observed,
                     "rolled_back" if restore else "committed",
                 )
+            except EffectInProgress:
+                self._finish(instance, operation, None, "recovery_required")
             except Exception:
                 # Persist compensation intent before invoking the backend.
                 with self.store.transaction() as db:
@@ -500,7 +511,9 @@ class Lifecycle:
                 self.checkpoint("rolling_back")
                 try:
                     backend = self._backend(instance)
-                    observed = backend.restore(instance["id"], operation)
+                    observed = backend.restore(
+                        instance["id"], operation, worker_fd=worker_fd
+                    )
                     self.checkpoint("restore_effect")
                     require(
                         observed == backend.inspect(instance["id"])

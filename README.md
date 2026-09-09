@@ -40,7 +40,8 @@ container, while the host supplies Docker, NPU devices, and driver interfaces.
 For product-facing lifecycle integration, use the [unified lifecycle API](docs/instance-lifecycle-v1.md).
 It provides allocation/approval, start/stop, ownership transfer, audit and recovery
 through an authenticated local socket. The supplied policy is disabled and the
-only bundled backend is explicit simulation; no existing service is enrolled.
+production adapter is separately [default-off and allowlisted](docs/production-lifecycle-backend.md);
+no existing service is enrolled.
 
 ## Quick Start
 

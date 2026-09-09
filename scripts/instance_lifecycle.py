@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Opt-in local lifecycle service; no production adapter or automatic enrollment."""
+"""Opt-in local lifecycle service; production profiles are never auto-enrolled."""
 
 import argparse
 from pathlib import Path
@@ -21,6 +21,9 @@ def main():
         "--simulation",
         action="store_true",
         help="enable only the durable CPU-free simulation adapter",
+    )
+    parser.add_argument(
+        "--production-config", help="private default-off Docker/systemd allowlist"
     )
     args = parser.parse_args()
     path = Path(args.config)
@@ -53,6 +56,13 @@ def main():
         simulation_root = store.root / "simulation"
         simulation_store = Store(str(simulation_root), initialize=True)
         backends["simulation"] = SimulationBackend(simulation_store)
+    if args.production_config:
+        from instance_control.production_backend import ProductionBackend
+        from instance_control.production_policy import ProductionPolicy
+
+        backends["production"] = ProductionBackend(
+            store, ProductionPolicy.load(args.production_config)
+        )
     authority = Lifecycle(
         store,
         config["profiles"],
