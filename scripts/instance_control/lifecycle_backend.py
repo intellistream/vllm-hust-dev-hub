@@ -2,7 +2,11 @@
 
 from typing import Protocol
 
-from .schema import decode, require
+from .schema import ControlError, decode, require
+
+
+class EffectInProgress(ControlError):
+    """Executor still owns the lock; compensation must not run concurrently."""
 
 
 class LifecycleBackend(Protocol):
@@ -20,8 +24,8 @@ class LifecycleBackend(Protocol):
 
     def qualify(self, instance_id, profile) -> bool: ...
     def inspect(self, instance_id) -> dict: ...
-    def apply(self, instance_id, operation) -> dict: ...
-    def restore(self, instance_id, operation) -> dict: ...
+    def apply(self, instance_id, operation, *, worker_fd=None) -> dict: ...
+    def restore(self, instance_id, operation, *, worker_fd=None) -> dict: ...
 
 
 class SimulationBackend:
@@ -94,8 +98,8 @@ class SimulationBackend:
         self.fault("restore" if restore else "apply")
         return observation
 
-    def apply(self, instance_id, operation):
+    def apply(self, instance_id, operation, *, worker_fd=None):
         return self._change(instance_id, operation, False)
 
-    def restore(self, instance_id, operation):
+    def restore(self, instance_id, operation, *, worker_fd=None):
         return self._change(instance_id, operation, True)

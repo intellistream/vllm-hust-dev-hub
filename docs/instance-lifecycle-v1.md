@@ -9,9 +9,9 @@ owner-entry and host-broker protocols are unchanged.
 **Delivered boundary:** a working authenticated local service with durable
 admission, approval, start/stop, ownership transfer, audit, concurrency and restart
 recovery. The shipped executable has an empty backend registry unless explicitly
-started with `--simulation`. Simulation persists a separate resource database and
-never starts an inference worker. No production systemd/container adapter is
-qualified or enrolled. This is a tested control-plane implementation, not a claim
+started with `--simulation` or a reviewed `--production-config`. Simulation persists a separate resource database and
+never starts an inference worker. The [production adapter](production-lifecycle-backend.md) supplies restricted
+Docker/systemd primitives; no real target is qualified or enrolled. This is a tested control-plane implementation, not a claim
 of completed production inference qualification. Existing services remain untouched.
 
 ## Architecture and trust
@@ -176,7 +176,7 @@ The checked-in config is disabled with no profiles. The systemd file is an
 `/opt/vllm-hust-dev-hub`, provide service-readable private config at
 `/etc/vllm-hust/lifecycle.json`, and create the dedicated accounts before using it.
 `StateDirectory` / `RuntimeDirectory` create the private directories. The template
-runs no production backend and has no simulation flag. Starting this API alone
+loads no production backend and has no simulation flag. Starting this API alone
 cannot take over a service. This change did not install or start that unit.
 
 For a completely isolated simulation, create a mode-0700 temporary directory and
